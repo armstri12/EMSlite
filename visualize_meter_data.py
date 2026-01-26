@@ -32,6 +32,7 @@ from typing import Iterable
 
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 
 TOTAL_AMPS_COLUMN_NAME = "Total_Amps"
 TOTAL_KW_COLUMN_NAME = "Total_kW"
@@ -41,6 +42,7 @@ DEFAULT_CONFIG = {
     "output_dir": "visualizations",
     "line_voltage": 480.0,
     "power_factor": 1.0,
+    "price_per_kwh": 0.25,
     "total_amps_sources": None,
     "combo_columns": {
         "Production_kW": [],
@@ -64,6 +66,10 @@ DEFAULT_CONFIG = {
         "group_columns_plot": {
             "enabled": True,
             "output": "group_columns_plot.html",
+        },
+        "dashboard": {
+            "enabled": True,
+            "output": "dashboard.html",
         },
     },
 }
@@ -184,7 +190,7 @@ def add_usage_columns(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
 
 
 def plot_total_kw(df: pd.DataFrame, output_dir: Path) -> Path:
-    fig = px.line(df, x="Timestamp", y=TOTAL_KW_COLUMN_NAME, title="Total kW Over Time")
+    fig = create_total_kw_fig(df)
     output_path = output_dir / CONFIG["visualizations"]["total_kw_timeseries"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
@@ -195,6 +201,33 @@ def normalize_rolling_window(window: str) -> str:
 
 
 def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
+    fig = create_total_kw_rolling_fig(df, window)
+    output_path = output_dir / CONFIG["visualizations"]["total_kw_rolling"]["output"]
+    fig.write_html(output_path, include_plotlyjs="cdn")
+    return output_path
+
+
+def plot_daily_hour_heatmap(df: pd.DataFrame, output_dir: Path) -> Path:
+    fig = create_daily_hour_heatmap_fig(df)
+    output_path = output_dir / CONFIG["visualizations"]["daily_hour_heatmap"]["output"]
+    fig.write_html(output_path, include_plotlyjs="cdn")
+    return output_path
+
+
+def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
+    fig = create_group_columns_fig(df)
+    if fig is None:
+        return None
+    output_path = output_dir / CONFIG["visualizations"]["group_columns_plot"]["output"]
+    fig.write_html(output_path, include_plotlyjs="cdn")
+    return output_path
+
+
+def create_total_kw_fig(df: pd.DataFrame) -> px.line:
+    return px.line(df, x="Timestamp", y=TOTAL_KW_COLUMN_NAME, title="Total kW Over Time")
+
+
+def create_total_kw_rolling_fig(df: pd.DataFrame, window: str) -> px.line:
     normalized_window = normalize_rolling_window(window)
     rolling = (
         df.set_index("Timestamp")[TOTAL_KW_COLUMN_NAME]
@@ -202,35 +235,29 @@ def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Pa
         .mean()
         .reset_index()
     )
-    fig = px.line(
+    return px.line(
         rolling,
         x="Timestamp",
         y=TOTAL_KW_COLUMN_NAME,
         title=f"Total kW (Rolling {normalized_window})",
     )
-    output_path = output_dir / CONFIG["visualizations"]["total_kw_rolling"]["output"]
-    fig.write_html(output_path, include_plotlyjs="cdn")
-    return output_path
 
 
-def plot_daily_hour_heatmap(df: pd.DataFrame, output_dir: Path) -> Path:
+def create_daily_hour_heatmap_fig(df: pd.DataFrame) -> px.imshow:
     temp = df.copy()
     temp["Date"] = temp["Timestamp"].dt.date
     temp["Hour"] = temp["Timestamp"].dt.hour
     pivot = temp.pivot_table(index="Hour", columns="Date", values=TOTAL_KW_COLUMN_NAME, aggfunc="mean")
-    fig = px.imshow(
+    return px.imshow(
         pivot,
         aspect="auto",
         origin="lower",
         title="Average Total kW by Hour and Day",
         labels={"color": "kW"},
     )
-    output_path = output_dir / CONFIG["visualizations"]["daily_hour_heatmap"]["output"]
-    fig.write_html(output_path, include_plotlyjs="cdn")
-    return output_path
 
 
-def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
+def create_group_columns_fig(df: pd.DataFrame) -> px.line | None:
     group_columns = [name for name in CONFIG["combo_columns"].keys() if name in df.columns]
     if not group_columns:
         return None
@@ -249,8 +276,173 @@ def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
     fig.update_layout(showlegend=False, height=max(300, 250 * group_count))
     fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
     fig.update_yaxes(matches=None)
-    output_path = output_dir / CONFIG["visualizations"]["group_columns_plot"]["output"]
-    fig.write_html(output_path, include_plotlyjs="cdn")
+    return fig
+
+
+def compute_energy_metrics(df: pd.DataFrame) -> dict[str, float]:
+    if TOTAL_KW_COLUMN_NAME not in df.columns:
+        return {}
+    ordered = df.sort_values("Timestamp").dropna(subset=["Timestamp"])
+    deltas = ordered["Timestamp"].diff().dt.total_seconds().div(3600).fillna(0)
+    total_kwh = (ordered[TOTAL_KW_COLUMN_NAME] * deltas).sum()
+    return {
+        "total_kwh": float(total_kwh),
+        "average_kw": float(ordered[TOTAL_KW_COLUMN_NAME].mean()),
+        "peak_kw": float(ordered[TOTAL_KW_COLUMN_NAME].max()),
+    }
+
+
+def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
+    metrics = compute_energy_metrics(df)
+    price_per_kwh = float(CONFIG["price_per_kwh"])
+    total_cost = metrics.get("total_kwh", 0.0) * price_per_kwh
+    date_range = ""
+    if not df.empty:
+        start = df["Timestamp"].min()
+        end = df["Timestamp"].max()
+        if pd.notna(start) and pd.notna(end):
+            date_range = f"{start.date()} → {end.date()}"
+
+    figures = [
+        ("Total Load", create_total_kw_fig(df)),
+        ("Smoothed Load", create_total_kw_rolling_fig(df, window)),
+        ("Load Heatmap", create_daily_hour_heatmap_fig(df)),
+    ]
+    group_fig = create_group_columns_fig(df)
+    if group_fig is not None:
+        figures.append(("Group Loads", group_fig))
+
+    chart_cards = "\n".join(
+        f"""
+        <div class="chart-card">
+          <div class="chart-title">{title}</div>
+          {pio.to_html(fig, include_plotlyjs=False, full_html=False)}
+        </div>
+        """
+        for title, fig in figures
+    )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>EMS Energy Dashboard</title>
+        <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+        <style>
+          :root {{
+            --bg: #f5f7fb;
+            --card: #ffffff;
+            --ink: #0f172a;
+            --muted: #64748b;
+            --accent: #2563eb;
+          }}
+          * {{ box-sizing: border-box; }}
+          body {{
+            margin: 0;
+            font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+          }}
+          .header {{
+            padding: 32px 40px 16px;
+          }}
+          .title {{
+            font-size: 32px;
+            font-weight: 700;
+            margin: 0;
+          }}
+          .subtitle {{
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 14px;
+          }}
+          .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            padding: 0 40px 24px;
+          }}
+          .stat-card {{
+            background: var(--card);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+          }}
+          .stat-label {{
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+          }}
+          .stat-value {{
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 8px;
+          }}
+          .stat-hint {{
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--muted);
+          }}
+          .charts-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            gap: 20px;
+            padding: 0 40px 40px;
+          }}
+          .chart-card {{
+            background: var(--card);
+            border-radius: 18px;
+            padding: 12px 12px 4px;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+          }}
+          .chart-title {{
+            padding: 10px 12px 0;
+            font-weight: 600;
+            color: var(--ink);
+          }}
+          .chart-card .plotly-graph-div {{
+            width: 100% !important;
+          }}
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="title">EMS Energy Dashboard</h1>
+          <div class="subtitle">Total cost uses ${price_per_kwh:.2f} / kWh · {date_range}</div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Energy</div>
+            <div class="stat-value">{metrics.get("total_kwh", 0.0):,.2f} kWh</div>
+            <div class="stat-hint">Integrated from total load</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Estimated Cost</div>
+            <div class="stat-value">${total_cost:,.2f}</div>
+            <div class="stat-hint">Rate: ${price_per_kwh:.2f} / kWh</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Average Load</div>
+            <div class="stat-value">{metrics.get("average_kw", 0.0):,.2f} kW</div>
+            <div class="stat-hint">Mean across timestamps</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Peak Load</div>
+            <div class="stat-value">{metrics.get("peak_kw", 0.0):,.2f} kW</div>
+            <div class="stat-hint">Highest observed value</div>
+          </div>
+        </div>
+        <div class="charts-grid">
+          {chart_cards}
+        </div>
+      </body>
+    </html>
+    """
+    output_path = output_dir / CONFIG["visualizations"]["dashboard"]["output"]
+    output_path.write_text(html, encoding="utf-8")
     return output_path
 
 
@@ -297,6 +489,8 @@ def main() -> None:
         group_plot = plot_group_columns(df, output_dir)
         if group_plot:
             outputs.append(group_plot)
+    if CONFIG["visualizations"]["dashboard"]["enabled"]:
+        outputs.append(build_dashboard(df, output_dir, rolling_window))
 
     print("Generated visualizations:")
     for out in outputs:
