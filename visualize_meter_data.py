@@ -12,6 +12,7 @@ Expected input format:
 
 Config:
 - Defaults loaded from visualization_config.json (override with --config).
+- Config loader accepts JSON with optional // or /* */ comments and trailing commas.
 
 Outputs:
 - total_kw_timeseries.html
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Iterable
@@ -118,13 +120,24 @@ def merge_config(base: dict, overrides: dict) -> dict:
     return merged
 
 
+def strip_json_noise(raw_text: str) -> str:
+    no_block = re.sub(r"/\*.*?\*/", "", raw_text, flags=re.DOTALL)
+    no_line = re.sub(r"//.*?$", "", no_block, flags=re.MULTILINE)
+    no_trailing = re.sub(r",(\s*[}\]])", r"\1", no_line)
+    return no_trailing
+
+
 def load_config(path: Path) -> dict:
     if not path.exists():
         raise FileNotFoundError(
             f"Config file not found: {path}. Create it or pass --config to specify one."
         )
-    with path.open("r", encoding="utf-8") as handle:
-        loaded = json.load(handle)
+    raw_text = path.read_text(encoding="utf-8")
+    try:
+        loaded = json.loads(raw_text)
+    except json.JSONDecodeError:
+        sanitized = strip_json_noise(raw_text)
+        loaded = json.loads(sanitized)
     return merge_config(DEFAULT_CONFIG, loaded)
 
 
