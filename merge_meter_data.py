@@ -21,9 +21,10 @@ Compatible with pandas >= 2.1 (no infer_datetime_format). Uses 'min' for roundin
 
 from __future__ import annotations
 from pathlib import Path
+import math
 import re
 import sys
-from typing import List
+from typing import Iterable, List
 
 import pandas as pd
 
@@ -47,6 +48,20 @@ FILL_MISSING: str = "blank"                      # "blank" or "0" for missing va
 
 # Parsing assumptions
 ASSUME_SECOND_COLUMN_IS_METER: bool = True       # If header doesn't match file name, rename 2nd column to meter
+
+# Aggregations & reporting
+TOTAL_AMPS_COLUMN_NAME: str = "Total_Amps"
+TOTAL_KW_COLUMN_NAME: str = "Total_kW"
+TOTAL_AMPS_SOURCE_COLUMNS: list[str] | None = None  # None => all meter columns; otherwise list of meter columns
+
+KW_GROUP_COLUMNS: dict[str, list[str]] = {
+    "Production_kW": [],
+    "Facilities_kW": [],
+    "Engineering_kW": [],
+}
+
+LINE_VOLTAGE: float = 480.0
+POWER_FACTOR: float = 1.0
 
 # ==============================
 # ======== UTILITIES ===========
@@ -106,6 +121,42 @@ def parse_timestamps_to_tz(series: pd.Series) -> pd.Series:
     if ROUND_TO_MINUTE:
         dt = dt.dt.round("min")  # use modern alias; 'T' may error on newer pandas
     return dt
+
+def amps_to_kw(amps: pd.Series) -> pd.Series:
+    """Convert 3-phase amps to kW using line voltage and power factor."""
+    return amps * (LINE_VOLTAGE * math.sqrt(3) * POWER_FACTOR) / 1000.0
+
+def _resolve_columns(
+    available: Iterable[str],
+    requested: list[str] | None,
+    label: str,
+) -> list[str]:
+    available_set = set(available)
+    if requested is None:
+        return [c for c in available if c in available_set]
+    missing = [c for c in requested if c not in available_set]
+    if missing:
+        print(f"Warning: {label} missing columns skipped: {missing}")
+    return [c for c in requested if c in available_set]
+
+def add_usage_columns(df: pd.DataFrame) -> pd.DataFrame:
+    computed_names = {TOTAL_AMPS_COLUMN_NAME, TOTAL_KW_COLUMN_NAME, *KW_GROUP_COLUMNS.keys()}
+    meter_columns = [c for c in df.columns if c != "Timestamp" and c not in computed_names]
+
+    total_sources = _resolve_columns(meter_columns, TOTAL_AMPS_SOURCE_COLUMNS, "TOTAL_AMPS_SOURCE_COLUMNS")
+    if total_sources:
+        total_amps = df[total_sources].fillna(0).sum(axis=1)
+        df[TOTAL_AMPS_COLUMN_NAME] = total_amps
+        df[TOTAL_KW_COLUMN_NAME] = amps_to_kw(total_amps)
+
+    for group_name, group_columns in KW_GROUP_COLUMNS.items():
+        resolved = _resolve_columns(meter_columns, group_columns, f"KW_GROUP_COLUMNS[{group_name}]")
+        if not resolved:
+            continue
+        group_amps = df[resolved].fillna(0).sum(axis=1)
+        df[group_name] = amps_to_kw(group_amps)
+
+    return df
 
 # ==============================
 # ====== I/O: LOAD FRAMES ======
@@ -270,6 +321,9 @@ def main():
         for c in updated.columns:
             if c != "Timestamp":
                 updated[c] = updated[c].fillna(0)
+
+    # Add aggregate usage columns (amps + kW)
+    updated = add_usage_columns(updated)
 
     # Output
     updated = updated.sort_values("Timestamp")
