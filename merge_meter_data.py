@@ -21,13 +21,11 @@ Compatible with pandas >= 2.1 (no infer_datetime_format). Uses 'min' for roundin
 
 from __future__ import annotations
 from pathlib import Path
-import math
 import re
 import sys
-from typing import Iterable, List
+from typing import List
 
 import pandas as pd
-import plotly.express as px
 
 # ==============================
 # ========== CONSTANTS =========
@@ -49,34 +47,6 @@ FILL_MISSING: str = "blank"                      # "blank" or "0" for missing va
 
 # Parsing assumptions
 ASSUME_SECOND_COLUMN_IS_METER: bool = True       # If header doesn't match file name, rename 2nd column to meter
-
-# Aggregations & reporting
-TOTAL_AMPS_COLUMN_NAME: str = "Total_Amps"
-TOTAL_KW_COLUMN_NAME: str = "Total_kW"
-TOTAL_AMPS_SOURCE_COLUMNS: list[str] | None = None  # None => all meter columns; otherwise list of meter columns
-
-# Grouped kW columns to compute and plot.
-# - Keys are the *output* column names that will be added to the final CSV.
-# - Values are lists of *meter column names* to include in each group.
-# - Use exact meter column names as they appear in the master/panel files (after header cleanup).
-#   Example (replace with your meter names):
-#   KW_GROUP_COLUMNS = {
-#       "Production_kW": ["MeterATS01_SystemCurrent", "MeterATS02_SystemCurrent"],
-#       "Facilities_kW": ["MeterATS03_SystemCurrent"],
-#       "Engineering_kW": ["MeterATS04_SystemCurrent", "MeterATS05_SystemCurrent"],
-#   }
-KW_GROUP_COLUMNS: dict[str, list[str]] = {
-    "Production_kW": [],
-    "Facilities_kW": [],
-    "Engineering_kW": [],
-}
-
-LINE_VOLTAGE: float = 480.0
-POWER_FACTOR: float = 1.0
-
-# Plotting
-PLOT_GROUP_COLUMNS: bool = True
-PLOT_OUTPUT_HTML: str = "group_columns_plot.html"
 
 # ==============================
 # ======== UTILITIES ===========
@@ -140,57 +110,6 @@ def parse_timestamps_to_tz(series: pd.Series) -> pd.Series:
     if ROUND_TO_MINUTE:
         dt = dt.dt.round("min")  # use modern alias; 'T' may error on newer pandas
     return dt
-
-def amps_to_kw(amps: pd.Series) -> pd.Series:
-    """Convert 3-phase amps to kW using line voltage and power factor."""
-    return amps * (LINE_VOLTAGE * math.sqrt(3) * POWER_FACTOR) / 1000.0
-
-def _resolve_columns(
-    available: Iterable[str],
-    requested: list[str] | None,
-    label: str,
-) -> list[str]:
-    available_set = set(available)
-    if requested is None:
-        return [c for c in available if c in available_set]
-    missing = [c for c in requested if c not in available_set]
-    if missing:
-        print(f"Warning: {label} missing columns skipped: {missing}")
-    return [c for c in requested if c in available_set]
-
-def add_usage_columns(df: pd.DataFrame) -> pd.DataFrame:
-    computed_names = {TOTAL_AMPS_COLUMN_NAME, TOTAL_KW_COLUMN_NAME, *KW_GROUP_COLUMNS.keys()}
-    meter_columns = [c for c in df.columns if c != "Timestamp" and c not in computed_names]
-
-    total_sources = _resolve_columns(meter_columns, TOTAL_AMPS_SOURCE_COLUMNS, "TOTAL_AMPS_SOURCE_COLUMNS")
-    if total_sources:
-        total_amps = df[total_sources].fillna(0).sum(axis=1)
-        df[TOTAL_AMPS_COLUMN_NAME] = total_amps
-        df[TOTAL_KW_COLUMN_NAME] = amps_to_kw(total_amps)
-
-    for group_name, group_columns in KW_GROUP_COLUMNS.items():
-        resolved = _resolve_columns(meter_columns, group_columns, f"KW_GROUP_COLUMNS[{group_name}]")
-        if not resolved:
-            continue
-        group_amps = df[resolved].fillna(0).sum(axis=1)
-        df[group_name] = amps_to_kw(group_amps)
-
-    return df
-
-def plot_group_columns(df: pd.DataFrame, output_html: str) -> None:
-    group_columns = [name for name in KW_GROUP_COLUMNS.keys() if name in df.columns]
-    if not group_columns:
-        print("No group columns available to plot.")
-        return
-    plot_df = df[["Timestamp", *group_columns]].dropna(subset=["Timestamp"]).copy()
-    if plot_df.empty:
-        print("No data available for plotting group columns.")
-        return
-    long_df = plot_df.melt(id_vars="Timestamp", var_name="Group", value_name="kW")
-    fig = px.line(long_df, x="Timestamp", y="kW", color="Group", title="Group Columns (kW)")
-    fig.update_layout(legend_title_text="Group")
-    fig.write_html(output_html, include_plotlyjs="cdn")
-    print(f"Plot written to: {output_html}")
 
 # ==============================
 # ====== I/O: LOAD FRAMES ======
@@ -355,12 +274,6 @@ def main():
         for c in updated.columns:
             if c != "Timestamp":
                 updated[c] = updated[c].fillna(0)
-
-    # Add aggregate usage columns (amps + kW)
-    updated = add_usage_columns(updated)
-
-    if PLOT_GROUP_COLUMNS:
-        plot_group_columns(updated, PLOT_OUTPUT_HTML)
 
     # Output
     updated = updated.sort_values("Timestamp")
