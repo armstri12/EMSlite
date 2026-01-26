@@ -32,6 +32,7 @@ from typing import Iterable
 
 import pandas as pd
 import plotly.express as px
+import plotly.io as pio
 
 TOTAL_AMPS_COLUMN_NAME = "Total_Amps"
 TOTAL_KW_COLUMN_NAME = "Total_kW"
