@@ -1,236 +1,305 @@
+
 #!/usr/bin/env python3
-"""Merge per-meter CSV dumps into a master CSV.
+# -*- coding: utf-8 -*-
 
-The master CSV uses column A as timestamps and subsequent columns for each meter
-(e.g. MeterATS01_SystemCurrent). Each per-meter dump CSV contains two columns:
-Timestamp and the meter's amperage data, with a header row.
+"""
+Merge_BMS_History.py
 
-Configuration (edit the CONFIG dict below):
-  - master_path: Path to your master CSV (can be overridden via --master).
-  - dumps_path: Path to the folder with per-meter CSV dumps (--dumps overrides).
-  - output_path: Where to write the updated master (optional, defaults to master).
-  - timestamp_fallback: Header name to use when creating a brand new master file.
-  - timestamp_format: strptime format for sorting timestamps.
-  - drop_timezone_suffixes: Timezone strings to strip before parsing.
-  - dump_glob: Pattern for discovering per-meter CSV files in the dumps directory.
-  - overwrite_existing: If False, only fill empty cells in the master file.
-  - encoding: File encoding used for reading/writing CSVs.
+Append-only merger for Edwards BMS 4-day panel dumps into an existing wide master CSV.
 
-Usage:
-  merge_meter_data.py --master master.csv --dumps ./dumps --output master.csv
+Behavior:
+- Reads RawPanelUsageHistory.csv ("master") in wide format (Timestamp + one column per meter)
+- Discovers and loads all Meter*_SystemCurrent.csv files (each is Timestamp + one meter column)
+- Normalizes timestamps to America/New_York, robust to 'EST'/'EDT' suffixes and mixed formats
+- Builds a wide 'new snapshot' from all panel files
+- APPENDS ONLY rows whose Timestamp is NOT already in the master
+- Adds new meter columns if discovered; older rows remain blank for those meters
+- Does NOT overwrite or backfill any existing master rows
 
-Quick start (edit CONFIG with your paths, then run without flags):
-  1) Update CONFIG["master_path"] and CONFIG["dumps_path"] below.
-  2) Optional: set CONFIG["output_path"] if you want a new output file.
-  3) Run: ./merge_meter_data.py
-
-By default, the script fills missing data and appends new timestamps without
-overwriting existing non-empty values.
+Compatible with pandas >= 2.1 (no infer_datetime_format). Uses 'min' for rounding frequency.
 """
 
 from __future__ import annotations
+from pathlib import Path
+import re
+import sys
+from typing import List
 
-import argparse
-import csv
-import datetime
-import pathlib
-from typing import Dict, List, Optional
+import pandas as pd
 
+# ==============================
+# ========== CONSTANTS =========
+# ==============================
 
-# ----------------------------
-# Configuration (edit as needed)
-# ----------------------------
-CONFIG = {
-    # Copy/paste your file paths here.
-    "master_path": "/path/to/master.csv",
-    "dumps_path": "/path/to/dump_files",
-    # Leave blank ("") to overwrite the master in place.
-    "output_path": "",
-    "timestamp_fallback": "Timestamp",
-    # Example format for: 18-Jan-26 3:15 AM EST
-    "timestamp_format": "%d-%b-%y %I:%M %p",
-    # If your timestamps end with a timezone (e.g., EST), list it here to strip it.
-    "drop_timezone_suffixes": ["EST", "EDT"],
-    "dump_glob": "*.csv",
-    "overwrite_existing": False,
-    "encoding": "utf-8",
-}
+# Paths & discovery
+DATA_DIR: Path = Path(r"C:\Users\a00544090\OneDrive - ONEVIRTUALOFFICE\SHE Team\Energy Management\EMS Python\BMS Power Dump 1_23_2026")                       # Directory containing master + dumps
+MASTER_FILENAME: str = "RawPanelUsageHistory.csv"
+GLOB_PATTERN: str = "Meter*_SystemCurrent.csv"   # All 40+ panel files
 
+# Timestamp handling
+TIMEZONE: str = "America/New_York"
+STRIP_TZ_TOKENS: bool = True                     # Remove trailing 'EST'/'EDT' from strings, then localize
+ROUND_TO_MINUTE: bool = True                     # Round parsed datetimes to nearest minute ("min")
 
-def read_master(path: pathlib.Path) -> tuple[List[str], Dict[str, Dict[str, str]]]:
-    """Load the master CSV into memory.
+# Output behavior
+OVERWRITE_IN_PLACE: bool = False                 # If False, writes <master>_UPDATED.csv
+FILL_MISSING: str = "blank"                      # "blank" or "0" for missing values in the final CSV
 
-    Returns:
-        headers: list of column names (timestamp column first).
-        data: mapping of timestamp -> row dict.
+# Parsing assumptions
+ASSUME_SECOND_COLUMN_IS_METER: bool = True       # If header doesn't match file name, rename 2nd column to meter
+
+# ==============================
+# ======== UTILITIES ===========
+# ==============================
+
+def _normalize_meter_header(raw: str) -> str:
+    """Drop trailing parenthetical suffixes like '(A)' and trim whitespace."""
+    name = re.sub(r"\s*\(.*?\)\s*$", "", raw or "")
+    return name.strip()
+
+def _meter_name_from_file(file_path: Path) -> str:
     """
-    if not path.exists():
-        return [CONFIG["timestamp_fallback"]], {}
+    Use the file stem as the canonical meter name:
+    'MeterATS01_SystemCurrent.csv' -> 'MeterATS01_SystemCurrent'
+    """
+    return _normalize_meter_header(file_path.stem)
 
-    with path.open(newline="", encoding=CONFIG["encoding"]) as handle:
-        reader = csv.DictReader(handle)
-        if reader.fieldnames is None:
-            raise ValueError(f"Master file {path} is missing a header row.")
-        headers = list(reader.fieldnames)
-        if not headers:
-            raise ValueError(f"Master file {path} has empty headers.")
-        data: Dict[str, Dict[str, str]] = {}
-        timestamp_key = headers[0]
-        for row in reader:
-            # Use the first header as the timestamp column, matching the master file.
-            timestamp = row.get(timestamp_key, "").strip()
-            if not timestamp:
-                continue
-            data[timestamp] = row
-    return headers, data
+def parse_timestamps_to_tz(series: pd.Series) -> pd.Series:
+    """
+    Parse mixed timestamp styles, then localize/convert to TIMEZONE.
+    Handles examples like:
+      - '18-Jan-26 3:15 AM EST'
+      - '12/11/25 7:45 AM'
+    Compatible with pandas >= 2.1 (no infer_datetime_format).
+    """
+    s = series.astype(str)
 
+    # Drop explicit 'EST'/'EDT' tokens (no fixed offset info)
+    if STRIP_TZ_TOKENS:
+        s = s.str.replace(r"\s+(?:EST|EDT)\s*$", "", regex=True)
 
-def ensure_column(headers: List[str], column: str) -> None:
-    """Add the meter column to the master header list if it's missing."""
-    if column not in headers:
-        headers.append(column)
+    # Try explicit formats first to reduce per-element parsing
+    # 1) '18-Jan-26 3:15 AM'
+    dt = pd.to_datetime(s, errors="coerce", format="%d-%b-%y %I:%M %p")
 
+    # 2) '12/11/25 7:45 AM'
+    if dt.isna().any():
+        mask = dt.isna()
+        try_dt = pd.to_datetime(s[mask], errors="coerce", format="%m/%d/%y %I:%M %p")
+        dt = dt.mask(mask, try_dt)
 
-def merge_dump(
-    dump_path: pathlib.Path,
-    headers: List[str],
-    data: Dict[str, Dict[str, str]],
-    timestamp_header: str,
-) -> None:
-    """Merge a single per-meter dump file into the master dataset."""
-    meter_name = dump_path.stem
-    ensure_column(headers, meter_name)
+    # 3) Fallback to dateutil (mixed leftovers)
+    if dt.isna().any():
+        mask = dt.isna()
+        try_dt = pd.to_datetime(s[mask], errors="coerce", format=None)
+        dt = dt.mask(mask, try_dt)
 
-    with dump_path.open(newline="", encoding=CONFIG["encoding"]) as handle:
-        reader = csv.reader(handle)
-        header_row = next(reader, None)
-        if header_row is None:
-            return
+    # Localize or convert to target timezone
+    if getattr(dt.dt, "tz", None) is None:
+        try:
+            dt = dt.dt.tz_localize(TIMEZONE, nonexistent="shift_forward", ambiguous="NaT")
+        except Exception:
+            dt = dt.dt.tz_localize(TIMEZONE)
+    else:
+        dt = dt.dt.tz_convert(TIMEZONE)
 
-        for row in reader:
-            if not row:
-                continue
-            # Step 1: normalize input values.
-            timestamp = row[0].strip() if len(row) > 0 else ""
-            value = row[1].strip() if len(row) > 1 else ""
-            if not timestamp:
-                continue
+    if ROUND_TO_MINUTE:
+        dt = dt.dt.round("min")  # use modern alias; 'T' may error on newer pandas
+    return dt
 
-            # Step 2: ensure the timestamp exists in the master dataset.
-            if timestamp not in data:
-                data[timestamp] = {timestamp_header: timestamp}
+# ==============================
+# ====== I/O: LOAD FRAMES ======
+# ==============================
 
-            existing = data[timestamp].get(meter_name, "").strip()
-            # Step 3: decide whether to write new data.
-            if CONFIG["overwrite_existing"]:
-                if value:
-                    data[timestamp][meter_name] = value
+def read_master(master_path: Path) -> pd.DataFrame:
+    """
+    Load the existing wide master file exactly as-is, keeping column order.
+    Ensures Timestamp is tz-aware and meter columns are numeric.
+    """
+    if not master_path.exists():
+        # Start empty skeleton with proper dtype
+        return pd.DataFrame(columns=["Timestamp"]).assign(
+            Timestamp=pd.Series(dtype=f"datetime64[ns, {TIMEZONE}]")
+        )
+
+    df = pd.read_csv(master_path)
+    # Preserve original order but normalize header whitespace
+    df.columns = [c.strip() for c in df.columns]
+    if "Timestamp" not in df.columns:
+        raise ValueError(f"'Timestamp' column not found in master file: {master_path.name}")
+
+    df["Timestamp"] = parse_timestamps_to_tz(df["Timestamp"])
+    for c in df.columns:
+        if c != "Timestamp":
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    # Do not alter row order beyond ensuring unique timestamps within master
+    df = df.drop_duplicates(subset=["Timestamp"], keep="first")
+    return df
+
+def load_panel_file(csv_path: Path) -> pd.DataFrame:
+    """
+    Load a single panel dump (2-column CSV) as ['Timestamp', <meter>].
+    The meter column name is taken from the file name; if the header differs,
+    we rename the data column accordingly. Coerces data to numeric.
+    """
+    df = pd.read_csv(csv_path)
+    df.columns = [c.strip() for c in df.columns]
+
+    if "Timestamp" not in df.columns:
+        raise ValueError(f"'Timestamp' column not found in {csv_path.name}")
+
+    meter_col = _meter_name_from_file(csv_path)
+
+    # If the expected meter column isn't present, assume 2nd column is the data and rename it
+    if meter_col not in df.columns:
+        if ASSUME_SECOND_COLUMN_IS_METER and len(df.columns) >= 2:
+            # Pick the first non-Timestamp column
+            second_col = [c for c in df.columns if c != "Timestamp"][0]
+            df = df.rename(columns={second_col: meter_col})
+        else:
+            raise ValueError(
+                f"Meter column '{meter_col}' not found in {csv_path.name} "
+                f"and ASSUME_SECOND_COLUMN_IS_METER={ASSUME_SECOND_COLUMN_IS_METER}."
+            )
+
+    # Keep only the two columns we need
+    df = df[["Timestamp", meter_col]].copy()
+    df["Timestamp"] = parse_timestamps_to_tz(df["Timestamp"])
+    df[meter_col] = pd.to_numeric(df[meter_col], errors="coerce")
+
+    # Drop invalid/duplicate timestamps within the single panel file
+    df = df.dropna(subset=["Timestamp"]).drop_duplicates(subset=["Timestamp"], keep="last")
+    return df
+
+def build_new_data_wide(panel_files: List[Path]) -> pd.DataFrame:
+    """
+    Outer-merge all panel files into a **single wide** dataframe:
+    ['Timestamp', meter1, meter2, ...].
+    """
+    combined: pd.DataFrame | None = None
+
+    for file in panel_files:
+        df = load_panel_file(file)  # ['Timestamp', <meter>]
+        if combined is None:
+            combined = df
+            continue
+
+        combined = pd.merge(
+            combined,
+            df,
+            on="Timestamp",
+            how="outer",
+            suffixes=("", "__dup")
+        )
+
+        # If any duplicate suffixes appear, prefer the left-hand value and drop the dup
+        dup_cols = [c for c in combined.columns if c.endswith("__dup")]
+        for dc in dup_cols:
+            base = dc[:-5]
+            if base in combined.columns:
+                combined[base] = combined[base].combine_first(combined[dc])
             else:
-                if not existing and value:
-                    data[timestamp][meter_name] = value
+                combined = combined.rename(columns={dc: base})
+        if dup_cols:
+            combined = combined.drop(columns=dup_cols)
 
+    if combined is None:
+        combined = pd.DataFrame(columns=["Timestamp"])
 
-def write_master(
-    path: pathlib.Path,
-    headers: List[str],
-    data: Dict[str, Dict[str, str]],
-) -> None:
-    """Write the updated master CSV with ordered timestamps."""
-    timestamp_header = headers[0]
-    ordered_timestamps = sorted(data.keys(), key=_timestamp_sort_key)
+    # Sort & de-dup timestamps in the new snapshot
+    if "Timestamp" in combined.columns:
+        combined = combined.drop_duplicates(subset=["Timestamp"], keep="last").sort_values("Timestamp")
 
-    with path.open("w", newline="", encoding=CONFIG["encoding"]) as handle:
-        writer = csv.DictWriter(handle, fieldnames=headers)
-        writer.writeheader()
-        for timestamp in ordered_timestamps:
-            # Fill blanks for columns that have no data for this timestamp.
-            row = {header: "" for header in headers}
-            row[timestamp_header] = timestamp
-            row.update(data[timestamp])
-            writer.writerow(row)
+    return combined
 
+# ==============================
+# ====== APPEND-ONLY LOGIC =====
+# ==============================
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Merge per-meter CSV dumps into a master CSV."
-    )
-    parser.add_argument(
-        "--master",
-        default=CONFIG["master_path"],
-        type=pathlib.Path,
-        help="Path to the master CSV file.",
-    )
-    parser.add_argument(
-        "--dumps",
-        default=CONFIG["dumps_path"],
-        type=pathlib.Path,
-        help="Directory containing per-meter dump CSV files.",
-    )
-    parser.add_argument(
-        "--output",
-        default=CONFIG["output_path"] or None,
-        type=pathlib.Path,
-        help="Output path for the updated master CSV. Defaults to --master.",
-    )
-    return parser.parse_args()
+def append_only_new_timestamps(master_df: pd.DataFrame, new_wide_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Append rows from new_wide_df where 'Timestamp' is NOT already present in master_df.
+    Does NOT overwrite values in existing master rows.
+    """
+    if new_wide_df.empty or "Timestamp" not in new_wide_df.columns:
+        return master_df
 
+    # Identify new timestamps only
+    existing_ts = set(master_df["Timestamp"].dropna().unique())
+    new_rows = new_wide_df[~new_wide_df["Timestamp"].isin(existing_ts)].copy()
 
-def _timestamp_sort_key(timestamp: str) -> tuple[int, str]:
-    """Return a sort key that prefers parsed timestamps and falls back to raw text."""
-    parsed = _parse_timestamp(timestamp)
-    if parsed is None:
-        return (1, timestamp)
-    return (0, parsed.isoformat())
+    if new_rows.empty:
+        return master_df
 
+    # Build the union of columns (Timestamp first, rest sorted for reproducibility)
+    master_cols = list(master_df.columns)
+    new_cols = [c for c in new_rows.columns if c not in master_cols]
+    all_cols = ["Timestamp"] + [c for c in master_cols if c != "Timestamp"] + sorted([c for c in new_cols if c != "Timestamp"])
 
-def _parse_timestamp(timestamp: str) -> Optional[datetime.datetime]:
-    """Parse timestamps using CONFIG["timestamp_format"] with optional TZ stripping."""
-    cleaned = timestamp.strip()
-    for suffix in CONFIG["drop_timezone_suffixes"]:
-        tz_suffix = f" {suffix}"
-        if cleaned.endswith(tz_suffix):
-            cleaned = cleaned[: -len(tz_suffix)]
-            break
-    try:
-        return datetime.datetime.strptime(cleaned, CONFIG["timestamp_format"])
-    except ValueError:
-        return None
+    # Reindex frames to the same schema (adds missing columns as NaN)
+    master_aligned = master_df.reindex(columns=all_cols)
+    new_rows_aligned = new_rows.reindex(columns=all_cols)
 
+    # Concatenate and keep original master rows intact
+    out = pd.concat([master_aligned, new_rows_aligned], ignore_index=True)
+    # Ensure unique timestamps (master rows already unique; new rows chosen as unique)
+    out = out.drop_duplicates(subset=["Timestamp"], keep="first").sort_values("Timestamp")
 
-def main() -> None:
-    args = parse_args()
-    if not args.master:
-        raise ValueError(
-            "Master path is required. Set CONFIG['master_path'] or pass --master."
-        )
+    return out
 
-    if not args.dumps:
-        raise ValueError(
-            "Dumps path is required. Set CONFIG['dumps_path'] or pass --dumps."
-        )
+# ==============================
+# ============ MAIN ============
+# ==============================
 
-    # If --output (or CONFIG output_path) is omitted, update the master in place.
-    output_path = args.output if args.output else args.master
+def main():
+    master_path = DATA_DIR / MASTER_FILENAME
+    panel_files = sorted(DATA_DIR.glob(GLOB_PATTERN))
 
-    # Step 1: read the existing master file (or initialize headers).
-    headers, data = read_master(args.master)
-    timestamp_header = headers[0]
+    # Load current master
+    master_df = read_master(master_path)
+    rows_before, cols_before = len(master_df), len(master_df.columns)
 
-    # Step 2: validate the dump directory exists and contains CSV files.
-    if not args.dumps.exists() or not args.dumps.is_dir():
-        raise FileNotFoundError(f"Dump directory not found: {args.dumps}")
+    # Build wide snapshot from all panel dumps
+    new_data = build_new_data_wide(panel_files)
 
-    dump_files = sorted(args.dumps.glob(CONFIG["dump_glob"]))
-    if not dump_files:
-        raise FileNotFoundError(f"No CSV files found in {args.dumps}")
+    # Append-only merge (no modification to existing timestamps)
+    updated = append_only_new_timestamps(master_df, new_data)
 
-    # Step 3: merge each dump file into the in-memory dataset.
-    for dump_file in dump_files:
-        merge_dump(dump_file, headers, data, timestamp_header)
+    # Optional fill policy
+    if FILL_MISSING == "0":
+        for c in updated.columns:
+            if c != "Timestamp":
+                updated[c] = updated[c].fillna(0)
 
-    # Step 4: write the updated master CSV.
-    write_master(output_path, headers, data)
+    # Output
+    updated = updated.sort_values("Timestamp")
 
+    if OVERWRITE_IN_PLACE:
+        out_path = master_path
+    else:
+        out_path = master_path.with_name(master_path.stem + "_UPDATED.csv")
+
+    out_df = updated.copy()
+    # Persist ISO8601 with offset, Excel-friendly
+    out_df["Timestamp"] = out_df["Timestamp"].dt.tz_convert(TIMEZONE).dt.strftime("%Y-%m-%d %H:%M:%S%z")
+    out_df.to_csv(out_path, index=False)
+
+    # Console summary
+    print("=== Append-Only BMS Merge Summary ===")
+    print(f"Directory                 : {DATA_DIR.resolve()}")
+    print(f"Master in                 : {master_path.name}")
+    print(f"Master out                : {out_path.name} {'(in-place)' if OVERWRITE_IN_PLACE else ''}")
+    print(f"Discovered panel files    : {len(panel_files)}")
+    print(f"Rows before / after       : {rows_before} -> {len(updated)}  (+{len(updated) - rows_before})")
+    print(f"Columns before / after    : {cols_before} -> {len(updated.columns)}")
+    if len(updated) == rows_before:
+        print("No new timestamps appended (panel dump timestamps already exist in master).")
 
 if __name__ == "__main__":
-    main()
+    # Avoid super-wide console wrapping if pandas prints anything
+    pd.set_option("display.width", 160)
+    try:
+        main()
+    except Exception as e:
+        print("\nERROR:", e, file=sys.stderr)
+        raise
