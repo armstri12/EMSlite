@@ -30,7 +30,7 @@ import plotly.express as px
 LINE_VOLTAGE = 480.0
 POWER_FACTOR = 1.0
 DEFAULT_TOP_N = 6
-DEFAULT_ROLLING_WINDOW = "1H"
+DEFAULT_ROLLING_WINDOW = "1h"
 
 # ==============================
 # ======== CONFIG BLOCK ========
@@ -122,9 +122,24 @@ def plot_total_kw(df: pd.DataFrame, output_dir: Path) -> Path:
     return output_path
 
 
+def normalize_rolling_window(window: str) -> str:
+    return window.replace("H", "h")
+
+
 def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
-    rolling = df.set_index("Timestamp")["Total_kW"].rolling(window).mean().reset_index()
-    fig = px.line(rolling, x="Timestamp", y="Total_kW", title=f"Total kW (Rolling {window})")
+    normalized_window = normalize_rolling_window(window)
+    rolling = (
+        df.set_index("Timestamp")["Total_kW"]
+        .rolling(normalized_window)
+        .mean()
+        .reset_index()
+    )
+    fig = px.line(
+        rolling,
+        x="Timestamp",
+        y="Total_kW",
+        title=f"Total kW (Rolling {normalized_window})",
+    )
     output_path = output_dir / CONFIG["outputs"]["total_kw_rolling"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path

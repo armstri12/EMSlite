@@ -11,7 +11,7 @@ Open `visualize_meter_data.py` and adjust the `CONFIG` block to set:
 - `input_file`: path to your source CSV file.
 - `output_dir`: folder where the HTML plots should be written.
 - `line_voltage` / `power_factor`: conversion constants for amps → kW.
-- `top_n_meters` / `rolling_window`: plot tuning.
+- `top_n_meters` / `rolling_window`: plot tuning (use lowercase units like `1h`).
 - `outputs`: filenames for each plot.
 
 ### Example
@@ -21,7 +21,7 @@ python visualize_meter_data.py \
   --input RawPanelUsageHistory_UPDATED.csv \
   --output-dir visualizations \
   --top-n 6 \
-  --rolling-window 1H
+  --rolling-window 1h
 ```
 
 ### Output files
