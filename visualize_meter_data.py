@@ -238,8 +238,17 @@ def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
     if plot_df.empty:
         return None
     long_df = plot_df.melt(id_vars="Timestamp", var_name="Group", value_name="kW")
-    fig = px.line(long_df, x="Timestamp", y="kW", color="Group", title="Group Columns (kW)")
-    fig.update_layout(legend_title_text="Group")
+    group_count = long_df["Group"].nunique()
+    fig = px.line(
+        long_df,
+        x="Timestamp",
+        y="kW",
+        facet_row="Group",
+        title="Group Columns (kW)",
+    )
+    fig.update_layout(showlegend=False, height=max(300, 250 * group_count))
+    fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
+    fig.update_yaxes(matches=None)
     output_path = output_dir / CONFIG["visualizations"]["group_columns_plot"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
