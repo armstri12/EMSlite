@@ -1,0 +1,31 @@
+{
+  "input_file": "RawPanelUsageHistory_UPDATED.csv",
+  "output_dir": "visualizations",
+  "line_voltage": 480.0,
+  "power_factor": 1.0,
+  "total_amps_sources": null,
+  "combo_columns": {
+    "Production_kW": [],
+    "Facilities_kW": [],
+    "Engineering_kW": []
+  },
+  "rolling_window": "1h",
+  "visualizations": {
+    "total_kw_timeseries": {
+      "enabled": true,
+      "output": "total_kw_timeseries.html"
+    },
+    "total_kw_rolling": {
+      "enabled": true,
+      "output": "total_kw_rolling_1h.html"
+    },
+    "daily_hour_heatmap": {
+      "enabled": true,
+      "output": "daily_hour_heatmap.html"
+    },
+    "group_columns_plot": {
+      "enabled": true,
+      "output": "group_columns_plot.html"
+    }
+  }
+}

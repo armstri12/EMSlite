@@ -10,6 +10,10 @@ Expected input format:
 - Timestamp column named "Timestamp".
 - One or more numeric meter columns (amps).
 
+Config:
+- Defaults loaded from visualization_config.json (override with --config).
+- Config loader accepts JSON with optional // or /* */ comments and trailing commas.
+
 Outputs:
 - total_kw_timeseries.html
 - total_kw_rolling_1h.html
@@ -20,50 +24,51 @@ Outputs:
 from __future__ import annotations
 
 import argparse
+import json
+import re
+from copy import deepcopy
 from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
 import plotly.express as px
 
-LINE_VOLTAGE = 480.0
-POWER_FACTOR = 1.0
-DEFAULT_ROLLING_WINDOW = "1h"
 TOTAL_AMPS_COLUMN_NAME = "Total_Amps"
 TOTAL_KW_COLUMN_NAME = "Total_kW"
 
-# ==============================
-# ======== CONFIG BLOCK ========
-# ==============================
-# Update these defaults to match your environment and desired outputs.
-CONFIG = {
-    # Location of the source data file (wide CSV with Timestamp + meter columns).
+DEFAULT_CONFIG = {
     "input_file": "RawPanelUsageHistory_UPDATED.csv",
-    # Output folder for HTML visualizations.
     "output_dir": "visualizations",
-    # Electrical conversion constants used for amps -> kW.
-    "line_voltage": LINE_VOLTAGE,
-    "power_factor": POWER_FACTOR,
-    # Optional list of meter columns to include in Total_Amps/Total_kW.
-    # Use None to include all meter columns.
+    "line_voltage": 480.0,
+    "power_factor": 1.0,
     "total_amps_sources": None,
-    # Grouped kW columns to compute and optionally plot.
-    # Keys are output column names, values are meter column names to include.
-    "kw_group_columns": {
+    "combo_columns": {
         "Production_kW": [],
         "Facilities_kW": [],
         "Engineering_kW": [],
     },
-    # Plot tuning.
-    "rolling_window": DEFAULT_ROLLING_WINDOW,
-    # Output file names (set to customize or rename artifacts).
-    "outputs": {
-        "total_kw_timeseries": "total_kw_timeseries.html",
-        "total_kw_rolling": "total_kw_rolling_1h.html",
-        "daily_hour_heatmap": "daily_hour_heatmap.html",
-        "group_columns_plot": "group_columns_plot.html",
+    "rolling_window": "1h",
+    "visualizations": {
+        "total_kw_timeseries": {
+            "enabled": True,
+            "output": "total_kw_timeseries.html",
+        },
+        "total_kw_rolling": {
+            "enabled": True,
+            "output": "total_kw_rolling_1h.html",
+        },
+        "daily_hour_heatmap": {
+            "enabled": True,
+            "output": "daily_hour_heatmap.html",
+        },
+        "group_columns_plot": {
+            "enabled": True,
+            "output": "group_columns_plot.html",
+        },
     },
 }
+
+CONFIG: dict[str, object] = deepcopy(DEFAULT_CONFIG)
 
 
 def amps_to_kw(amps: pd.Series) -> pd.Series:
@@ -83,21 +88,57 @@ def resolve_columns(available: Iterable[str], requested: list[str] | None, label
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualize EMS meter data from a wide CSV.")
     parser.add_argument(
+        "--config",
+        default="visualization_config.json",
+        help="Path to the visualization config JSON file.",
+    )
+    parser.add_argument(
         "--input",
-        default=CONFIG["input_file"],
+        default=None,
         help="Path to the input CSV file (wide format with Timestamp column).",
     )
     parser.add_argument(
         "--output-dir",
-        default=CONFIG["output_dir"],
+        default=None,
         help="Directory to write HTML plots (default: visualizations).",
     )
     parser.add_argument(
         "--rolling-window",
-        default=CONFIG["rolling_window"],
-        help=f"Rolling window for the smoothed total kW plot (default: {CONFIG['rolling_window']}).",
+        default=None,
+        help="Rolling window for the smoothed total kW plot (overrides config).",
     )
     return parser.parse_args()
+
+
+def merge_config(base: dict, overrides: dict) -> dict:
+    merged = deepcopy(base)
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def strip_json_noise(raw_text: str) -> str:
+    no_block = re.sub(r"/\*.*?\*/", "", raw_text, flags=re.DOTALL)
+    no_line = re.sub(r"//.*?$", "", no_block, flags=re.MULTILINE)
+    no_trailing = re.sub(r",(\s*[}\]])", r"\1", no_line)
+    return no_trailing
+
+
+def load_config(path: Path) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Config file not found: {path}. Create it or pass --config to specify one."
+        )
+    raw_text = path.read_text(encoding="utf-8")
+    try:
+        loaded = json.loads(raw_text)
+    except json.JSONDecodeError:
+        sanitized = strip_json_noise(raw_text)
+        loaded = json.loads(sanitized)
+    return merge_config(DEFAULT_CONFIG, loaded)
 
 
 def load_data(path: Path) -> pd.DataFrame:
@@ -119,7 +160,7 @@ def meter_columns(columns: Iterable[str]) -> list[str]:
     computed_names = {
         TOTAL_AMPS_COLUMN_NAME,
         TOTAL_KW_COLUMN_NAME,
-        *CONFIG["kw_group_columns"].keys(),
+        *CONFIG["combo_columns"].keys(),
     }
     return [col for col in columns if col != "Timestamp" and col not in computed_names]
 
@@ -132,8 +173,8 @@ def add_usage_columns(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
         df[TOTAL_AMPS_COLUMN_NAME] = total_amps
         df[TOTAL_KW_COLUMN_NAME] = amps_to_kw(total_amps)
 
-    for group_name, group_columns in CONFIG["kw_group_columns"].items():
-        resolved = resolve_columns(meters, group_columns, f"kw_group_columns[{group_name}]")
+    for group_name, group_columns in CONFIG["combo_columns"].items():
+        resolved = resolve_columns(meters, group_columns, f"combo_columns[{group_name}]")
         if not resolved:
             continue
         group_amps = df[resolved].fillna(0).sum(axis=1)
@@ -144,7 +185,7 @@ def add_usage_columns(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
 
 def plot_total_kw(df: pd.DataFrame, output_dir: Path) -> Path:
     fig = px.line(df, x="Timestamp", y=TOTAL_KW_COLUMN_NAME, title="Total kW Over Time")
-    output_path = output_dir / CONFIG["outputs"]["total_kw_timeseries"]
+    output_path = output_dir / CONFIG["visualizations"]["total_kw_timeseries"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
@@ -167,7 +208,7 @@ def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Pa
         y=TOTAL_KW_COLUMN_NAME,
         title=f"Total kW (Rolling {normalized_window})",
     )
-    output_path = output_dir / CONFIG["outputs"]["total_kw_rolling"]
+    output_path = output_dir / CONFIG["visualizations"]["total_kw_rolling"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
@@ -184,13 +225,13 @@ def plot_daily_hour_heatmap(df: pd.DataFrame, output_dir: Path) -> Path:
         title="Average Total kW by Hour and Day",
         labels={"color": "kW"},
     )
-    output_path = output_dir / CONFIG["outputs"]["daily_hour_heatmap"]
+    output_path = output_dir / CONFIG["visualizations"]["daily_hour_heatmap"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
 
 def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
-    group_columns = [name for name in CONFIG["kw_group_columns"].keys() if name in df.columns]
+    group_columns = [name for name in CONFIG["combo_columns"].keys() if name in df.columns]
     if not group_columns:
         return None
     plot_df = df[["Timestamp", *group_columns]].dropna(subset=["Timestamp"]).copy()
@@ -199,15 +240,30 @@ def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
     long_df = plot_df.melt(id_vars="Timestamp", var_name="Group", value_name="kW")
     fig = px.line(long_df, x="Timestamp", y="kW", color="Group", title="Group Columns (kW)")
     fig.update_layout(legend_title_text="Group")
-    output_path = output_dir / CONFIG["outputs"]["group_columns_plot"]
+    output_path = output_dir / CONFIG["visualizations"]["group_columns_plot"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
 
+def describe_combo_columns(meters: list[str]) -> None:
+    total_sources = resolve_columns(meters, CONFIG["total_amps_sources"], "total_amps_sources")
+    total_display = total_sources if total_sources else []
+    if CONFIG["total_amps_sources"] is None:
+        total_display = meters
+    print("Combo column definitions:")
+    print(f"- {TOTAL_AMPS_COLUMN_NAME}/{TOTAL_KW_COLUMN_NAME}: {total_display}")
+    for name, columns in CONFIG["combo_columns"].items():
+        resolved = resolve_columns(meters, columns, f"combo_columns[{name}]")
+        print(f"- {name}: {resolved}")
+
+
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input)
-    output_dir = Path(args.output_dir)
+    global CONFIG
+    CONFIG = load_config(Path(args.config))
+    input_path = Path(args.input or CONFIG["input_file"])
+    output_dir = Path(args.output_dir or CONFIG["output_dir"])
+    rolling_window = args.rolling_window or CONFIG["rolling_window"]
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df = load_data(input_path)
@@ -215,20 +271,23 @@ def main() -> None:
     if not meters:
         raise ValueError("No meter columns found in the input file.")
 
+    describe_combo_columns(meters)
     df = add_usage_columns(df, meters)
 
     outputs = []
-    if TOTAL_KW_COLUMN_NAME in df.columns:
-        outputs.extend(
-            [
-                plot_total_kw(df, output_dir),
-                plot_total_kw_rolling(df, output_dir, args.rolling_window),
-                plot_daily_hour_heatmap(df, output_dir),
-            ]
-        )
-    group_plot = plot_group_columns(df, output_dir)
-    if group_plot:
-        outputs.append(group_plot)
+    if (
+        TOTAL_KW_COLUMN_NAME in df.columns
+        and CONFIG["visualizations"]["total_kw_timeseries"]["enabled"]
+    ):
+        outputs.append(plot_total_kw(df, output_dir))
+    if TOTAL_KW_COLUMN_NAME in df.columns and CONFIG["visualizations"]["total_kw_rolling"]["enabled"]:
+        outputs.append(plot_total_kw_rolling(df, output_dir, rolling_window))
+    if TOTAL_KW_COLUMN_NAME in df.columns and CONFIG["visualizations"]["daily_hour_heatmap"]["enabled"]:
+        outputs.append(plot_daily_hour_heatmap(df, output_dir))
+    if CONFIG["visualizations"]["group_columns_plot"]["enabled"]:
+        group_plot = plot_group_columns(df, output_dir)
+        if group_plot:
+            outputs.append(group_plot)
 
     print("Generated visualizations:")
     for out in outputs:
