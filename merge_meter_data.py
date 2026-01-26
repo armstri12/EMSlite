@@ -27,6 +27,7 @@ import sys
 from typing import Iterable, List
 
 import pandas as pd
+import plotly.express as px
 
 # ==============================
 # ========== CONSTANTS =========
@@ -54,6 +55,16 @@ TOTAL_AMPS_COLUMN_NAME: str = "Total_Amps"
 TOTAL_KW_COLUMN_NAME: str = "Total_kW"
 TOTAL_AMPS_SOURCE_COLUMNS: list[str] | None = None  # None => all meter columns; otherwise list of meter columns
 
+# Grouped kW columns to compute and plot.
+# - Keys are the *output* column names that will be added to the final CSV.
+# - Values are lists of *meter column names* to include in each group.
+# - Use exact meter column names as they appear in the master/panel files (after header cleanup).
+#   Example (replace with your meter names):
+#   KW_GROUP_COLUMNS = {
+#       "Production_kW": ["MeterATS01_SystemCurrent", "MeterATS02_SystemCurrent"],
+#       "Facilities_kW": ["MeterATS03_SystemCurrent"],
+#       "Engineering_kW": ["MeterATS04_SystemCurrent", "MeterATS05_SystemCurrent"],
+#   }
 KW_GROUP_COLUMNS: dict[str, list[str]] = {
     "Production_kW": [],
     "Facilities_kW": [],
@@ -62,6 +73,10 @@ KW_GROUP_COLUMNS: dict[str, list[str]] = {
 
 LINE_VOLTAGE: float = 480.0
 POWER_FACTOR: float = 1.0
+
+# Plotting
+PLOT_GROUP_COLUMNS: bool = True
+PLOT_OUTPUT_HTML: str = "group_columns_plot.html"
 
 # ==============================
 # ======== UTILITIES ===========
@@ -161,6 +176,21 @@ def add_usage_columns(df: pd.DataFrame) -> pd.DataFrame:
         df[group_name] = amps_to_kw(group_amps)
 
     return df
+
+def plot_group_columns(df: pd.DataFrame, output_html: str) -> None:
+    group_columns = [name for name in KW_GROUP_COLUMNS.keys() if name in df.columns]
+    if not group_columns:
+        print("No group columns available to plot.")
+        return
+    plot_df = df[["Timestamp", *group_columns]].dropna(subset=["Timestamp"]).copy()
+    if plot_df.empty:
+        print("No data available for plotting group columns.")
+        return
+    long_df = plot_df.melt(id_vars="Timestamp", var_name="Group", value_name="kW")
+    fig = px.line(long_df, x="Timestamp", y="kW", color="Group", title="Group Columns (kW)")
+    fig.update_layout(legend_title_text="Group")
+    fig.write_html(output_html, include_plotlyjs="cdn")
+    print(f"Plot written to: {output_html}")
 
 # ==============================
 # ====== I/O: LOAD FRAMES ======
@@ -328,6 +358,9 @@ def main():
 
     # Add aggregate usage columns (amps + kW)
     updated = add_usage_columns(updated)
+
+    if PLOT_GROUP_COLUMNS:
+        plot_group_columns(updated, PLOT_OUTPUT_HTML)
 
     # Output
     updated = updated.sort_values("Timestamp")
