@@ -109,6 +109,10 @@ def parse_timestamps_to_tz(series: pd.Series) -> pd.Series:
         try_dt = pd.to_datetime(s[mask], errors="coerce", format=None)
         dt = dt.mask(mask, try_dt)
 
+    # Ensure we ended with a datetime-like Series before using .dt
+    if not (pd.api.types.is_datetime64_any_dtype(dt) or pd.api.types.is_datetime64tz_dtype(dt)):
+        dt = pd.to_datetime(dt, errors="coerce")
+
     # Localize or convert to target timezone
     if getattr(dt.dt, "tz", None) is None:
         try:
