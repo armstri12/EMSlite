@@ -4,6 +4,16 @@
 
 Use `visualize_meter_data.py` to generate multiple interactive plots from a wide CSV export (Timestamp + meter columns).
 
+### Config block
+
+Open `visualize_meter_data.py` and adjust the `CONFIG` block to set:
+
+- `input_file`: path to your source CSV file.
+- `output_dir`: folder where the HTML plots should be written.
+- `line_voltage` / `power_factor`: conversion constants for amps → kW.
+- `top_n_meters` / `rolling_window`: plot tuning.
+- `outputs`: filenames for each plot.
+
 ### Example
 
 ```bash

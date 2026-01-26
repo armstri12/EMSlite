@@ -32,33 +32,58 @@ POWER_FACTOR = 1.0
 DEFAULT_TOP_N = 6
 DEFAULT_ROLLING_WINDOW = "1H"
 
+# ==============================
+# ======== CONFIG BLOCK ========
+# ==============================
+# Update these defaults to match your environment and desired outputs.
+CONFIG = {
+    # Location of the source data file (wide CSV with Timestamp + meter columns).
+    "input_file": "RawPanelUsageHistory_UPDATED.csv",
+    # Output folder for HTML visualizations.
+    "output_dir": "visualizations",
+    # Electrical conversion constants used for amps -> kW.
+    "line_voltage": LINE_VOLTAGE,
+    "power_factor": POWER_FACTOR,
+    # Plot tuning.
+    "top_n_meters": DEFAULT_TOP_N,
+    "rolling_window": DEFAULT_ROLLING_WINDOW,
+    # Output file names (set to customize or rename artifacts).
+    "outputs": {
+        "total_kw_timeseries": "total_kw_timeseries.html",
+        "total_kw_rolling": "total_kw_rolling_1h.html",
+        "top_meters_timeseries": "top_meters_timeseries.html",
+        "total_kw_histogram": "total_kw_histogram.html",
+        "daily_hour_heatmap": "daily_hour_heatmap.html",
+    },
+}
+
 
 def amps_to_kw(amps: pd.Series) -> pd.Series:
-    return amps * (LINE_VOLTAGE * 3 ** 0.5 * POWER_FACTOR) / 1000.0
+    return amps * (CONFIG["line_voltage"] * 3 ** 0.5 * CONFIG["power_factor"]) / 1000.0
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Visualize EMS meter data from a wide CSV.")
     parser.add_argument(
         "--input",
-        required=True,
+        default=CONFIG["input_file"],
         help="Path to the input CSV file (wide format with Timestamp column).",
     )
     parser.add_argument(
         "--output-dir",
-        default="visualizations",
+        default=CONFIG["output_dir"],
         help="Directory to write HTML plots (default: visualizations).",
     )
     parser.add_argument(
         "--top-n",
         type=int,
-        default=DEFAULT_TOP_N,
-        help=f"Number of top meters to plot (default: {DEFAULT_TOP_N}).",
+        default=CONFIG["top_n_meters"],
+        help=f"Number of top meters to plot (default: {CONFIG['top_n_meters']}).",
     )
     parser.add_argument(
         "--rolling-window",
-        default=DEFAULT_ROLLING_WINDOW,
-        help=f"Rolling window for the smoothed total kW plot (default: {DEFAULT_ROLLING_WINDOW}).",
+        default=CONFIG["rolling_window"],
+        help=f"Rolling window for the smoothed total kW plot (default: {CONFIG['rolling_window']}).",
     )
     return parser.parse_args()
 
@@ -92,7 +117,7 @@ def add_total_kw(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
 
 def plot_total_kw(df: pd.DataFrame, output_dir: Path) -> Path:
     fig = px.line(df, x="Timestamp", y="Total_kW", title="Total kW Over Time")
-    output_path = output_dir / "total_kw_timeseries.html"
+    output_path = output_dir / CONFIG["outputs"]["total_kw_timeseries"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
@@ -100,7 +125,7 @@ def plot_total_kw(df: pd.DataFrame, output_dir: Path) -> Path:
 def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
     rolling = df.set_index("Timestamp")["Total_kW"].rolling(window).mean().reset_index()
     fig = px.line(rolling, x="Timestamp", y="Total_kW", title=f"Total kW (Rolling {window})")
-    output_path = output_dir / "total_kw_rolling_1h.html"
+    output_path = output_dir / CONFIG["outputs"]["total_kw_rolling"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
@@ -114,14 +139,14 @@ def plot_top_meters(df: pd.DataFrame, meters: list[str], top_n: int, output_dir:
         value_name="Amps",
     )
     fig = px.line(long_df, x="Timestamp", y="Amps", color="Meter", title=f"Top {top_n} Meters (Amps)")
-    output_path = output_dir / "top_meters_timeseries.html"
+    output_path = output_dir / CONFIG["outputs"]["top_meters_timeseries"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
 
 def plot_total_kw_histogram(df: pd.DataFrame, output_dir: Path) -> Path:
     fig = px.histogram(df, x="Total_kW", nbins=60, title="Distribution of Total kW")
-    output_path = output_dir / "total_kw_histogram.html"
+    output_path = output_dir / CONFIG["outputs"]["total_kw_histogram"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
@@ -138,7 +163,7 @@ def plot_daily_hour_heatmap(df: pd.DataFrame, output_dir: Path) -> Path:
         title="Average Total kW by Hour and Day",
         labels={"color": "kW"},
     )
-    output_path = output_dir / "daily_hour_heatmap.html"
+    output_path = output_dir / CONFIG["outputs"]["daily_hour_heatmap"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
 
