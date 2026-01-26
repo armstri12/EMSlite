@@ -13,9 +13,8 @@ Expected input format:
 Outputs:
 - total_kw_timeseries.html
 - total_kw_rolling_1h.html
-- top_meters_timeseries.html
-- total_kw_histogram.html
 - daily_hour_heatmap.html
+- group_columns_plot.html
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ import plotly.express as px
 
 LINE_VOLTAGE = 480.0
 POWER_FACTOR = 1.0
-DEFAULT_TOP_N = 6
 DEFAULT_ROLLING_WINDOW = "1h"
 TOTAL_AMPS_COLUMN_NAME = "Total_Amps"
 TOTAL_KW_COLUMN_NAME = "Total_kW"
@@ -57,14 +55,11 @@ CONFIG = {
         "Engineering_kW": [],
     },
     # Plot tuning.
-    "top_n_meters": DEFAULT_TOP_N,
     "rolling_window": DEFAULT_ROLLING_WINDOW,
     # Output file names (set to customize or rename artifacts).
     "outputs": {
         "total_kw_timeseries": "total_kw_timeseries.html",
         "total_kw_rolling": "total_kw_rolling_1h.html",
-        "top_meters_timeseries": "top_meters_timeseries.html",
-        "total_kw_histogram": "total_kw_histogram.html",
         "daily_hour_heatmap": "daily_hour_heatmap.html",
         "group_columns_plot": "group_columns_plot.html",
     },
@@ -96,12 +91,6 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         default=CONFIG["output_dir"],
         help="Directory to write HTML plots (default: visualizations).",
-    )
-    parser.add_argument(
-        "--top-n",
-        type=int,
-        default=CONFIG["top_n_meters"],
-        help=f"Number of top meters to plot (default: {CONFIG['top_n_meters']}).",
     )
     parser.add_argument(
         "--rolling-window",
@@ -183,27 +172,6 @@ def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Pa
     return output_path
 
 
-def plot_top_meters(df: pd.DataFrame, meters: list[str], top_n: int, output_dir: Path) -> Path:
-    ranked = df[meters].mean().sort_values(ascending=False)
-    top_meters = ranked.head(top_n).index.tolist()
-    long_df = df[["Timestamp", *top_meters]].melt(
-        id_vars="Timestamp",
-        var_name="Meter",
-        value_name="Amps",
-    )
-    fig = px.line(long_df, x="Timestamp", y="Amps", color="Meter", title=f"Top {top_n} Meters (Amps)")
-    output_path = output_dir / CONFIG["outputs"]["top_meters_timeseries"]
-    fig.write_html(output_path, include_plotlyjs="cdn")
-    return output_path
-
-
-def plot_total_kw_histogram(df: pd.DataFrame, output_dir: Path) -> Path:
-    fig = px.histogram(df, x=TOTAL_KW_COLUMN_NAME, nbins=60, title="Distribution of Total kW")
-    output_path = output_dir / CONFIG["outputs"]["total_kw_histogram"]
-    fig.write_html(output_path, include_plotlyjs="cdn")
-    return output_path
-
-
 def plot_daily_hour_heatmap(df: pd.DataFrame, output_dir: Path) -> Path:
     temp = df.copy()
     temp["Date"] = temp["Timestamp"].dt.date
@@ -255,12 +223,9 @@ def main() -> None:
             [
                 plot_total_kw(df, output_dir),
                 plot_total_kw_rolling(df, output_dir, args.rolling_window),
-                plot_total_kw_histogram(df, output_dir),
                 plot_daily_hour_heatmap(df, output_dir),
             ]
         )
-    outputs.append(plot_top_meters(df, meters, args.top_n, output_dir))
-
     group_plot = plot_group_columns(df, output_dir)
     if group_plot:
         outputs.append(group_plot)
