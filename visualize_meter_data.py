@@ -200,6 +200,22 @@ def normalize_rolling_window(window: str) -> str:
     return window.replace("H", "h")
 
 
+def parse_window_to_hours(window: str) -> float:
+    normalized = normalize_rolling_window(window).strip()
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)([a-zA-Z]+)", normalized)
+    if not match:
+        raise ValueError(f"Unsupported rolling window format: {window}")
+    value = float(match.group(1))
+    unit = match.group(2).lower()
+    if unit in {"h", "hr", "hrs", "hour", "hours"}:
+        return value
+    if unit in {"m", "min", "mins", "minute", "minutes"}:
+        return value / 60.0
+    if unit in {"d", "day", "days"}:
+        return value * 24.0
+    raise ValueError(f"Unsupported rolling window unit: {window}")
+
+
 def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
     fig = create_total_kw_rolling_fig(df, window)
     output_path = output_dir / CONFIG["visualizations"]["total_kw_rolling"]["output"]
@@ -293,34 +309,48 @@ def compute_energy_metrics(df: pd.DataFrame) -> dict[str, float]:
 
 
 def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
-    metrics = compute_energy_metrics(df)
+    ordered = df.sort_values("Timestamp")
+    timestamps = ordered["Timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ").tolist()
+    total_kw = ordered.get(TOTAL_KW_COLUMN_NAME, pd.Series()).fillna(0).tolist()
+    group_columns = [name for name in CONFIG["combo_columns"].keys() if name in ordered.columns]
+    group_series = {name: ordered[name].fillna(0).tolist() for name in group_columns}
     price_per_kwh = float(CONFIG["price_per_kwh"])
-    total_cost = metrics.get("total_kwh", 0.0) * price_per_kwh
-    date_range = ""
-    if not df.empty:
-        start = df["Timestamp"].min()
-        end = df["Timestamp"].max()
-        if pd.notna(start) and pd.notna(end):
-            date_range = f"{start.date()} → {end.date()}"
+    rolling_hours = parse_window_to_hours(window)
 
-    figures = [
-        ("Total Load", create_total_kw_fig(df)),
-        ("Smoothed Load", create_total_kw_rolling_fig(df, window)),
-        ("Load Heatmap", create_daily_hour_heatmap_fig(df)),
-    ]
-    group_fig = create_group_columns_fig(df)
-    if group_fig is not None:
-        figures.append(("Group Loads", group_fig))
+    data_payload = {
+        "timestamps": timestamps,
+        "total_kw": total_kw,
+        "group_series": group_series,
+        "rolling_hours": rolling_hours,
+        "price_per_kwh": price_per_kwh,
+    }
 
-    chart_cards = "\n".join(
-        f"""
-        <div class="chart-card">
-          <div class="chart-title">{title}</div>
-          {pio.to_html(fig, include_plotlyjs=False, full_html=False)}
-        </div>
+    group_card = ""
+    group_script = ""
+    if group_columns:
+        group_card = """
+          <div class="chart-card">
+            <div class="chart-title">Group Loads</div>
+            <div id="group-load-chart" class="chart"></div>
+          </div>
         """
-        for title, fig in figures
-    )
+        group_script = """
+          function renderGroupChart(data) {
+            const traces = Object.entries(data.groupSeries).map(([name, values]) => ({
+              x: data.timestamps,
+              y: values,
+              mode: "lines",
+              name
+            }));
+            Plotly.newPlot("group-load-chart", traces, {
+              margin: { t: 16, l: 50, r: 24, b: 40 },
+              legend: { orientation: "h" },
+              xaxis: { title: "Timestamp", type: "date" },
+              yaxis: { title: "kW" },
+              template: "plotly_white"
+            }, { displaylogo: false, responsive: true });
+          }
+        """
 
     html = f"""
     <!DOCTYPE html>
@@ -357,6 +387,40 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             margin-top: 6px;
             color: var(--muted);
             font-size: 14px;
+          }}
+          .filters {{
+            margin-top: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+          }}
+          .filters label {{
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }}
+          .filters input {{
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 8px 10px;
+            font-size: 14px;
+            color: var(--ink);
+            background: var(--card);
+          }}
+          .filters button {{
+            border: none;
+            border-radius: 10px;
+            padding: 8px 14px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            background: var(--accent);
+            cursor: pointer;
+          }}
+          .filters button.secondary {{
+            background: #94a3b8;
           }}
           .stats-grid {{
             display: grid;
@@ -403,6 +467,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             font-weight: 600;
             color: var(--ink);
           }}
+          .chart {{
+            min-height: 320px;
+          }}
           .chart-card .plotly-graph-div {{
             width: 100% !important;
           }}
@@ -411,33 +478,252 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
       <body>
         <div class="header">
           <h1 class="title">EMS Energy Dashboard</h1>
-          <div class="subtitle">Total cost uses ${price_per_kwh:.2f} / kWh · {date_range}</div>
+          <div class="subtitle">Interactive totals using ${price_per_kwh:.2f} / kWh</div>
+          <div class="filters">
+            <div>
+              <label for="start-date">Start Date</label>
+              <input type="date" id="start-date" />
+            </div>
+            <div>
+              <label for="end-date">End Date</label>
+              <input type="date" id="end-date" />
+            </div>
+            <button id="apply-filters">Apply Dates</button>
+            <button id="reset-filters" class="secondary">Reset</button>
+          </div>
         </div>
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-label">Total Energy</div>
-            <div class="stat-value">{metrics.get("total_kwh", 0.0):,.2f} kWh</div>
+            <div class="stat-value" id="total-energy">0.00 kWh</div>
             <div class="stat-hint">Integrated from total load</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Estimated Cost</div>
-            <div class="stat-value">${total_cost:,.2f}</div>
+            <div class="stat-value" id="total-cost">$0.00</div>
             <div class="stat-hint">Rate: ${price_per_kwh:.2f} / kWh</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Average Load</div>
-            <div class="stat-value">{metrics.get("average_kw", 0.0):,.2f} kW</div>
+            <div class="stat-value" id="average-load">0.00 kW</div>
             <div class="stat-hint">Mean across timestamps</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Peak Load</div>
-            <div class="stat-value">{metrics.get("peak_kw", 0.0):,.2f} kW</div>
+            <div class="stat-value" id="peak-load">0.00 kW</div>
             <div class="stat-hint">Highest observed value</div>
           </div>
         </div>
         <div class="charts-grid">
-          {chart_cards}
+          <div class="chart-card">
+            <div class="chart-title">Total Load</div>
+            <div id="total-load-chart" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Smoothed Load</div>
+            <div id="rolling-load-chart" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Load Heatmap</div>
+            <div id="heatmap-chart" class="chart"></div>
+          </div>
+          {group_card}
         </div>
+        <script>
+          const dashboardData = {json.dumps(data_payload)};
+
+          const startInput = document.getElementById("start-date");
+          const endInput = document.getElementById("end-date");
+          const applyButton = document.getElementById("apply-filters");
+          const resetButton = document.getElementById("reset-filters");
+
+          function toDateOnly(date) {{
+            return date.toISOString().slice(0, 10);
+          }}
+
+          function initDateInputs() {{
+            const timestamps = dashboardData.timestamps;
+            if (!timestamps.length) {{
+              return;
+            }}
+            const dates = timestamps.map((ts) => new Date(ts));
+            const minDate = new Date(Math.min(...dates));
+            const maxDate = new Date(Math.max(...dates));
+            startInput.min = toDateOnly(minDate);
+            startInput.max = toDateOnly(maxDate);
+            endInput.min = toDateOnly(minDate);
+            endInput.max = toDateOnly(maxDate);
+            startInput.value = toDateOnly(minDate);
+            endInput.value = toDateOnly(maxDate);
+          }}
+
+          function filterData() {{
+            const startDate = startInput.value ? new Date(`${{startInput.value}}T00:00:00Z`) : null;
+            const endDate = endInput.value ? new Date(`${{endInput.value}}T23:59:59Z`) : null;
+            const filtered = {{
+              timestamps: [],
+              totalKw: [],
+              groupSeries: Object.fromEntries(Object.keys(dashboardData.group_series).map((key) => [key, []]))
+            }};
+            dashboardData.timestamps.forEach((ts, idx) => {{
+              const date = new Date(ts);
+              if (startDate && date < startDate) {{
+                return;
+              }}
+              if (endDate && date > endDate) {{
+                return;
+              }}
+              filtered.timestamps.push(ts);
+              filtered.totalKw.push(dashboardData.total_kw[idx]);
+              Object.keys(dashboardData.group_series).forEach((key) => {{
+                filtered.groupSeries[key].push(dashboardData.group_series[key][idx]);
+              }});
+            }});
+            return filtered;
+          }}
+
+          function computeMetrics(timestamps, totalKw) {{
+            let totalKwh = 0;
+            let peakKw = 0;
+            let sumKw = 0;
+            for (let i = 0; i < timestamps.length; i++) {{
+              const kw = totalKw[i] ?? 0;
+              sumKw += kw;
+              if (kw > peakKw) {{
+                peakKw = kw;
+              }}
+              if (i === 0) {{
+                continue;
+              }}
+              const prev = new Date(timestamps[i - 1]).getTime();
+              const curr = new Date(timestamps[i]).getTime();
+              const hours = Math.max(0, (curr - prev) / 3600000);
+              totalKwh += kw * hours;
+            }}
+            const avgKw = timestamps.length ? sumKw / timestamps.length : 0;
+            return {{ totalKwh, avgKw, peakKw }};
+          }}
+
+          function rollingMean(timestamps, values, windowHours) {{
+            const windowMs = windowHours * 3600000;
+            const result = [];
+            let startIndex = 0;
+            let sum = 0;
+            for (let i = 0; i < timestamps.length; i++) {{
+              const currentTime = new Date(timestamps[i]).getTime();
+              sum += values[i] ?? 0;
+              while (currentTime - new Date(timestamps[startIndex]).getTime() > windowMs) {{
+                sum -= values[startIndex] ?? 0;
+                startIndex += 1;
+              }}
+              const count = i - startIndex + 1;
+              result.push(count ? sum / count : 0);
+            }}
+            return result;
+          }}
+
+          function buildHeatmap(timestamps, totalKw) {{
+            const buckets = {{}};
+            timestamps.forEach((ts, idx) => {{
+              const dateObj = new Date(ts);
+              const dateKey = dateObj.toISOString().slice(0, 10);
+              const hour = dateObj.getUTCHours();
+              if (!buckets[dateKey]) {{
+                buckets[dateKey] = {{}};
+              }}
+              if (!buckets[dateKey][hour]) {{
+                buckets[dateKey][hour] = {{ sum: 0, count: 0 }};
+              }}
+              buckets[dateKey][hour].sum += totalKw[idx] ?? 0;
+              buckets[dateKey][hour].count += 1;
+            }});
+            const dates = Object.keys(buckets).sort();
+            const hours = Array.from({{ length: 24 }}, (_, i) => i);
+            const z = hours.map((hour) =>
+              dates.map((date) => {{
+                const bucket = buckets[date][hour];
+                if (!bucket) {{
+                  return null;
+                }}
+                return bucket.sum / bucket.count;
+              }})
+            );
+            return {{ dates, hours, z }};
+          }}
+
+          function renderCharts(data) {{
+            const totalTrace = {{
+              x: data.timestamps,
+              y: data.totalKw,
+              mode: "lines",
+              line: {{ color: "#2563eb" }}
+            }};
+            Plotly.newPlot("total-load-chart", [totalTrace], {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "Timestamp", type: "date" }},
+              yaxis: {{ title: "kW" }},
+              template: "plotly_white"
+            }}, {{ displaylogo: false, responsive: true }});
+
+            const rollingValues = rollingMean(data.timestamps, data.totalKw, dashboardData.rolling_hours);
+            const rollingTrace = {{
+              x: data.timestamps,
+              y: rollingValues,
+              mode: "lines",
+              line: {{ color: "#16a34a" }}
+            }};
+            Plotly.newPlot("rolling-load-chart", [rollingTrace], {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "Timestamp", type: "date" }},
+              yaxis: {{ title: "kW" }},
+              template: "plotly_white"
+            }}, {{ displaylogo: false, responsive: true }});
+
+            const heatmap = buildHeatmap(data.timestamps, data.totalKw);
+            Plotly.newPlot("heatmap-chart", [{{
+              x: heatmap.dates,
+              y: heatmap.hours,
+              z: heatmap.z,
+              type: "heatmap",
+              colorscale: "Blues",
+              colorbar: {{ title: "kW" }}
+            }}], {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "Date", type: "category" }},
+              yaxis: {{ title: "Hour", autorange: "reversed" }},
+              template: "plotly_white"
+            }}, {{ displaylogo: false, responsive: true }});
+
+            if (Object.keys(data.groupSeries).length) {{
+              renderGroupChart(data);
+            }}
+          }}
+
+          function updateMetrics(data) {{
+            const metrics = computeMetrics(data.timestamps, data.totalKw);
+            document.getElementById("total-energy").textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+            document.getElementById("average-load").textContent = `${{metrics.avgKw.toFixed(2)}} kW`;
+            document.getElementById("peak-load").textContent = `${{metrics.peakKw.toFixed(2)}} kW`;
+            const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+            document.getElementById("total-cost").textContent = `$${{totalCost.toFixed(2)}}`;
+          }}
+
+          function renderDashboard() {{
+            const filtered = filterData();
+            renderCharts(filtered);
+            updateMetrics(filtered);
+          }}
+
+          applyButton.addEventListener("click", renderDashboard);
+          resetButton.addEventListener("click", () => {{
+            initDateInputs();
+            renderDashboard();
+          }});
+
+          initDateInputs();
+          renderDashboard();
+          {group_script}
+        </script>
       </body>
     </html>
     """
