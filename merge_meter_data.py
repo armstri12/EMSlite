@@ -10,6 +10,8 @@ Configuration (edit the CONFIG dict below):
   - dumps_path: Path to the folder with per-meter CSV dumps (--dumps overrides).
   - output_path: Where to write the updated master (optional, defaults to master).
   - timestamp_fallback: Header name to use when creating a brand new master file.
+  - timestamp_format: strptime format for sorting timestamps.
+  - drop_timezone_suffixes: Timezone strings to strip before parsing.
   - dump_glob: Pattern for discovering per-meter CSV files in the dumps directory.
   - overwrite_existing: If False, only fill empty cells in the master file.
   - encoding: File encoding used for reading/writing CSVs.
@@ -30,8 +32,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import pathlib
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 # ----------------------------
@@ -44,6 +47,10 @@ CONFIG = {
     # Leave blank ("") to overwrite the master in place.
     "output_path": "",
     "timestamp_fallback": "Timestamp",
+    # Example format for: 18-Jan-26 3:15 AM EST
+    "timestamp_format": "%d-%b-%y %I:%M %p",
+    # If your timestamps end with a timezone (e.g., EST), list it here to strip it.
+    "drop_timezone_suffixes": ["EST", "EDT"],
     "dump_glob": "*.csv",
     "overwrite_existing": False,
     "encoding": "utf-8",
@@ -130,7 +137,7 @@ def write_master(
 ) -> None:
     """Write the updated master CSV with ordered timestamps."""
     timestamp_header = headers[0]
-    ordered_timestamps = sorted(data.keys())
+    ordered_timestamps = sorted(data.keys(), key=_timestamp_sort_key)
 
     with path.open("w", newline="", encoding=CONFIG["encoding"]) as handle:
         writer = csv.DictWriter(handle, fieldnames=headers)
@@ -166,6 +173,28 @@ def parse_args() -> argparse.Namespace:
         help="Output path for the updated master CSV. Defaults to --master.",
     )
     return parser.parse_args()
+
+
+def _timestamp_sort_key(timestamp: str) -> tuple[int, str]:
+    """Return a sort key that prefers parsed timestamps and falls back to raw text."""
+    parsed = _parse_timestamp(timestamp)
+    if parsed is None:
+        return (1, timestamp)
+    return (0, parsed.isoformat())
+
+
+def _parse_timestamp(timestamp: str) -> Optional[datetime.datetime]:
+    """Parse timestamps using CONFIG["timestamp_format"] with optional TZ stripping."""
+    cleaned = timestamp.strip()
+    for suffix in CONFIG["drop_timezone_suffixes"]:
+        tz_suffix = f" {suffix}"
+        if cleaned.endswith(tz_suffix):
+            cleaned = cleaned[: -len(tz_suffix)]
+            break
+    try:
+        return datetime.datetime.strptime(cleaned, CONFIG["timestamp_format"])
+    except ValueError:
+        return None
 
 
 def main() -> None:
