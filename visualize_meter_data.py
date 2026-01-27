@@ -516,16 +516,24 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         </div>
         <div class="charts-grid">
           <div class="chart-card">
-            <div class="chart-title">Total Load</div>
-            <div id="total-load-chart" class="chart"></div>
-          </div>
-          <div class="chart-card">
             <div class="chart-title">Smoothed Load</div>
             <div id="rolling-load-chart" class="chart"></div>
           </div>
           <div class="chart-card">
             <div class="chart-title">Load Heatmap</div>
             <div id="heatmap-chart" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Average Hourly Profile</div>
+            <div id="hourly-profile-chart" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Weekday Load Mix</div>
+            <div id="weekday-profile-chart" class="chart"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">Load Distribution</div>
+            <div id="load-distribution-chart" class="chart"></div>
           </div>
           {group_card}
         </div>
@@ -651,26 +659,40 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             return {{ dates, hours, z }};
           }}
 
-          function renderCharts(data) {{
-            const totalTrace = {{
-              x: data.timestamps,
-              y: data.totalKw,
-              mode: "lines",
-              line: {{ color: "#2563eb" }}
-            }};
-            Plotly.newPlot("total-load-chart", [totalTrace], {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Timestamp", type: "date" }},
-              yaxis: {{ title: "kW" }},
-              template: "plotly_white"
-            }}, {{ displaylogo: false, responsive: true }});
+          function buildHourlyProfile(timestamps, totalKw) {{
+            const sums = Array(24).fill(0);
+            const counts = Array(24).fill(0);
+            timestamps.forEach((ts, idx) => {{
+              const hour = new Date(ts).getUTCHours();
+              sums[hour] += totalKw[idx] ?? 0;
+              counts[hour] += 1;
+            }});
+            const averages = sums.map((sum, idx) => (counts[idx] ? sum / counts[idx] : 0));
+            return {{ hours: Array.from({{ length: 24 }}, (_, i) => i), averages }};
+          }}
 
+          function buildWeekdayProfile(timestamps, totalKw) {{
+            const sums = Array(7).fill(0);
+            const counts = Array(7).fill(0);
+            timestamps.forEach((ts, idx) => {{
+              const weekday = new Date(ts).getUTCDay();
+              sums[weekday] += totalKw[idx] ?? 0;
+              counts[weekday] += 1;
+            }});
+            const averages = sums.map((sum, idx) => (counts[idx] ? sum / counts[idx] : 0));
+            return {{
+              weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+              averages
+            }};
+          }}
+
+          function renderCharts(data) {{
             const rollingValues = rollingMean(data.timestamps, data.totalKw, dashboardData.rolling_hours);
             const rollingTrace = {{
               x: data.timestamps,
               y: rollingValues,
               mode: "lines",
-              line: {{ color: "#16a34a" }}
+              line: {{ color: "#16a34a", width: 3 }}
             }};
             Plotly.newPlot("rolling-load-chart", [rollingTrace], {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
@@ -685,12 +707,56 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               y: heatmap.hours,
               z: heatmap.z,
               type: "heatmap",
-              colorscale: "Blues",
+              colorscale: "Turbo",
+              zsmooth: "best",
+              connectgaps: true,
               colorbar: {{ title: "kW" }}
             }}], {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
               xaxis: {{ title: "Date", type: "category" }},
               yaxis: {{ title: "Hour", autorange: "reversed" }},
+              template: "plotly_white"
+            }}, {{ displaylogo: false, responsive: true }});
+
+            const hourlyProfile = buildHourlyProfile(data.timestamps, data.totalKw);
+            const hourlyTrace = {{
+              x: hourlyProfile.hours,
+              y: hourlyProfile.averages,
+              mode: "lines+markers",
+              line: {{ color: "#f97316", width: 3 }},
+              marker: {{ size: 6 }}
+            }};
+            Plotly.newPlot("hourly-profile-chart", [hourlyTrace], {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "Hour (UTC)", dtick: 1 }},
+              yaxis: {{ title: "Average kW" }},
+              template: "plotly_white"
+            }}, {{ displaylogo: false, responsive: true }});
+
+            const weekdayProfile = buildWeekdayProfile(data.timestamps, data.totalKw);
+            const weekdayTrace = {{
+              x: weekdayProfile.weekdays,
+              y: weekdayProfile.averages,
+              type: "bar",
+              marker: {{ color: "#0ea5e9" }}
+            }};
+            Plotly.newPlot("weekday-profile-chart", [weekdayTrace], {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "Day of Week" }},
+              yaxis: {{ title: "Average kW" }},
+              template: "plotly_white"
+            }}, {{ displaylogo: false, responsive: true }});
+
+            const distributionTrace = {{
+              x: data.totalKw,
+              type: "histogram",
+              marker: {{ color: "#6366f1" }},
+              nbinsx: 40
+            }};
+            Plotly.newPlot("load-distribution-chart", [distributionTrace], {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "kW" }},
+              yaxis: {{ title: "Count" }},
               template: "plotly_white"
             }}, {{ displaylogo: false, responsive: true }});
 
