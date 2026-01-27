@@ -20,6 +20,7 @@ Compatible with pandas >= 2.1 (no infer_datetime_format). Uses 'min' for roundin
 
 Usage examples:
   python merge_meter_data.py --master /path/to/RawPanelUsageHistory.csv --dumps-dir /path/to/dumps
+  python merge_meter_data.py --master /path/to/master --dumps-dir /path/to/dumps
   python merge_meter_data.py --master-dir /path/to/master --dumps-dir /path/to/dumps
 """
 
@@ -281,7 +282,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--master",
         type=Path,
-        help="Path to the master CSV file (overrides --master-dir).",
+        help=(
+            "Path to the master CSV file or its directory (overrides --master-dir). "
+            "If a directory is provided, MASTER_FILENAME is used."
+        ),
     )
     parser.add_argument(
         "--master-dir",
@@ -300,7 +304,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None):
     args = parse_args(argv)
-    master_path = args.master or (args.master_dir / MASTER_FILENAME)
+    if args.master:
+        master_path = args.master
+        if master_path.is_dir():
+            master_path = master_path / MASTER_FILENAME
+    else:
+        master_path = args.master_dir / MASTER_FILENAME
     dumps_dir = args.dumps_dir
     panel_files = sorted(dumps_dir.glob(GLOB_PATTERN))
 
