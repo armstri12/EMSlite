@@ -17,10 +17,16 @@ Behavior:
 - Does NOT overwrite or backfill any existing master rows
 
 Compatible with pandas >= 2.1 (no infer_datetime_format). Uses 'min' for rounding frequency.
+
+Usage examples:
+  python merge_meter_data.py --master /path/to/RawPanelUsageHistory.csv --dumps-dir /path/to/dumps
+  python merge_meter_data.py --master /path/to/master --dumps-dir /path/to/dumps
+  python merge_meter_data.py --master-dir /path/to/master --dumps-dir /path/to/dumps --output-dir /path/to/output
 """
 
 from __future__ import annotations
 from pathlib import Path
+import argparse
 import re
 import sys
 from typing import List
@@ -31,8 +37,12 @@ import pandas as pd
 # ========== CONSTANTS =========
 # ==============================
 
-# Paths & discovery
-DATA_DIR: Path = Path(r"C:\Users\a00544090\OneDrive - ONEVIRTUALOFFICE\SHE Team\Energy Management\EMS Python\BMS Power Dump 1_23_2026")                       # Directory containing master + dumps
+# Paths & discovery (defaults can be overridden via CLI)
+DEFAULT_MASTER_DIR: Path = Path(
+    r"C:\Users\a00544090\OneDrive - ONEVIRTUALOFFICE\SHE Team\Energy Management\EMS Python\BMS Power Dump 1_23_2026"
+)
+DEFAULT_DUMPS_DIR: Path = DEFAULT_MASTER_DIR
+DEFAULT_OUTPUT_DIR: Path | None = None  # Defaults to the master file's directory.
 MASTER_FILENAME: str = "RawPanelUsageHistory.csv"
 GLOB_PATTERN: str = "Meter*_SystemCurrent.csv"   # All 40+ panel files
 
@@ -42,7 +52,8 @@ STRIP_TZ_TOKENS: bool = True                     # Remove trailing 'EST'/'EDT' f
 ROUND_TO_MINUTE: bool = True                     # Round parsed datetimes to nearest minute ("min")
 
 # Output behavior
-OVERWRITE_IN_PLACE: bool = False                 # If False, writes <master>_UPDATED.csv
+OVERWRITE_IN_PLACE: bool = False                 # If False, writes <master><OUTPUT_SUFFIX>.csv
+OUTPUT_SUFFIX: str = "_UPDATED"
 FILL_MISSING: str = "blank"                      # "blank" or "0" for missing values in the final CSV
 
 # Parsing assumptions
@@ -267,9 +278,54 @@ def append_only_new_timestamps(master_df: pd.DataFrame, new_wide_df: pd.DataFram
 # ============ MAIN ============
 # ==============================
 
-def main():
-    master_path = DATA_DIR / MASTER_FILENAME
-    panel_files = sorted(DATA_DIR.glob(GLOB_PATTERN))
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Append-only merger for Edwards BMS panel dumps into an existing wide master CSV."
+        )
+    )
+    parser.add_argument(
+        "--master",
+        type=Path,
+        help=(
+            "Path to the master CSV file or its directory (overrides --master-dir). "
+            "If a directory is provided, MASTER_FILENAME is used."
+        ),
+    )
+    parser.add_argument(
+        "--master-dir",
+        type=Path,
+        default=DEFAULT_MASTER_DIR,
+        help="Directory containing the master CSV file (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--dumps-dir",
+        type=Path,
+        default=DEFAULT_DUMPS_DIR,
+        help="Directory containing Meter*_SystemCurrent.csv dump files (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help=(
+            "Directory for the output CSV (default: same directory as the master file). "
+            "Ignored when OVERWRITE_IN_PLACE=True."
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):
+    args = parse_args(argv)
+    if args.master:
+        master_path = args.master
+        if master_path.is_dir():
+            master_path = master_path / MASTER_FILENAME
+    else:
+        master_path = args.master_dir / MASTER_FILENAME
+    dumps_dir = args.dumps_dir
+    panel_files = sorted(dumps_dir.glob(GLOB_PATTERN))
 
     # Load current master
     master_df = read_master(master_path)
@@ -293,7 +349,11 @@ def main():
     if OVERWRITE_IN_PLACE:
         out_path = master_path
     else:
-        out_path = master_path.with_name(master_path.stem + "_UPDATED.csv")
+        output_dir = args.output_dir or master_path.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        suffix = master_path.suffix or ".csv"
+        output_filename = f"{master_path.stem}{OUTPUT_SUFFIX}{suffix}"
+        out_path = output_dir / output_filename
 
     out_df = updated.copy()
     # Persist ISO8601 with offset, Excel-friendly
@@ -302,8 +362,10 @@ def main():
 
     # Console summary
     print("=== Append-Only BMS Merge Summary ===")
-    print(f"Directory                 : {DATA_DIR.resolve()}")
+    print(f"Dumps directory           : {dumps_dir.resolve()}")
     print(f"Master in                 : {master_path.name}")
+    if not OVERWRITE_IN_PLACE:
+        print(f"Output directory          : {out_path.parent.resolve()}")
     print(f"Master out                : {out_path.name} {'(in-place)' if OVERWRITE_IN_PLACE else ''}")
     print(f"Discovered panel files    : {len(panel_files)}")
     print(f"Rows before / after       : {rows_before} -> {len(updated)}  (+{len(updated) - rows_before})")
