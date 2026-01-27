@@ -346,7 +346,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               margin: { t: 16, l: 50, r: 24, b: 40 },
               legend: { orientation: "h" },
               xaxis: { title: "Timestamp", type: "date" },
-              yaxis: { title: "kW" },
+              yaxis: { title: "kW", rangemode: "tozero" },
               template: "plotly_white"
             }, { displaylogo: false, responsive: true });
           }
@@ -452,7 +452,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           }}
           .charts-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+            grid-template-columns: repeat(2, minmax(420px, 1fr));
             gap: 20px;
             padding: 0 40px 40px;
           }}
@@ -468,7 +468,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             color: var(--ink);
           }}
           .chart {{
-            min-height: 320px;
+            min-height: 380px;
           }}
           .chart-card .plotly-graph-div {{
             width: 100% !important;
@@ -532,8 +532,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <div id="weekday-profile-chart" class="chart"></div>
           </div>
           <div class="chart-card">
-            <div class="chart-title">Load Distribution</div>
-            <div id="load-distribution-chart" class="chart"></div>
+            <div class="chart-title">Daily Energy</div>
+            <div id="daily-energy-chart" class="chart"></div>
           </div>
           {group_card}
         </div>
@@ -686,6 +686,26 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             }};
           }}
 
+          function buildDailyEnergy(timestamps, totalKw) {{
+            const energyByDate = {{}};
+            for (let i = 0; i < timestamps.length; i++) {{
+              if (i === timestamps.length - 1) {{
+                break;
+              }}
+              const start = new Date(timestamps[i]);
+              const end = new Date(timestamps[i + 1]);
+              const hours = Math.max(0, (end - start) / 3600000);
+              const dateKey = start.toISOString().slice(0, 10);
+              if (!energyByDate[dateKey]) {{
+                energyByDate[dateKey] = 0;
+              }}
+              energyByDate[dateKey] += (totalKw[i] ?? 0) * hours;
+            }}
+            const dates = Object.keys(energyByDate).sort();
+            const values = dates.map((date) => energyByDate[date]);
+            return {{ dates, values }};
+          }}
+
           function renderCharts(data) {{
             const rollingValues = rollingMean(data.timestamps, data.totalKw, dashboardData.rolling_hours);
             const rollingTrace = {{
@@ -697,7 +717,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             Plotly.newPlot("rolling-load-chart", [rollingTrace], {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
               xaxis: {{ title: "Timestamp", type: "date" }},
-              yaxis: {{ title: "kW" }},
+              yaxis: {{ title: "kW", rangemode: "tozero" }},
               template: "plotly_white"
             }}, {{ displaylogo: false, responsive: true }});
 
@@ -729,7 +749,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             Plotly.newPlot("hourly-profile-chart", [hourlyTrace], {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
               xaxis: {{ title: "Hour (UTC)", dtick: 1 }},
-              yaxis: {{ title: "Average kW" }},
+              yaxis: {{ title: "Average kW", rangemode: "tozero" }},
               template: "plotly_white"
             }}, {{ displaylogo: false, responsive: true }});
 
@@ -743,20 +763,21 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             Plotly.newPlot("weekday-profile-chart", [weekdayTrace], {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
               xaxis: {{ title: "Day of Week" }},
-              yaxis: {{ title: "Average kW" }},
+              yaxis: {{ title: "Average kW", rangemode: "tozero" }},
               template: "plotly_white"
             }}, {{ displaylogo: false, responsive: true }});
 
-            const distributionTrace = {{
-              x: data.totalKw,
-              type: "histogram",
-              marker: {{ color: "#6366f1" }},
-              nbinsx: 40
+            const dailyEnergy = buildDailyEnergy(data.timestamps, data.totalKw);
+            const dailyEnergyTrace = {{
+              x: dailyEnergy.dates,
+              y: dailyEnergy.values,
+              type: "bar",
+              marker: {{ color: "#8b5cf6" }}
             }};
-            Plotly.newPlot("load-distribution-chart", [distributionTrace], {{
+            Plotly.newPlot("daily-energy-chart", [dailyEnergyTrace], {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "kW" }},
-              yaxis: {{ title: "Count" }},
+              xaxis: {{ title: "Date", type: "category" }},
+              yaxis: {{ title: "Energy (kWh)", rangemode: "tozero" }},
               template: "plotly_white"
             }}, {{ displaylogo: false, responsive: true }});
 
