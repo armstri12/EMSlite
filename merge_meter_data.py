@@ -177,13 +177,18 @@ def load_panel_file(csv_path: Path) -> pd.DataFrame:
 
 def build_new_data_wide(panel_files: List[Path]) -> pd.DataFrame:
     """
-    Outer-merge all panel files into a **single wide** dataframe:
+    Merge all panel files into a **single wide** dataframe:
     ['Timestamp', meter1, meter2, ...].
+    Keeps only timestamps common to all panel files so each panel ends
+    at the same timestamp (using the smallest shared timestamp set).
     """
     combined: pd.DataFrame | None = None
+    timestamp_sets: List[set[pd.Timestamp]] = []
 
     for file in panel_files:
         df = load_panel_file(file)  # ['Timestamp', <meter>]
+        timestamp_sets.append(set(df["Timestamp"].dropna().unique()))
+
         if combined is None:
             combined = df
             continue
@@ -209,6 +214,13 @@ def build_new_data_wide(panel_files: List[Path]) -> pd.DataFrame:
 
     if combined is None:
         combined = pd.DataFrame(columns=["Timestamp"])
+
+    if timestamp_sets:
+        common_ts = set.intersection(*timestamp_sets)
+        if common_ts:
+            combined = combined[combined["Timestamp"].isin(common_ts)]
+        else:
+            combined = combined.iloc[0:0]
 
     # Sort & de-dup timestamps in the new snapshot
     if "Timestamp" in combined.columns:
