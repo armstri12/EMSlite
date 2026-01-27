@@ -17,10 +17,14 @@ Behavior:
 - Does NOT overwrite or backfill any existing master rows
 
 Compatible with pandas >= 2.1 (no infer_datetime_format). Uses 'min' for rounding frequency.
+
+Usage examples:
+  python merge_meter_data.py --master /path/to/RawPanelUsageHistory.csv --dumps-dir /path/to/dumps
 """
 
 from __future__ import annotations
 from pathlib import Path
+import argparse
 import re
 import sys
 from typing import List
@@ -32,7 +36,7 @@ import pandas as pd
 # ==============================
 
 # Paths & discovery
-DATA_DIR: Path = Path(r"C:\Users\a00544090\OneDrive - ONEVIRTUALOFFICE\SHE Team\Energy Management\EMS Python\BMS Power Dump 1_23_2026")                       # Directory containing master + dumps
+DATA_DIR: Path = Path(r"C:\Users\a00544090\OneDrive - ONEVIRTUALOFFICE\SHE Team\Energy Management\EMS Python\BMS Power Dump 1_23_2026")                       # Default directory containing master + dumps
 MASTER_FILENAME: str = "RawPanelUsageHistory.csv"
 GLOB_PATTERN: str = "Meter*_SystemCurrent.csv"   # All 40+ panel files
 
@@ -267,9 +271,32 @@ def append_only_new_timestamps(master_df: pd.DataFrame, new_wide_df: pd.DataFram
 # ============ MAIN ============
 # ==============================
 
-def main():
-    master_path = DATA_DIR / MASTER_FILENAME
-    panel_files = sorted(DATA_DIR.glob(GLOB_PATTERN))
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Append-only merger for Edwards BMS panel dumps into an existing wide master CSV."
+        )
+    )
+    parser.add_argument(
+        "--master",
+        type=Path,
+        default=DATA_DIR / MASTER_FILENAME,
+        help="Path to the master CSV file (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--dumps-dir",
+        type=Path,
+        default=DATA_DIR,
+        help="Directory containing Meter*_SystemCurrent.csv dump files (default: %(default)s).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None):
+    args = parse_args(argv)
+    master_path = args.master
+    dumps_dir = args.dumps_dir
+    panel_files = sorted(dumps_dir.glob(GLOB_PATTERN))
 
     # Load current master
     master_df = read_master(master_path)
@@ -302,7 +329,7 @@ def main():
 
     # Console summary
     print("=== Append-Only BMS Merge Summary ===")
-    print(f"Directory                 : {DATA_DIR.resolve()}")
+    print(f"Directory                 : {dumps_dir.resolve()}")
     print(f"Master in                 : {master_path.name}")
     print(f"Master out                : {out_path.name} {'(in-place)' if OVERWRITE_IN_PLACE else ''}")
     print(f"Discovered panel files    : {len(panel_files)}")
