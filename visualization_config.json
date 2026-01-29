@@ -21,6 +21,7 @@
     "Engineering_kW": []
   },
   "rolling_window": "1h",
+  "dashboard_logo_url": "",
   "visualizations": {
     "total_kw_timeseries": {
       "enabled": true,

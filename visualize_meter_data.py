@@ -32,10 +32,17 @@ from typing import Iterable
 
 import pandas as pd
 import plotly.express as px
-import plotly.io as pio
+import plotly.graph_objects as go
 
 TOTAL_AMPS_COLUMN_NAME = "Total_Amps"
 TOTAL_KW_COLUMN_NAME = "Total_kW"
+PLOT_THEME = {
+    "font_family": "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif",
+    "ink": "#2d363a",
+    "card": "#ffffff",
+    "grid": "rgba(45, 54, 58, 0.12)",
+    "colorway": ["#c4262e", "#2d363a", "#000000", "#6b7280", "#cbd0cc"],
+}
 
 DEFAULT_CONFIG = {
     "input_file": "RawPanelUsageHistory_UPDATED.csv",
@@ -51,6 +58,7 @@ DEFAULT_CONFIG = {
         "Engineering_kW": [],
     },
     "rolling_window": "1h",
+    "dashboard_logo_url": "",
     "visualizations": {
         "total_kw_timeseries": {
             "enabled": True,
@@ -211,6 +219,7 @@ def add_usage_columns(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
 
 def plot_total_kw(df: pd.DataFrame, output_dir: Path) -> Path:
     fig = create_total_kw_fig(df)
+    apply_plot_theme(fig)
     output_path = output_dir / CONFIG["visualizations"]["total_kw_timeseries"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
@@ -238,6 +247,7 @@ def parse_window_to_hours(window: str) -> float:
 
 def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
     fig = create_total_kw_rolling_fig(df, window)
+    apply_plot_theme(fig)
     output_path = output_dir / CONFIG["visualizations"]["total_kw_rolling"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
@@ -245,6 +255,7 @@ def plot_total_kw_rolling(df: pd.DataFrame, output_dir: Path, window: str) -> Pa
 
 def plot_daily_hour_heatmap(df: pd.DataFrame, output_dir: Path) -> Path:
     fig = create_daily_hour_heatmap_fig(df)
+    apply_plot_theme(fig)
     output_path = output_dir / CONFIG["visualizations"]["daily_hour_heatmap"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
@@ -254,6 +265,7 @@ def plot_group_columns(df: pd.DataFrame, output_dir: Path) -> Path | None:
     fig = create_group_columns_fig(df)
     if fig is None:
         return None
+    apply_plot_theme(fig)
     output_path = output_dir / CONFIG["visualizations"]["group_columns_plot"]["output"]
     fig.write_html(output_path, include_plotlyjs="cdn")
     return output_path
@@ -290,6 +302,7 @@ def create_daily_hour_heatmap_fig(df: pd.DataFrame) -> px.imshow:
         origin="lower",
         title="Average Total kW by Hour and Day",
         labels={"color": "kW"},
+        color_continuous_scale=["#cbd0cc", "#2d363a", "#c4262e"],
     )
 
 
@@ -313,6 +326,17 @@ def create_group_columns_fig(df: pd.DataFrame) -> px.line | None:
     fig.for_each_annotation(lambda annotation: annotation.update(text=annotation.text.split("=")[-1]))
     fig.update_yaxes(matches=None)
     return fig
+
+
+def apply_plot_theme(fig: go.Figure) -> None:
+    fig.update_layout(
+        font={"family": PLOT_THEME["font_family"], "color": PLOT_THEME["ink"]},
+        paper_bgcolor=PLOT_THEME["card"],
+        plot_bgcolor=PLOT_THEME["card"],
+        colorway=PLOT_THEME["colorway"],
+    )
+    fig.update_xaxes(gridcolor=PLOT_THEME["grid"], zerolinecolor=PLOT_THEME["grid"])
+    fig.update_yaxes(gridcolor=PLOT_THEME["grid"], zerolinecolor=PLOT_THEME["grid"])
 
 
 def compute_energy_metrics(df: pd.DataFrame) -> dict[str, float]:
@@ -367,6 +391,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         "rolling_hours": rolling_hours,
         "price_per_kwh": price_per_kwh,
     }
+    logo_url = CONFIG.get("dashboard_logo_url") or ""
 
     group_card = ""
     group_script = ""
@@ -388,9 +413,12 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             Plotly.newPlot("group-load-chart", traces, {
               margin: { t: 16, l: 50, r: 24, b: 40 },
               legend: { orientation: "h" },
-              xaxis: { title: "Timestamp", type: "date" },
-              yaxis: { title: "kW", rangemode: "tozero" },
-              template: "plotly_white"
+              xaxis: { title: "Timestamp", type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid },
+              yaxis: { title: "kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid },
+              paper_bgcolor: theme.card,
+              plot_bgcolor: theme.card,
+              font: { family: "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif", color: theme.ink },
+              colorway: theme.series
             }, { displaylogo: false, responsive: true });
           }
         """
@@ -405,31 +433,104 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
         <style>
           :root {{
-            --bg: #f5f7fb;
+            --bg: #cbd0cc;
             --card: #ffffff;
-            --ink: #0f172a;
-            --muted: #64748b;
-            --accent: #2563eb;
+            --ink: #2d363a;
+            --ink-strong: #000000;
+            --muted: #5b6468;
+            --accent: #c4262e;
+            --accent-soft: rgba(196, 38, 46, 0.12);
+            --outline: rgba(45, 54, 58, 0.12);
+            --pill: rgba(45, 54, 58, 0.08);
+            --shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
           }}
           * {{ box-sizing: border-box; }}
           body {{
             margin: 0;
-            font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-            background: var(--bg);
+            font-family: "Calibri", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
             color: var(--ink);
           }}
+          .top-bar {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 24px 40px 12px;
+          }}
+          .brand {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+          }}
+          .logo-wrapper {{
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            background: var(--pill);
+            border: 1px dashed var(--outline);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+          }}
+          .logo-wrapper img {{
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+          }}
+          .logo-placeholder {{
+            font-size: 11px;
+            color: var(--muted);
+            text-align: center;
+            padding: 4px;
+          }}
+          .logo-controls {{
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }}
+          .logo-controls label {{
+            font-size: 11px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }}
+          .logo-controls input[type="file"] {{
+            font-size: 12px;
+          }}
           .header {{
-            padding: 32px 40px 16px;
+            padding: 8px 40px 16px;
           }}
           .title {{
             font-size: 32px;
             font-weight: 700;
             margin: 0;
+            color: var(--ink-strong);
           }}
           .subtitle {{
             margin-top: 6px;
             color: var(--muted);
             font-size: 14px;
+          }}
+          .nav-pills {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 16px;
+          }}
+          .nav-pill {{
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: var(--pill);
+            color: var(--ink);
+            font-size: 13px;
+            font-weight: 600;
+            text-decoration: none;
+            border: 1px solid transparent;
+          }}
+          .nav-pill:hover {{
+            border-color: var(--outline);
           }}
           .filters {{
             margin-top: 16px;
@@ -445,7 +546,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             letter-spacing: 0.08em;
           }}
           .filters input {{
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--outline);
             border-radius: 10px;
             padding: 8px 10px;
             font-size: 14px;
@@ -461,9 +562,10 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             color: #ffffff;
             background: var(--accent);
             cursor: pointer;
+            box-shadow: 0 8px 16px rgba(196, 38, 46, 0.25);
           }}
           .filters button.secondary {{
-            background: #94a3b8;
+            background: #2d363a;
           }}
           .stats-grid {{
             display: grid;
@@ -479,11 +581,12 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             background: var(--card);
             border-radius: 16px;
             padding: 20px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--outline);
           }}
           .stat-card.meter-highlight {{
-            border: 1px solid rgba(37, 99, 235, 0.2);
-            background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(14, 165, 233, 0.16));
+            border: 1px solid rgba(196, 38, 46, 0.3);
+            background: linear-gradient(135deg, rgba(196, 38, 46, 0.1), rgba(45, 54, 58, 0.05));
           }}
           .stat-label {{
             font-size: 12px;
@@ -507,6 +610,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             gap: 20px;
             padding: 0 40px 40px;
           }}
+          .section-anchor {{
+            scroll-margin-top: 80px;
+          }}
           .usage-section {{
             padding: 0 40px 20px;
           }}
@@ -521,11 +627,11 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             gap: 16px;
           }}
           .meter-card {{
-            background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
+            background: linear-gradient(135deg, #2d363a, #000000);
             color: #fff;
             border-radius: 18px;
             padding: 18px;
-            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2);
           }}
           .meter-title {{
             font-size: 14px;
@@ -544,13 +650,14 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             opacity: 0.85;
           }}
           .usage-card {{
-            background: linear-gradient(135deg, #0f766e, #10b981);
+            background: linear-gradient(135deg, #c4262e, #2d363a);
           }}
           .chart-card {{
             background: var(--card);
             border-radius: 18px;
             padding: 12px 12px 4px;
-            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--outline);
           }}
           .chart-title {{
             padding: 10px 12px 0;
@@ -583,17 +690,51 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             min-width: 220px;
             padding: 6px 10px;
             border-radius: 10px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--outline);
             background: #fff;
             font-size: 13px;
             color: var(--ink);
           }}
+          .footer {{
+            padding: 20px 40px 32px;
+            color: var(--muted);
+            font-size: 12px;
+          }}
+          @media (max-width: 980px) {{
+            .top-bar {{
+              flex-direction: column;
+              align-items: flex-start;
+            }}
+            .charts-grid {{
+              grid-template-columns: 1fr;
+            }}
+          }}
         </style>
       </head>
       <body>
+        <div class="top-bar">
+          <div class="brand">
+            <div class="logo-wrapper">
+              <img id="logo-image" src="{logo_url}" alt="Logo" style="display: none;" />
+              <div class="logo-placeholder" id="logo-placeholder">Your Logo</div>
+            </div>
+            <div>
+              <h1 class="title">EMS Energy Dashboard</h1>
+              <div class="subtitle">Interactive totals using ${price_per_kwh:.2f} / kWh</div>
+            </div>
+          </div>
+          <div class="logo-controls">
+            <label for="logo-input">Logo upload</label>
+            <input type="file" id="logo-input" accept="image/*" />
+          </div>
+        </div>
         <div class="header">
-          <h1 class="title">EMS Energy Dashboard</h1>
-          <div class="subtitle">Interactive totals using ${price_per_kwh:.2f} / kWh</div>
+          <div class="nav-pills">
+            <a class="nav-pill" href="#kpi-section">KPIs</a>
+            <a class="nav-pill" href="#usage-section">Usage</a>
+            <a class="nav-pill" href="#charts-section">Charts</a>
+            <a class="nav-pill" href="#panels-section">Panel Trends</a>
+          </div>
           <div class="filters">
             <div>
               <label for="start-date">Start Date</label>
@@ -607,7 +748,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <button id="reset-filters" class="secondary">Reset</button>
           </div>
         </div>
-        <div class="stats-grid">
+        <div class="stats-grid section-anchor" id="kpi-section">
           <div class="stat-card">
             <div class="stat-label">Total Energy</div>
             <div class="stat-value" id="total-energy">0.00 kWh</div>
@@ -630,11 +771,11 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           </div>
         </div>
         <div class="stats-grid meter-stat-grid" id="meter-stat-grid" style="display: none;"></div>
-        <div class="usage-section" id="usage-section" style="display: none;">
+        <div class="usage-section section-anchor" id="usage-section" style="display: none;">
           <div class="section-title">Usage by Group</div>
           <div class="meter-grid" id="usage-cards"></div>
         </div>
-        <div class="charts-grid">
+        <div class="charts-grid section-anchor" id="charts-section">
           <div class="chart-card">
             <div class="chart-title">Smoothed Load</div>
             <div id="rolling-load-chart" class="chart"></div>
@@ -656,7 +797,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <div id="daily-energy-chart" class="chart"></div>
           </div>
           {group_card}
-          <div class="chart-card full-width" id="panel-chart-card" style="display: none;">
+          <div class="chart-card full-width section-anchor" id="panels-section" style="display: none;">
             <div class="chart-title">Panel Trends</div>
             <div class="panel-controls">
               <label for="panel-selector">Panels</label>
@@ -665,13 +806,40 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <div id="panel-series-chart" class="chart"></div>
           </div>
         </div>
+        <div class="footer">Primary palette: #2d363a &amp; #c4262e · Secondary palette: #000000 &amp; #cbd0cc</div>
         <script>
           const dashboardData = {json.dumps(data_payload)};
+          const logoUrl = {json.dumps(logo_url)};
+          const theme = {{
+            ink: "#2d363a",
+            inkStrong: "#000000",
+            muted: "#5b6468",
+            card: "#ffffff",
+            grid: "rgba(45, 54, 58, 0.12)",
+            accent: "#c4262e",
+            accentDark: "#2d363a",
+            accentNeutral: "#cbd0cc",
+            series: ["#c4262e", "#2d363a", "#000000", "#6b7280", "#cbd0cc"]
+          }};
 
           const startInput = document.getElementById("start-date");
           const endInput = document.getElementById("end-date");
           const applyButton = document.getElementById("apply-filters");
           const resetButton = document.getElementById("reset-filters");
+          const logoInput = document.getElementById("logo-input");
+          const logoImage = document.getElementById("logo-image");
+          const logoPlaceholder = document.getElementById("logo-placeholder");
+
+          function applyLogo(src) {{
+            if (!src) {{
+              logoImage.style.display = "none";
+              logoPlaceholder.style.display = "block";
+              return;
+            }}
+            logoImage.src = src;
+            logoImage.style.display = "block";
+            logoPlaceholder.style.display = "none";
+          }}
 
           function toDateOnly(date) {{
             return date.toISOString().slice(0, 10);
@@ -892,13 +1060,19 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: data.timestamps,
               y: rollingValues,
               mode: "lines",
-              line: {{ color: "#16a34a", width: 3 }}
+              line: {{ color: theme.accent, width: 3 }}
+            }};
+            const layoutBase = {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              xaxis: {{ title: "Timestamp", type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              yaxis: {{ title: "kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              paper_bgcolor: theme.card,
+              plot_bgcolor: theme.card,
+              font: {{ family: "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif", color: theme.ink }},
+              colorway: theme.series
             }};
             Plotly.newPlot("rolling-load-chart", [rollingTrace], {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Timestamp", type: "date" }},
-              yaxis: {{ title: "kW", rangemode: "tozero" }},
-              template: "plotly_white"
+              ...layoutBase
             }}, {{ displaylogo: false, responsive: true }});
 
             const heatmap = buildHeatmap(data.timestamps, data.totalKw);
@@ -907,15 +1081,18 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               y: heatmap.hours,
               z: heatmap.z,
               type: "heatmap",
-              colorscale: "Turbo",
+              colorscale: [
+                [0, "#cbd0cc"],
+                [0.5, "#2d363a"],
+                [1, "#c4262e"]
+              ],
               zsmooth: "best",
               connectgaps: true,
               colorbar: {{ title: "kW" }}
             }}], {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Date", type: "category" }},
-              yaxis: {{ title: "Hour", autorange: "reversed" }},
-              template: "plotly_white"
+              ...layoutBase,
+              xaxis: {{ title: "Date", type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              yaxis: {{ title: "Hour", autorange: "reversed", gridcolor: theme.grid, zerolinecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
             const hourlyProfile = buildHourlyProfile(data.timestamps, data.totalKw);
@@ -923,14 +1100,13 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: hourlyProfile.hours,
               y: hourlyProfile.averages,
               mode: "lines+markers",
-              line: {{ color: "#f97316", width: 3 }},
+              line: {{ color: theme.accentDark, width: 3 }},
               marker: {{ size: 6 }}
             }};
             Plotly.newPlot("hourly-profile-chart", [hourlyTrace], {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Hour (UTC)", dtick: 1 }},
-              yaxis: {{ title: "Average kW", rangemode: "tozero" }},
-              template: "plotly_white"
+              ...layoutBase,
+              xaxis: {{ title: "Hour (UTC)", dtick: 1, gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              yaxis: {{ title: "Average kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
             const weekdayProfile = buildWeekdayProfile(data.timestamps, data.totalKw);
@@ -938,13 +1114,12 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: weekdayProfile.weekdays,
               y: weekdayProfile.averages,
               type: "bar",
-              marker: {{ color: "#0ea5e9" }}
+              marker: {{ color: theme.accent }}
             }};
             Plotly.newPlot("weekday-profile-chart", [weekdayTrace], {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Day of Week" }},
-              yaxis: {{ title: "Average kW", rangemode: "tozero" }},
-              template: "plotly_white"
+              ...layoutBase,
+              xaxis: {{ title: "Day of Week", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              yaxis: {{ title: "Average kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
             const dailyEnergy = buildDailyEnergy(data.timestamps, data.totalKw);
@@ -952,13 +1127,12 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: dailyEnergy.dates,
               y: dailyEnergy.values,
               type: "bar",
-              marker: {{ color: "#8b5cf6" }}
+              marker: {{ color: theme.accentDark }}
             }};
             Plotly.newPlot("daily-energy-chart", [dailyEnergyTrace], {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Date", type: "category" }},
-              yaxis: {{ title: "Energy (kWh)", rangemode: "tozero" }},
-              template: "plotly_white"
+              ...layoutBase,
+              xaxis: {{ title: "Date", type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              yaxis: {{ title: "Energy (kWh)", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
             if (Object.keys(data.groupSeries).length) {{
@@ -1064,7 +1238,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               return;
             }}
             const selector = document.getElementById("panel-selector");
-            const card = document.getElementById("panel-chart-card");
+            const card = document.getElementById("panels-section");
             if (!selector || !card) {{
               return;
             }}
@@ -1108,10 +1282,13 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             Plotly.newPlot("panel-series-chart", traces, {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
               legend: {{ orientation: "h" }},
-              xaxis: {{ title: "Timestamp", type: "date" }},
-              yaxis: {{ title: "kW", rangemode: "tozero" }},
+              xaxis: {{ title: "Timestamp", type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              yaxis: {{ title: "kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }},
               shapes: weekendShapes,
-              template: "plotly_white"
+              paper_bgcolor: theme.card,
+              plot_bgcolor: theme.card,
+              font: {{ family: "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif", color: theme.ink }},
+              colorway: theme.series
             }}, {{ displaylogo: false, responsive: true }});
           }}
 
@@ -1132,6 +1309,20 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           initDateInputs();
           initPanelSelector();
           renderDashboard();
+          applyLogo(logoUrl);
+          if (logoInput) {{
+            logoInput.addEventListener("change", (event) => {{
+              const file = event.target.files && event.target.files[0];
+              if (!file) {{
+                return;
+              }}
+              const reader = new FileReader();
+              reader.onload = (loadEvent) => {{
+                applyLogo(loadEvent.target.result);
+              }};
+              reader.readAsDataURL(file);
+            }});
+          }}
           {group_script}
         </script>
       </body>
