@@ -183,10 +183,12 @@ def resolve_utility_meters(available: Iterable[str]) -> list[dict[str, object]]:
         if not isinstance(panels, list):
             panels = []
         resolved_panels = resolve_columns(available, panels, f"utility_meters[{name}]")
-        if not resolved_panels:
-            continue
         resolved.append({"name": name, "panels": resolved_panels})
     return resolved
+
+
+def zero_series(length: int) -> list[float]:
+    return [0.0 for _ in range(length)]
 
 
 def add_usage_columns(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
@@ -329,15 +331,23 @@ def compute_energy_metrics(df: pd.DataFrame) -> dict[str, float]:
 def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
     ordered = df.sort_values("Timestamp")
     timestamps = ordered["Timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ").tolist()
+    zero_values = zero_series(len(timestamps))
     total_kw = ordered.get(TOTAL_KW_COLUMN_NAME, pd.Series()).fillna(0).tolist()
     group_columns = [name for name in CONFIG["combo_columns"].keys() if name in ordered.columns]
     group_series = {name: ordered[name].fillna(0).tolist() for name in group_columns}
+    group_definitions = []
+    for group_name, group_panels in CONFIG["combo_columns"].items():
+        resolved_panels = resolve_columns(ordered.columns, group_panels, f"combo_columns[{group_name}]")
+        group_definitions.append({"name": group_name, "panels": resolved_panels})
     meter_definitions = resolve_utility_meters(ordered.columns)
     meter_series = {}
     for meter in meter_definitions:
         panels = meter["panels"]
-        amps_total = ordered[panels].fillna(0).sum(axis=1)
-        meter_series[meter["name"]] = amps_to_kw(amps_total).fillna(0).tolist()
+        if panels:
+            amps_total = ordered[panels].fillna(0).sum(axis=1)
+            meter_series[meter["name"]] = amps_to_kw(amps_total).fillna(0).tolist()
+        else:
+            meter_series[meter["name"]] = zero_values
     price_per_kwh = float(CONFIG["price_per_kwh"])
     rolling_hours = parse_window_to_hours(window)
 
@@ -345,6 +355,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         "timestamps": timestamps,
         "total_kw": total_kw,
         "group_series": group_series,
+        "group_definitions": group_definitions,
         "utility_meters": meter_definitions,
         "meter_series": meter_series,
         "rolling_hours": rolling_hours,
@@ -485,6 +496,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           .meter-section {{
             padding: 0 40px 20px;
           }}
+          .usage-section {{
+            padding: 0 40px 20px;
+          }}
           .section-title {{
             font-size: 18px;
             font-weight: 600;
@@ -517,6 +531,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             font-size: 13px;
             margin-top: 6px;
             opacity: 0.85;
+          }}
+          .usage-card {{
+            background: linear-gradient(135deg, #0f766e, #10b981);
           }}
           .chart-card {{
             background: var(--card);
@@ -579,6 +596,10 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         <div class="meter-section" id="meter-section" style="display: none;">
           <div class="section-title">Utility Meters</div>
           <div class="meter-grid" id="meter-cards"></div>
+        </div>
+        <div class="usage-section" id="usage-section" style="display: none;">
+          <div class="section-title">Usage by Group</div>
+          <div class="meter-grid" id="usage-cards"></div>
         </div>
         <div class="charts-grid">
           <div class="chart-card">
@@ -906,11 +927,54 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             }});
           }}
 
+          function updateUsageCards(data) {{
+            if (!dashboardData.group_definitions.length) {{
+              return;
+            }}
+            const section = document.getElementById("usage-section");
+            const container = document.getElementById("usage-cards");
+            if (!section || !container) {{
+              return;
+            }}
+            section.style.display = "block";
+            if (!container.dataset.initialized) {{
+              container.innerHTML = dashboardData.group_definitions
+                .map((group, idx) => {{
+                  const panelList = (group.panels || []).join(", ");
+                  return `
+                    <div class="meter-card usage-card">
+                      <div class="meter-title">${{group.name}}</div>
+                      <div class="meter-value" id="group-energy-${{idx}}">0.00 kWh</div>
+                      <div class="meter-sub" id="group-cost-${{idx}}">$0.00</div>
+                      <div class="meter-sub">Panels: ${{panelList || "None"}}</div>
+                    </div>
+                  `;
+                }})
+                .join("");
+              container.dataset.initialized = "true";
+            }}
+            dashboardData.group_definitions.forEach((group, idx) => {{
+              const series = data.groupSeries[group.name]
+                || Array(data.timestamps.length).fill(0);
+              const metrics = computeMetrics(data.timestamps, series);
+              const energyEl = document.getElementById(`group-energy-${{idx}}`);
+              const costEl = document.getElementById(`group-cost-${{idx}}`);
+              if (energyEl) {{
+                energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+              }}
+              if (costEl) {{
+                const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+                costEl.textContent = `$${{totalCost.toFixed(2)}}`;
+              }}
+            }});
+          }}
+
           function renderDashboard() {{
             const filtered = filterData();
             renderCharts(filtered);
             updateMetrics(filtered);
             updateMeterCards(filtered);
+            updateUsageCards(filtered);
           }}
 
           applyButton.addEventListener("click", renderDashboard);
