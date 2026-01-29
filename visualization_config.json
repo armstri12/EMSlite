@@ -5,6 +5,16 @@
   "power_factor": 1.0,
   "price_per_kwh": 0.25,
   "total_amps_sources": null,
+  "utility_meters": [
+    {
+      "name": "Meter A",
+      "panels": []
+    },
+    {
+      "name": "Meter B",
+      "panels": []
+    }
+  ],
   "combo_columns": {
     "Production_kW": [],
     "Facilities_kW": [],
