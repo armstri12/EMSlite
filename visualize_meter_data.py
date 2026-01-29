@@ -842,6 +842,50 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             return {{ dates, values }};
           }}
 
+          function buildWeekendShapes(timestamps) {{
+            if (!timestamps.length) {{
+              return [];
+            }}
+            const shapes = [];
+            let weekendStart = null;
+            for (let i = 0; i < timestamps.length; i++) {{
+              const ts = timestamps[i];
+              const day = new Date(ts).getUTCDay();
+              const isWeekend = day === 0 || day === 6;
+              if (isWeekend && weekendStart === null) {{
+                weekendStart = ts;
+              }}
+              if (!isWeekend && weekendStart !== null) {{
+                shapes.push({{
+                  type: "rect",
+                  xref: "x",
+                  yref: "paper",
+                  x0: weekendStart,
+                  x1: ts,
+                  y0: 0,
+                  y1: 1,
+                  line: {{ width: 0 }},
+                  fillcolor: "rgba(99, 102, 241, 0.14)"
+                }});
+                weekendStart = null;
+              }}
+            }}
+            if (weekendStart !== null) {{
+              shapes.push({{
+                type: "rect",
+                xref: "x",
+                yref: "paper",
+                x0: weekendStart,
+                x1: timestamps[timestamps.length - 1],
+                y0: 0,
+                y1: 1,
+                line: {{ width: 0 }},
+                fillcolor: "rgba(99, 102, 241, 0.14)"
+              }});
+            }}
+            return shapes;
+          }}
+
           function renderCharts(data) {{
             const rollingValues = rollingMean(data.timestamps, data.totalKw, dashboardData.rolling_hours);
             const rollingTrace = {{
@@ -1060,11 +1104,13 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               mode: "lines",
               name: panel
             }}));
+            const weekendShapes = buildWeekendShapes(data.timestamps);
             Plotly.newPlot("panel-series-chart", traces, {{
               margin: {{ t: 16, l: 50, r: 24, b: 40 }},
               legend: {{ orientation: "h" }},
               xaxis: {{ title: "Timestamp", type: "date" }},
               yaxis: {{ title: "kW", rangemode: "tozero" }},
+              shapes: weekendShapes,
               template: "plotly_white"
             }}, {{ displaylogo: false, responsive: true }});
           }}
