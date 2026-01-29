@@ -465,11 +465,19 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             gap: 16px;
             padding: 0 40px 24px;
           }}
+          .meter-stat-grid {{
+            margin-top: -8px;
+            padding-top: 0;
+          }}
           .stat-card {{
             background: var(--card);
             border-radius: 16px;
             padding: 20px;
             box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+          }}
+          .stat-card.meter-highlight {{
+            border: 1px solid rgba(37, 99, 235, 0.2);
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(14, 165, 233, 0.16));
           }}
           .stat-label {{
             font-size: 12px;
@@ -492,9 +500,6 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             grid-template-columns: repeat(2, minmax(420px, 1fr));
             gap: 20px;
             padding: 0 40px 40px;
-          }}
-          .meter-section {{
-            padding: 0 40px 20px;
           }}
           .usage-section {{
             padding: 0 40px 20px;
@@ -593,10 +598,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <div class="stat-hint">Highest observed value</div>
           </div>
         </div>
-        <div class="meter-section" id="meter-section" style="display: none;">
-          <div class="section-title">Utility Meters</div>
-          <div class="meter-grid" id="meter-cards"></div>
-        </div>
+        <div class="stats-grid meter-stat-grid" id="meter-stat-grid" style="display: none;"></div>
         <div class="usage-section" id="usage-section" style="display: none;">
           <div class="section-title">Usage by Group</div>
           <div class="meter-grid" id="usage-cards"></div>
@@ -890,22 +892,21 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             if (!dashboardData.utility_meters.length) {{
               return;
             }}
-            const section = document.getElementById("meter-section");
-            const container = document.getElementById("meter-cards");
-            if (!section || !container) {{
+            const container = document.getElementById("meter-stat-grid");
+            if (!container) {{
               return;
             }}
-            section.style.display = "block";
+            container.style.display = "grid";
             if (!container.dataset.initialized) {{
               container.innerHTML = dashboardData.utility_meters
                 .map((meter, idx) => {{
                   const panelList = (meter.panels || []).join(", ");
                   return `
-                    <div class="meter-card">
-                      <div class="meter-title">${{meter.name}}</div>
-                      <div class="meter-value" id="meter-energy-${{idx}}">0.00 kWh</div>
-                      <div class="meter-sub" id="meter-cost-${{idx}}">$0.00</div>
-                      <div class="meter-sub">Panels: ${{panelList || "None"}}</div>
+                    <div class="stat-card meter-highlight">
+                      <div class="stat-label">${{meter.name}} Energy</div>
+                      <div class="stat-value" id="meter-energy-${{idx}}">0.00 kWh</div>
+                      <div class="stat-hint" id="meter-cost-${{idx}}">$0.00</div>
+                      <div class="stat-hint">Panels: ${{panelList || "None"}}</div>
                     </div>
                   `;
                 }})
