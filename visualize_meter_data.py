@@ -335,6 +335,10 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
     total_kw = ordered.get(TOTAL_KW_COLUMN_NAME, pd.Series()).fillna(0).tolist()
     group_columns = [name for name in CONFIG["combo_columns"].keys() if name in ordered.columns]
     group_series = {name: ordered[name].fillna(0).tolist() for name in group_columns}
+    panel_columns = meter_columns(ordered.columns)
+    panel_series = {
+        name: amps_to_kw(ordered[name].fillna(0)).fillna(0).tolist() for name in panel_columns
+    }
     group_definitions = []
     for group_name, group_panels in CONFIG["combo_columns"].items():
         resolved_panels = resolve_columns(ordered.columns, group_panels, f"combo_columns[{group_name}]")
@@ -355,6 +359,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         "timestamps": timestamps,
         "total_kw": total_kw,
         "group_series": group_series,
+        "panel_series": panel_series,
+        "panel_names": panel_columns,
         "group_definitions": group_definitions,
         "utility_meters": meter_definitions,
         "meter_series": meter_series,
@@ -557,6 +563,31 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           .chart-card .plotly-graph-div {{
             width: 100% !important;
           }}
+          .chart-card.full-width {{
+            grid-column: 1 / -1;
+          }}
+          .panel-controls {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            padding: 6px 12px 0;
+          }}
+          .panel-controls label {{
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+          }}
+          .panel-controls select {{
+            min-width: 220px;
+            padding: 6px 10px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            font-size: 13px;
+            color: var(--ink);
+          }}
         </style>
       </head>
       <body>
@@ -625,6 +656,14 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <div id="daily-energy-chart" class="chart"></div>
           </div>
           {group_card}
+          <div class="chart-card full-width" id="panel-chart-card" style="display: none;">
+            <div class="chart-title">Panel Trends</div>
+            <div class="panel-controls">
+              <label for="panel-selector">Panels</label>
+              <select id="panel-selector" multiple></select>
+            </div>
+            <div id="panel-series-chart" class="chart"></div>
+          </div>
         </div>
         <script>
           const dashboardData = {json.dumps(data_payload)};
@@ -661,7 +700,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               timestamps: [],
               totalKw: [],
               groupSeries: Object.fromEntries(Object.keys(dashboardData.group_series).map((key) => [key, []])),
-              meterSeries: Object.fromEntries(Object.keys(dashboardData.meter_series).map((key) => [key, []]))
+              meterSeries: Object.fromEntries(Object.keys(dashboardData.meter_series).map((key) => [key, []])),
+              panelSeries: Object.fromEntries(Object.keys(dashboardData.panel_series || {{}}).map((key) => [key, []]))
             }};
             dashboardData.timestamps.forEach((ts, idx) => {{
               const date = new Date(ts);
@@ -678,6 +718,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               }});
               Object.keys(dashboardData.meter_series).forEach((key) => {{
                 filtered.meterSeries[key].push(dashboardData.meter_series[key][idx]);
+              }});
+              Object.keys(dashboardData.panel_series || {{}}).forEach((key) => {{
+                filtered.panelSeries[key].push(dashboardData.panel_series[key][idx]);
               }});
             }});
             return filtered;
@@ -877,6 +920,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             if (Object.keys(data.groupSeries).length) {{
               renderGroupChart(data);
             }}
+
+            renderPanelChart(data);
           }}
 
           function updateMetrics(data) {{
@@ -970,6 +1015,60 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             }});
           }}
 
+          function initPanelSelector() {{
+            if (!dashboardData.panel_names || !dashboardData.panel_names.length) {{
+              return;
+            }}
+            const selector = document.getElementById("panel-selector");
+            const card = document.getElementById("panel-chart-card");
+            if (!selector || !card) {{
+              return;
+            }}
+            card.style.display = "block";
+            if (selector.options.length) {{
+              return;
+            }}
+            dashboardData.panel_names.forEach((panel) => {{
+              const option = document.createElement("option");
+              option.value = panel;
+              option.textContent = panel;
+              option.selected = true;
+              selector.appendChild(option);
+            }});
+            selector.addEventListener("change", () => {{
+              renderPanelChart(filterData());
+            }});
+          }}
+
+          function getSelectedPanels() {{
+            const selector = document.getElementById("panel-selector");
+            if (!selector) {{
+              return [];
+            }}
+            return Array.from(selector.selectedOptions).map((option) => option.value);
+          }}
+
+          function renderPanelChart(data) {{
+            if (!dashboardData.panel_names || !dashboardData.panel_names.length) {{
+              return;
+            }}
+            const selected = getSelectedPanels();
+            const panelsToShow = selected.length ? selected : dashboardData.panel_names;
+            const traces = panelsToShow.map((panel) => ({
+              x: data.timestamps,
+              y: (data.panelSeries && data.panelSeries[panel]) || [],
+              mode: "lines",
+              name: panel
+            }));
+            Plotly.newPlot("panel-series-chart", traces, {
+              margin: { t: 16, l: 50, r: 24, b: 40 },
+              legend: { orientation: "h" },
+              xaxis: { title: "Timestamp", type: "date" },
+              yaxis: { title: "kW", rangemode: "tozero" },
+              template: "plotly_white"
+            }, { displaylogo: false, responsive: true });
+          }}
+
           function renderDashboard() {{
             const filtered = filterData();
             renderCharts(filtered);
@@ -985,6 +1084,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           }});
 
           initDateInputs();
+          initPanelSelector();
           renderDashboard();
           {group_script}
         </script>
