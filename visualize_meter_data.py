@@ -44,6 +44,7 @@ DEFAULT_CONFIG = {
     "power_factor": 1.0,
     "price_per_kwh": 0.25,
     "total_amps_sources": None,
+    "utility_meters": [],
     "combo_columns": {
         "Production_kW": [],
         "Facilities_kW": [],
@@ -169,6 +170,25 @@ def meter_columns(columns: Iterable[str]) -> list[str]:
         *CONFIG["combo_columns"].keys(),
     }
     return [col for col in columns if col != "Timestamp" and col not in computed_names]
+
+
+def resolve_utility_meters(available: Iterable[str]) -> list[dict[str, object]]:
+    resolved = []
+    utility_meters = CONFIG.get("utility_meters") or []
+    for idx, meter in enumerate(utility_meters):
+        if not isinstance(meter, dict):
+            continue
+        name = str(meter.get("name") or f"Meter {idx + 1}")
+        panels = meter.get("panels") or []
+        if not isinstance(panels, list):
+            panels = []
+        resolved_panels = resolve_columns(available, panels, f"utility_meters[{name}]")
+        resolved.append({"name": name, "panels": resolved_panels})
+    return resolved
+
+
+def zero_series(length: int) -> list[float]:
+    return [0.0 for _ in range(length)]
 
 
 def add_usage_columns(df: pd.DataFrame, meters: list[str]) -> pd.DataFrame:
@@ -311,9 +331,23 @@ def compute_energy_metrics(df: pd.DataFrame) -> dict[str, float]:
 def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
     ordered = df.sort_values("Timestamp")
     timestamps = ordered["Timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ").tolist()
+    zero_values = zero_series(len(timestamps))
     total_kw = ordered.get(TOTAL_KW_COLUMN_NAME, pd.Series()).fillna(0).tolist()
     group_columns = [name for name in CONFIG["combo_columns"].keys() if name in ordered.columns]
     group_series = {name: ordered[name].fillna(0).tolist() for name in group_columns}
+    group_definitions = []
+    for group_name, group_panels in CONFIG["combo_columns"].items():
+        resolved_panels = resolve_columns(ordered.columns, group_panels, f"combo_columns[{group_name}]")
+        group_definitions.append({"name": group_name, "panels": resolved_panels})
+    meter_definitions = resolve_utility_meters(ordered.columns)
+    meter_series = {}
+    for meter in meter_definitions:
+        panels = meter["panels"]
+        if panels:
+            amps_total = ordered[panels].fillna(0).sum(axis=1)
+            meter_series[meter["name"]] = amps_to_kw(amps_total).fillna(0).tolist()
+        else:
+            meter_series[meter["name"]] = zero_values
     price_per_kwh = float(CONFIG["price_per_kwh"])
     rolling_hours = parse_window_to_hours(window)
 
@@ -321,6 +355,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         "timestamps": timestamps,
         "total_kw": total_kw,
         "group_series": group_series,
+        "group_definitions": group_definitions,
+        "utility_meters": meter_definitions,
+        "meter_series": meter_series,
         "rolling_hours": rolling_hours,
         "price_per_kwh": price_per_kwh,
     }
@@ -456,6 +493,48 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             gap: 20px;
             padding: 0 40px 40px;
           }}
+          .meter-section {{
+            padding: 0 40px 20px;
+          }}
+          .usage-section {{
+            padding: 0 40px 20px;
+          }}
+          .section-title {{
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+          }}
+          .meter-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+          }}
+          .meter-card {{
+            background: linear-gradient(135deg, #1d4ed8, #0ea5e9);
+            color: #fff;
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18);
+          }}
+          .meter-title {{
+            font-size: 14px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            opacity: 0.8;
+          }}
+          .meter-value {{
+            font-size: 24px;
+            font-weight: 600;
+            margin-top: 10px;
+          }}
+          .meter-sub {{
+            font-size: 13px;
+            margin-top: 6px;
+            opacity: 0.85;
+          }}
+          .usage-card {{
+            background: linear-gradient(135deg, #0f766e, #10b981);
+          }}
           .chart-card {{
             background: var(--card);
             border-radius: 18px;
@@ -514,6 +593,14 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             <div class="stat-hint">Highest observed value</div>
           </div>
         </div>
+        <div class="meter-section" id="meter-section" style="display: none;">
+          <div class="section-title">Utility Meters</div>
+          <div class="meter-grid" id="meter-cards"></div>
+        </div>
+        <div class="usage-section" id="usage-section" style="display: none;">
+          <div class="section-title">Usage by Group</div>
+          <div class="meter-grid" id="usage-cards"></div>
+        </div>
         <div class="charts-grid">
           <div class="chart-card">
             <div class="chart-title">Smoothed Load</div>
@@ -571,7 +658,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             const filtered = {{
               timestamps: [],
               totalKw: [],
-              groupSeries: Object.fromEntries(Object.keys(dashboardData.group_series).map((key) => [key, []]))
+              groupSeries: Object.fromEntries(Object.keys(dashboardData.group_series).map((key) => [key, []])),
+              meterSeries: Object.fromEntries(Object.keys(dashboardData.meter_series).map((key) => [key, []]))
             }};
             dashboardData.timestamps.forEach((ts, idx) => {{
               const date = new Date(ts);
@@ -585,6 +673,9 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               filtered.totalKw.push(dashboardData.total_kw[idx]);
               Object.keys(dashboardData.group_series).forEach((key) => {{
                 filtered.groupSeries[key].push(dashboardData.group_series[key][idx]);
+              }});
+              Object.keys(dashboardData.meter_series).forEach((key) => {{
+                filtered.meterSeries[key].push(dashboardData.meter_series[key][idx]);
               }});
             }});
             return filtered;
@@ -795,10 +886,95 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             document.getElementById("total-cost").textContent = `$${{totalCost.toFixed(2)}}`;
           }}
 
+          function updateMeterCards(data) {{
+            if (!dashboardData.utility_meters.length) {{
+              return;
+            }}
+            const section = document.getElementById("meter-section");
+            const container = document.getElementById("meter-cards");
+            if (!section || !container) {{
+              return;
+            }}
+            section.style.display = "block";
+            if (!container.dataset.initialized) {{
+              container.innerHTML = dashboardData.utility_meters
+                .map((meter, idx) => {{
+                  const panelList = (meter.panels || []).join(", ");
+                  return `
+                    <div class="meter-card">
+                      <div class="meter-title">${{meter.name}}</div>
+                      <div class="meter-value" id="meter-energy-${{idx}}">0.00 kWh</div>
+                      <div class="meter-sub" id="meter-cost-${{idx}}">$0.00</div>
+                      <div class="meter-sub">Panels: ${{panelList || "None"}}</div>
+                    </div>
+                  `;
+                }})
+                .join("");
+              container.dataset.initialized = "true";
+            }}
+            dashboardData.utility_meters.forEach((meter, idx) => {{
+              const series = data.meterSeries[meter.name] || [];
+              const metrics = computeMetrics(data.timestamps, series);
+              const energyEl = document.getElementById(`meter-energy-${{idx}}`);
+              const costEl = document.getElementById(`meter-cost-${{idx}}`);
+              if (energyEl) {{
+                energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+              }}
+              if (costEl) {{
+                const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+                costEl.textContent = `$${{totalCost.toFixed(2)}}`;
+              }}
+            }});
+          }}
+
+          function updateUsageCards(data) {{
+            if (!dashboardData.group_definitions.length) {{
+              return;
+            }}
+            const section = document.getElementById("usage-section");
+            const container = document.getElementById("usage-cards");
+            if (!section || !container) {{
+              return;
+            }}
+            section.style.display = "block";
+            if (!container.dataset.initialized) {{
+              container.innerHTML = dashboardData.group_definitions
+                .map((group, idx) => {{
+                  const panelList = (group.panels || []).join(", ");
+                  return `
+                    <div class="meter-card usage-card">
+                      <div class="meter-title">${{group.name}}</div>
+                      <div class="meter-value" id="group-energy-${{idx}}">0.00 kWh</div>
+                      <div class="meter-sub" id="group-cost-${{idx}}">$0.00</div>
+                      <div class="meter-sub">Panels: ${{panelList || "None"}}</div>
+                    </div>
+                  `;
+                }})
+                .join("");
+              container.dataset.initialized = "true";
+            }}
+            dashboardData.group_definitions.forEach((group, idx) => {{
+              const series = data.groupSeries[group.name]
+                || Array(data.timestamps.length).fill(0);
+              const metrics = computeMetrics(data.timestamps, series);
+              const energyEl = document.getElementById(`group-energy-${{idx}}`);
+              const costEl = document.getElementById(`group-cost-${{idx}}`);
+              if (energyEl) {{
+                energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+              }}
+              if (costEl) {{
+                const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+                costEl.textContent = `$${{totalCost.toFixed(2)}}`;
+              }}
+            }});
+          }}
+
           function renderDashboard() {{
             const filtered = filterData();
             renderCharts(filtered);
             updateMetrics(filtered);
+            updateMeterCards(filtered);
+            updateUsageCards(filtered);
           }}
 
           applyButton.addEventListener("click", renderDashboard);
