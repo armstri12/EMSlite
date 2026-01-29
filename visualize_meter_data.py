@@ -58,7 +58,7 @@ DEFAULT_CONFIG = {
         "Engineering_kW": [],
     },
     "rolling_window": "1h",
-    "dashboard_logo_url": "",
+    "dashboard_logo_path": "",
     "visualizations": {
         "total_kw_timeseries": {
             "enabled": True,
@@ -391,7 +391,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         "rolling_hours": rolling_hours,
         "price_per_kwh": price_per_kwh,
     }
-    logo_url = CONFIG.get("dashboard_logo_url") or ""
+    logo_path = CONFIG.get("dashboard_logo_path") or ""
 
     group_card = ""
     group_script = ""
@@ -408,17 +408,20 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: data.timestamps,
               y: values,
               mode: "lines",
-              name
+              name: name,
+              line: { width: 2.5, shape: "spline" }
             }));
             Plotly.newPlot("group-load-chart", traces, {
-              margin: { t: 16, l: 50, r: 24, b: 40 },
-              legend: { orientation: "h" },
-              xaxis: { title: "Timestamp", type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid },
-              yaxis: { title: "kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid },
+              margin: { t: 16, l: 60, r: 24, b: 50 },
+              legend: { orientation: "h", y: -0.15 },
+              xaxis: { title: { text: "Time", font: { size: 12, weight: 600 } }, type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid },
+              yaxis: { title: { text: "kW", font: { size: 12, weight: 600 } }, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid },
               paper_bgcolor: theme.card,
               plot_bgcolor: theme.card,
-              font: { family: "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif", color: theme.ink },
-              colorway: theme.series
+              font: { family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: theme.ink, size: 12 },
+              colorway: theme.series,
+              hovermode: "x unified",
+              hoverlabel: { bgcolor: theme.inkStrong, font: { color: "#ffffff" } }
             }, { displaylogo: false, responsive: true });
           }
         """
@@ -433,46 +436,63 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
         <style>
           :root {{
-            --bg: #cbd0cc;
+            --bg: #f8f9fa;
             --card: #ffffff;
             --ink: #2d363a;
-            --ink-strong: #000000;
-            --muted: #5b6468;
+            --ink-strong: #1a1f22;
+            --muted: #6c757d;
             --accent: #c4262e;
-            --accent-soft: rgba(196, 38, 46, 0.12);
-            --outline: rgba(45, 54, 58, 0.12);
-            --pill: rgba(45, 54, 58, 0.08);
-            --shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+            --accent-hover: #a61f26;
+            --accent-soft: rgba(196, 38, 46, 0.08);
+            --outline: rgba(45, 54, 58, 0.08);
+            --border: rgba(45, 54, 58, 0.12);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
           }}
-          * {{ box-sizing: border-box; }}
+          * {{ box-sizing: border-box; margin: 0; padding: 0; }}
           body {{
-            margin: 0;
-            font-family: "Calibri", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-            background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: var(--bg);
             color: var(--ink);
+            line-height: 1.6;
+            padding-top: 140px;
+          }}
+          .header-wrapper {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: var(--card);
+            border-bottom: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
+            z-index: 1000;
           }}
           .top-bar {{
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 20px;
-            padding: 24px 40px 12px;
+            gap: 24px;
+            padding: 20px 48px;
+            max-width: 1920px;
+            margin: 0 auto;
           }}
           .brand {{
             display: flex;
             align-items: center;
-            gap: 16px;
+            gap: 20px;
           }}
           .logo-wrapper {{
-            width: 52px;
-            height: 52px;
-            border-radius: 14px;
-            background: var(--pill);
-            border: 1px dashed var(--outline);
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            background: var(--accent-soft);
+            border: 2px solid var(--outline);
             display: flex;
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            flex-shrink: 0;
           }}
           .logo-wrapper img {{
             width: 100%;
@@ -480,189 +500,241 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             object-fit: contain;
           }}
           .logo-placeholder {{
-            font-size: 11px;
-            color: var(--muted);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--accent);
             text-align: center;
-            padding: 4px;
+            padding: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
           }}
-          .logo-controls {{
+          .brand-text {{
             display: flex;
             flex-direction: column;
-            gap: 6px;
-          }}
-          .logo-controls label {{
-            font-size: 11px;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-          }}
-          .logo-controls input[type="file"] {{
-            font-size: 12px;
-          }}
-          .header {{
-            padding: 8px 40px 16px;
           }}
           .title {{
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 700;
-            margin: 0;
             color: var(--ink-strong);
+            letter-spacing: -0.5px;
           }}
           .subtitle {{
-            margin-top: 6px;
+            margin-top: 2px;
             color: var(--muted);
-            font-size: 14px;
+            font-size: 13px;
+            font-weight: 500;
+          }}
+          .header-nav {{
+            padding: 0 48px 16px;
+            max-width: 1920px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            flex-wrap: wrap;
           }}
           .nav-pills {{
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 16px;
+            gap: 8px;
           }}
           .nav-pill {{
-            padding: 8px 14px;
-            border-radius: 999px;
-            background: var(--pill);
+            padding: 8px 18px;
+            border-radius: 8px;
+            background: transparent;
             color: var(--ink);
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 600;
             text-decoration: none;
             border: 1px solid transparent;
+            transition: all 0.2s ease;
           }}
           .nav-pill:hover {{
+            background: var(--accent-soft);
             border-color: var(--outline);
+            color: var(--accent);
           }}
           .filters {{
-            margin-top: 16px;
             display: flex;
             flex-wrap: wrap;
             gap: 12px;
             align-items: center;
           }}
           .filters label {{
-            font-size: 12px;
+            font-size: 11px;
+            font-weight: 600;
             color: var(--muted);
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.5px;
           }}
           .filters input {{
-            border: 1px solid var(--outline);
-            border-radius: 10px;
-            padding: 8px 10px;
-            font-size: 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 13px;
             color: var(--ink);
             background: var(--card);
+            transition: all 0.2s ease;
+          }}
+          .filters input:focus {{
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
           }}
           .filters button {{
             border: none;
-            border-radius: 10px;
-            padding: 8px 14px;
-            font-size: 14px;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 13px;
             font-weight: 600;
             color: #ffffff;
             background: var(--accent);
             cursor: pointer;
-            box-shadow: 0 8px 16px rgba(196, 38, 46, 0.25);
+            transition: all 0.2s ease;
+            box-shadow: var(--shadow-sm);
+          }}
+          .filters button:hover {{
+            background: var(--accent-hover);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
           }}
           .filters button.secondary {{
-            background: #2d363a;
+            background: var(--ink);
+            color: #ffffff;
+          }}
+          .filters button.secondary:hover {{
+            background: var(--ink-strong);
+          }}
+          .container {{
+            max-width: 1920px;
+            margin: 0 auto;
+            padding: 0 48px;
+          }}
+          .section {{
+            margin-bottom: 48px;
+          }}
+          .section-header {{
+            margin-bottom: 24px;
+          }}
+          .section-title {{
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--ink-strong);
+            letter-spacing: -0.3px;
+            margin-bottom: 4px;
+          }}
+          .section-description {{
+            font-size: 14px;
+            color: var(--muted);
           }}
           .stats-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            padding: 0 40px 24px;
-          }}
-          .meter-stat-grid {{
-            margin-top: -8px;
-            padding-top: 0;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
           }}
           .stat-card {{
             background: var(--card);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--outline);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border);
+            transition: all 0.2s ease;
+          }}
+          .stat-card:hover {{
+            box-shadow: var(--shadow-lg);
+            transform: translateY(-2px);
           }}
           .stat-card.meter-highlight {{
-            border: 1px solid rgba(196, 38, 46, 0.3);
-            background: linear-gradient(135deg, rgba(196, 38, 46, 0.1), rgba(45, 54, 58, 0.05));
+            border: 2px solid var(--accent);
+            background: linear-gradient(135deg, var(--card), var(--accent-soft));
           }}
           .stat-label {{
-            font-size: 12px;
+            font-size: 11px;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.8px;
             color: var(--muted);
           }}
           .stat-value {{
-            font-size: 24px;
-            font-weight: 600;
-            margin-top: 8px;
+            font-size: 32px;
+            font-weight: 700;
+            margin-top: 12px;
+            color: var(--ink-strong);
+            line-height: 1;
           }}
           .stat-hint {{
-            margin-top: 6px;
+            margin-top: 8px;
             font-size: 12px;
             color: var(--muted);
-          }}
-          .charts-grid {{
-            display: grid;
-            grid-template-columns: repeat(2, minmax(420px, 1fr));
-            gap: 20px;
-            padding: 0 40px 40px;
-          }}
-          .section-anchor {{
-            scroll-margin-top: 80px;
-          }}
-          .usage-section {{
-            padding: 0 40px 20px;
-          }}
-          .section-title {{
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 12px;
+            font-weight: 500;
           }}
           .meter-grid {{
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
           }}
           .meter-card {{
-            background: linear-gradient(135deg, #2d363a, #000000);
-            color: #fff;
-            border-radius: 18px;
-            padding: 18px;
-            box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2);
+            background: linear-gradient(135deg, var(--ink), var(--ink-strong));
+            color: #ffffff;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-lg);
+            transition: all 0.2s ease;
+          }}
+          .meter-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+          }}
+          .usage-card {{
+            background: linear-gradient(135deg, var(--accent), #9a1f26);
           }}
           .meter-title {{
-            font-size: 14px;
-            letter-spacing: 0.08em;
+            font-size: 12px;
+            letter-spacing: 1px;
             text-transform: uppercase;
-            opacity: 0.8;
+            opacity: 0.9;
+            font-weight: 600;
           }}
           .meter-value {{
-            font-size: 24px;
-            font-weight: 600;
-            margin-top: 10px;
+            font-size: 28px;
+            font-weight: 700;
+            margin-top: 12px;
+            line-height: 1;
           }}
           .meter-sub {{
             font-size: 13px;
-            margin-top: 6px;
+            margin-top: 8px;
             opacity: 0.85;
+            font-weight: 500;
           }}
-          .usage-card {{
-            background: linear-gradient(135deg, #c4262e, #2d363a);
+          .charts-grid {{
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+            margin-bottom: 24px;
           }}
           .chart-card {{
             background: var(--card);
-            border-radius: 18px;
-            padding: 12px 12px 4px;
-            box-shadow: var(--shadow);
-            border: 1px solid var(--outline);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border);
+            transition: all 0.2s ease;
+          }}
+          .chart-card:hover {{
+            box-shadow: var(--shadow-lg);
+          }}
+          .chart-card.full-width {{
+            grid-column: 1 / -1;
           }}
           .chart-title {{
-            padding: 10px 12px 0;
-            font-weight: 600;
-            color: var(--ink);
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--ink-strong);
+            margin-bottom: 16px;
+            letter-spacing: -0.2px;
           }}
           .chart {{
             min-height: 380px;
@@ -670,163 +742,220 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           .chart-card .plotly-graph-div {{
             width: 100% !important;
           }}
-          .chart-card.full-width {{
-            grid-column: 1 / -1;
-          }}
           .panel-controls {{
             display: flex;
             flex-wrap: wrap;
             gap: 12px;
             align-items: center;
-            padding: 6px 12px 0;
+            margin-bottom: 16px;
           }}
           .panel-controls label {{
-            font-size: 12px;
+            font-size: 11px;
+            font-weight: 700;
             color: var(--muted);
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.8px;
           }}
           .panel-controls select {{
-            min-width: 220px;
-            padding: 6px 10px;
-            border-radius: 10px;
-            border: 1px solid var(--outline);
-            background: #fff;
+            min-width: 240px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--card);
             font-size: 13px;
             color: var(--ink);
+            transition: all 0.2s ease;
+          }}
+          .panel-controls select:focus {{
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-soft);
+          }}
+          .section-anchor {{
+            scroll-margin-top: 160px;
           }}
           .footer {{
-            padding: 20px 40px 32px;
+            padding: 32px 48px;
             color: var(--muted);
             font-size: 12px;
+            text-align: center;
+            border-top: 1px solid var(--border);
+            background: var(--card);
+            margin-top: 48px;
           }}
-          @media (max-width: 980px) {{
+          @media (max-width: 1200px) {{
+            .charts-grid {{
+              grid-template-columns: 1fr;
+            }}
+          }}
+          @media (max-width: 768px) {{
+            body {{
+              padding-top: 180px;
+            }}
+            .container {{
+              padding: 0 24px;
+            }}
             .top-bar {{
               flex-direction: column;
               align-items: flex-start;
+              padding: 16px 24px;
             }}
-            .charts-grid {{
+            .header-nav {{
+              padding: 0 24px 12px;
+              flex-direction: column;
+              align-items: flex-start;
+            }}
+            .stats-grid {{
               grid-template-columns: 1fr;
+            }}
+            .footer {{
+              padding: 24px;
             }}
           }}
         </style>
       </head>
       <body>
-        <div class="top-bar">
-          <div class="brand">
-            <div class="logo-wrapper">
-              <img id="logo-image" src="{logo_url}" alt="Logo" style="display: none;" />
-              <div class="logo-placeholder" id="logo-placeholder">Your Logo</div>
-            </div>
-            <div>
-              <h1 class="title">EMS Energy Dashboard</h1>
-              <div class="subtitle">Interactive totals using ${price_per_kwh:.2f} / kWh</div>
+        <div class="header-wrapper">
+          <div class="top-bar">
+            <div class="brand">
+              <div class="logo-wrapper">
+                <img id="logo-image" src="{logo_path}" alt="Logo" style="display: none;" />
+                <div class="logo-placeholder" id="logo-placeholder">Logo</div>
+              </div>
+              <div class="brand-text">
+                <h1 class="title">Energy Management Dashboard</h1>
+                <div class="subtitle">Real-time monitoring at ${price_per_kwh:.2f}/kWh</div>
+              </div>
             </div>
           </div>
-          <div class="logo-controls">
-            <label for="logo-input">Logo upload</label>
-            <input type="file" id="logo-input" accept="image/*" />
+          <div class="header-nav">
+            <div class="nav-pills">
+              <a class="nav-pill" href="#kpi-section">Key Metrics</a>
+              <a class="nav-pill" href="#usage-section">Usage Groups</a>
+              <a class="nav-pill" href="#charts-section">Analytics</a>
+              <a class="nav-pill" href="#panels-section">Panel Trends</a>
+            </div>
+            <div class="filters">
+              <div>
+                <label for="start-date">Start</label>
+                <input type="date" id="start-date" />
+              </div>
+              <div>
+                <label for="end-date">End</label>
+                <input type="date" id="end-date" />
+              </div>
+              <button id="apply-filters">Apply</button>
+              <button id="reset-filters" class="secondary">Reset</button>
+            </div>
           </div>
         </div>
-        <div class="header">
-          <div class="nav-pills">
-            <a class="nav-pill" href="#kpi-section">KPIs</a>
-            <a class="nav-pill" href="#usage-section">Usage</a>
-            <a class="nav-pill" href="#charts-section">Charts</a>
-            <a class="nav-pill" href="#panels-section">Panel Trends</a>
-          </div>
-          <div class="filters">
-            <div>
-              <label for="start-date">Start Date</label>
-              <input type="date" id="start-date" />
+
+        <div class="container">
+          <div class="section section-anchor" id="kpi-section">
+            <div class="section-header">
+              <h2 class="section-title">Key Performance Indicators</h2>
+              <div class="section-description">Overview of energy consumption and costs</div>
             </div>
-            <div>
-              <label for="end-date">End Date</label>
-              <input type="date" id="end-date" />
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-label">Total Energy</div>
+                <div class="stat-value" id="total-energy">0.00 kWh</div>
+                <div class="stat-hint">Cumulative consumption</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Estimated Cost</div>
+                <div class="stat-value" id="total-cost">$0.00</div>
+                <div class="stat-hint">At ${price_per_kwh:.2f}/kWh</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Average Load</div>
+                <div class="stat-value" id="average-load">0.00 kW</div>
+                <div class="stat-hint">Mean demand</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Peak Load</div>
+                <div class="stat-value" id="peak-load">0.00 kW</div>
+                <div class="stat-hint">Maximum demand</div>
+              </div>
             </div>
-            <button id="apply-filters">Apply Dates</button>
-            <button id="reset-filters" class="secondary">Reset</button>
+            <div class="stats-grid" id="meter-stat-grid" style="display: none;"></div>
           </div>
-        </div>
-        <div class="stats-grid section-anchor" id="kpi-section">
-          <div class="stat-card">
-            <div class="stat-label">Total Energy</div>
-            <div class="stat-value" id="total-energy">0.00 kWh</div>
-            <div class="stat-hint">Integrated from total load</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Estimated Cost</div>
-            <div class="stat-value" id="total-cost">$0.00</div>
-            <div class="stat-hint">Rate: ${price_per_kwh:.2f} / kWh</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Average Load</div>
-            <div class="stat-value" id="average-load">0.00 kW</div>
-            <div class="stat-hint">Mean across timestamps</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Peak Load</div>
-            <div class="stat-value" id="peak-load">0.00 kW</div>
-            <div class="stat-hint">Highest observed value</div>
-          </div>
-        </div>
-        <div class="stats-grid meter-stat-grid" id="meter-stat-grid" style="display: none;"></div>
-        <div class="usage-section section-anchor" id="usage-section" style="display: none;">
-          <div class="section-title">Usage by Group</div>
-          <div class="meter-grid" id="usage-cards"></div>
-        </div>
-        <div class="charts-grid section-anchor" id="charts-section">
-          <div class="chart-card">
-            <div class="chart-title">Smoothed Load</div>
-            <div id="rolling-load-chart" class="chart"></div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-title">Load Heatmap</div>
-            <div id="heatmap-chart" class="chart"></div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-title">Average Hourly Profile</div>
-            <div id="hourly-profile-chart" class="chart"></div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-title">Weekday Load Mix</div>
-            <div id="weekday-profile-chart" class="chart"></div>
-          </div>
-          <div class="chart-card">
-            <div class="chart-title">Daily Energy</div>
-            <div id="daily-energy-chart" class="chart"></div>
-          </div>
-          {group_card}
-          <div class="chart-card full-width section-anchor" id="panels-section" style="display: none;">
-            <div class="chart-title">Panel Trends</div>
-            <div class="panel-controls">
-              <label for="panel-selector">Panels</label>
-              <select id="panel-selector" multiple></select>
+
+          <div class="section section-anchor" id="usage-section" style="display: none;">
+            <div class="section-header">
+              <h2 class="section-title">Usage by Group</h2>
+              <div class="section-description">Energy consumption breakdown by operational area</div>
             </div>
-            <div id="panel-series-chart" class="chart"></div>
+            <div class="meter-grid" id="usage-cards"></div>
+          </div>
+
+          <div class="section section-anchor" id="charts-section">
+            <div class="section-header">
+              <h2 class="section-title">Energy Analytics</h2>
+              <div class="section-description">Detailed insights into consumption patterns and trends</div>
+            </div>
+            <div class="charts-grid">
+              <div class="chart-card">
+                <div class="chart-title">Smoothed Load Profile</div>
+                <div id="rolling-load-chart" class="chart"></div>
+              </div>
+              <div class="chart-card">
+                <div class="chart-title">Time-of-Day Heatmap</div>
+                <div id="heatmap-chart" class="chart"></div>
+              </div>
+              <div class="chart-card">
+                <div class="chart-title">Average Hourly Profile</div>
+                <div id="hourly-profile-chart" class="chart"></div>
+              </div>
+              <div class="chart-card">
+                <div class="chart-title">Weekday Distribution</div>
+                <div id="weekday-profile-chart" class="chart"></div>
+              </div>
+              <div class="chart-card">
+                <div class="chart-title">Daily Energy Consumption</div>
+                <div id="daily-energy-chart" class="chart"></div>
+              </div>
+              {group_card}
+            </div>
+          </div>
+
+          <div class="section section-anchor" id="panels-section" style="display: none;">
+            <div class="section-header">
+              <h2 class="section-title">Panel Trends</h2>
+              <div class="section-description">Individual panel load curves with weekend highlighting</div>
+            </div>
+            <div class="chart-card full-width">
+              <div class="panel-controls">
+                <label for="panel-selector">Select Panels</label>
+                <select id="panel-selector" multiple></select>
+              </div>
+              <div id="panel-series-chart" class="chart"></div>
+            </div>
           </div>
         </div>
-        <div class="footer">Primary palette: #2d363a &amp; #c4262e · Secondary palette: #000000 &amp; #cbd0cc</div>
+
+        <div class="footer">
+          Energy Management System &middot; Branding: #c4262e &amp; #2d363a
+        </div>
         <script>
           const dashboardData = {json.dumps(data_payload)};
-          const logoUrl = {json.dumps(logo_url)};
+          const logoPath = {json.dumps(logo_path)};
           const theme = {{
             ink: "#2d363a",
-            inkStrong: "#000000",
-            muted: "#5b6468",
+            inkStrong: "#1a1f22",
+            muted: "#6c757d",
             card: "#ffffff",
-            grid: "rgba(45, 54, 58, 0.12)",
+            grid: "rgba(0, 0, 0, 0.08)",
             accent: "#c4262e",
             accentDark: "#2d363a",
-            accentNeutral: "#cbd0cc",
-            series: ["#c4262e", "#2d363a", "#000000", "#6b7280", "#cbd0cc"]
+            accentLight: "#e84855",
+            series: ["#c4262e", "#2d363a", "#495057", "#6c757d", "#adb5bd", "#dee2e6"]
           }};
 
           const startInput = document.getElementById("start-date");
           const endInput = document.getElementById("end-date");
           const applyButton = document.getElementById("apply-filters");
           const resetButton = document.getElementById("reset-filters");
-          const logoInput = document.getElementById("logo-input");
           const logoImage = document.getElementById("logo-image");
           const logoPlaceholder = document.getElementById("logo-placeholder");
 
@@ -1060,16 +1189,34 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: data.timestamps,
               y: rollingValues,
               mode: "lines",
-              line: {{ color: theme.accent, width: 3 }}
+              line: {{ color: theme.accent, width: 2.5, shape: "spline" }},
+              fill: "tozeroy",
+              fillcolor: "rgba(196, 38, 46, 0.08)"
             }};
             const layoutBase = {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              xaxis: {{ title: "Timestamp", type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid }},
-              yaxis: {{ title: "kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              margin: {{ t: 16, l: 60, r: 24, b: 50 }},
+              xaxis: {{
+                title: {{ text: "Time", font: {{ size: 12, weight: 600 }} }},
+                type: "date",
+                gridcolor: theme.grid,
+                zerolinecolor: theme.grid,
+                showline: true,
+                linecolor: theme.grid
+              }},
+              yaxis: {{
+                title: {{ text: "kW", font: {{ size: 12, weight: 600 }} }},
+                rangemode: "tozero",
+                gridcolor: theme.grid,
+                zerolinecolor: theme.grid,
+                showline: true,
+                linecolor: theme.grid
+              }},
               paper_bgcolor: theme.card,
               plot_bgcolor: theme.card,
-              font: {{ family: "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif", color: theme.ink }},
-              colorway: theme.series
+              font: {{ family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: theme.ink, size: 12 }},
+              colorway: theme.series,
+              hovermode: "x unified",
+              hoverlabel: {{ bgcolor: theme.inkStrong, font: {{ color: "#ffffff" }} }}
             }};
             Plotly.newPlot("rolling-load-chart", [rollingTrace], {{
               ...layoutBase
@@ -1082,17 +1229,19 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               z: heatmap.z,
               type: "heatmap",
               colorscale: [
-                [0, "#cbd0cc"],
-                [0.5, "#2d363a"],
+                [0, "#f8f9fa"],
+                [0.3, "#dee2e6"],
+                [0.6, "#6c757d"],
+                [0.8, "#495057"],
                 [1, "#c4262e"]
               ],
               zsmooth: "best",
               connectgaps: true,
-              colorbar: {{ title: "kW" }}
+              colorbar: {{ title: {{ text: "kW", font: {{ size: 11 }} }}, thickness: 15 }}
             }}], {{
               ...layoutBase,
-              xaxis: {{ title: "Date", type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid }},
-              yaxis: {{ title: "Hour", autorange: "reversed", gridcolor: theme.grid, zerolinecolor: theme.grid }}
+              xaxis: {{ title: {{ text: "Date", font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Hour of Day", font: {{ size: 12, weight: 600 }} }}, autorange: "reversed", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
             const hourlyProfile = buildHourlyProfile(data.timestamps, data.totalKw);
@@ -1100,13 +1249,15 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: hourlyProfile.hours,
               y: hourlyProfile.averages,
               mode: "lines+markers",
-              line: {{ color: theme.accentDark, width: 3 }},
-              marker: {{ size: 6 }}
+              line: {{ color: theme.accentDark, width: 2.5, shape: "spline" }},
+              marker: {{ size: 8, color: theme.accentDark, line: {{ color: "#ffffff", width: 2 }} }},
+              fill: "tozeroy",
+              fillcolor: "rgba(45, 54, 58, 0.08)"
             }};
             Plotly.newPlot("hourly-profile-chart", [hourlyTrace], {{
               ...layoutBase,
-              xaxis: {{ title: "Hour (UTC)", dtick: 1, gridcolor: theme.grid, zerolinecolor: theme.grid }},
-              yaxis: {{ title: "Average kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }}
+              xaxis: {{ title: {{ text: "Hour of Day (UTC)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
             const weekdayProfile = buildWeekdayProfile(data.timestamps, data.totalKw);
@@ -1114,12 +1265,16 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: weekdayProfile.weekdays,
               y: weekdayProfile.averages,
               type: "bar",
-              marker: {{ color: theme.accent }}
+              marker: {{
+                color: theme.accent,
+                line: {{ color: theme.accent, width: 0 }}
+              }}
             }};
             Plotly.newPlot("weekday-profile-chart", [weekdayTrace], {{
               ...layoutBase,
-              xaxis: {{ title: "Day of Week", gridcolor: theme.grid, zerolinecolor: theme.grid }},
-              yaxis: {{ title: "Average kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }}
+              xaxis: {{ title: {{ text: "Day of Week", font: {{ size: 12, weight: 600 }} }}, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              bargap: 0.2
             }}, {{ displaylogo: false, responsive: true }});
 
             const dailyEnergy = buildDailyEnergy(data.timestamps, data.totalKw);
@@ -1127,12 +1282,16 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: dailyEnergy.dates,
               y: dailyEnergy.values,
               type: "bar",
-              marker: {{ color: theme.accentDark }}
+              marker: {{
+                color: theme.accentDark,
+                line: {{ color: theme.accentDark, width: 0 }}
+              }}
             }};
             Plotly.newPlot("daily-energy-chart", [dailyEnergyTrace], {{
               ...layoutBase,
-              xaxis: {{ title: "Date", type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid }},
-              yaxis: {{ title: "Energy (kWh)", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }}
+              xaxis: {{ title: {{ text: "Date", font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Energy (kWh)", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              bargap: 0.15
             }}, {{ displaylogo: false, responsive: true }});
 
             if (Object.keys(data.groupSeries).length) {{
@@ -1276,19 +1435,22 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               x: data.timestamps,
               y: (data.panelSeries && data.panelSeries[panel]) || [],
               mode: "lines",
-              name: panel
+              name: panel,
+              line: {{ width: 2, shape: "spline" }}
             }}));
             const weekendShapes = buildWeekendShapes(data.timestamps);
             Plotly.newPlot("panel-series-chart", traces, {{
-              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
-              legend: {{ orientation: "h" }},
-              xaxis: {{ title: "Timestamp", type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid }},
-              yaxis: {{ title: "kW", rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid }},
+              margin: {{ t: 16, l: 60, r: 24, b: 50 }},
+              legend: {{ orientation: "h", y: -0.15 }},
+              xaxis: {{ title: {{ text: "Time", font: {{ size: 12, weight: 600 }} }}, type: "date", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
               shapes: weekendShapes,
               paper_bgcolor: theme.card,
               plot_bgcolor: theme.card,
-              font: {{ family: "Calibri, Segoe UI, Helvetica Neue, Arial, sans-serif", color: theme.ink }},
-              colorway: theme.series
+              font: {{ family: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", color: theme.ink, size: 12 }},
+              colorway: theme.series,
+              hovermode: "x unified",
+              hoverlabel: {{ bgcolor: theme.inkStrong, font: {{ color: "#ffffff" }} }}
             }}, {{ displaylogo: false, responsive: true }});
           }}
 
@@ -1309,20 +1471,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           initDateInputs();
           initPanelSelector();
           renderDashboard();
-          applyLogo(logoUrl);
-          if (logoInput) {{
-            logoInput.addEventListener("change", (event) => {{
-              const file = event.target.files && event.target.files[0];
-              if (!file) {{
-                return;
-              }}
-              const reader = new FileReader();
-              reader.onload = (loadEvent) => {{
-                applyLogo(loadEvent.target.result);
-              }};
-              reader.readAsDataURL(file);
-            }});
-          }}
+          applyLogo(logoPath);
           {group_script}
         </script>
       </body>
