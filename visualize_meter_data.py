@@ -1054,19 +1054,19 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             }}
             const selected = getSelectedPanels();
             const panelsToShow = selected.length ? selected : dashboardData.panel_names;
-            const traces = panelsToShow.map((panel) => ({
+            const traces = panelsToShow.map((panel) => ({{
               x: data.timestamps,
               y: (data.panelSeries && data.panelSeries[panel]) || [],
               mode: "lines",
               name: panel
-            }));
-            Plotly.newPlot("panel-series-chart", traces, {
-              margin: { t: 16, l: 50, r: 24, b: 40 },
-              legend: { orientation: "h" },
-              xaxis: { title: "Timestamp", type: "date" },
-              yaxis: { title: "kW", rangemode: "tozero" },
+            }}));
+            Plotly.newPlot("panel-series-chart", traces, {{
+              margin: {{ t: 16, l: 50, r: 24, b: 40 }},
+              legend: {{ orientation: "h" }},
+              xaxis: {{ title: "Timestamp", type: "date" }},
+              yaxis: {{ title: "kW", rangemode: "tozero" }},
               template: "plotly_white"
-            }, { displaylogo: false, responsive: true });
+            }}, {{ displaylogo: false, responsive: true }});
           }}
 
           function renderDashboard() {{
