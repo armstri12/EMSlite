@@ -544,6 +544,34 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             font-size: 13px;
             font-weight: 500;
           }}
+          .settings-icon {{
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: var(--accent-soft);
+            border: 1px solid var(--outline);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-left: 12px;
+          }}
+          .settings-icon:hover {{
+            background: var(--accent);
+            border-color: var(--accent);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
+          }}
+          .settings-icon:hover svg {{
+            fill: white;
+          }}
+          .settings-icon svg {{
+            width: 20px;
+            height: 20px;
+            fill: var(--accent);
+            transition: all 0.2s ease;
+          }}
           .header-nav {{
             padding: 0 48px 16px;
             max-width: 1920px;
@@ -894,6 +922,159 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             background: var(--card);
             margin-top: 48px;
           }}
+          .modal-overlay {{
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+          }}
+          .modal-overlay.active {{
+            display: flex;
+          }}
+          .modal-content {{
+            background: var(--card);
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+          }}
+          .modal-header {{
+            padding: 24px 32px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }}
+          .modal-title {{
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--ink-strong);
+          }}
+          .modal-close {{
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: transparent;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          }}
+          .modal-close:hover {{
+            background: var(--accent-soft);
+          }}
+          .modal-close svg {{
+            width: 20px;
+            height: 20px;
+            fill: var(--ink);
+          }}
+          .modal-body {{
+            padding: 24px 32px;
+            overflow-y: auto;
+            flex: 1;
+          }}
+          .config-section {{
+            margin-bottom: 32px;
+          }}
+          .config-section:last-child {{
+            margin-bottom: 0;
+          }}
+          .config-section-title {{
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--ink-strong);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+          }}
+          .config-section-title .badge {{
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: var(--accent-soft);
+            color: var(--accent);
+            font-weight: 600;
+          }}
+          .panel-list {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }}
+          .panel-item {{
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+          }}
+          .panel-item:hover {{
+            background: var(--accent-soft);
+            border-color: var(--accent);
+          }}
+          .panel-item input[type="checkbox"] {{
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            margin-right: 12px;
+          }}
+          .panel-item label {{
+            flex: 1;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--ink);
+            font-weight: 500;
+          }}
+          .modal-footer {{
+            padding: 20px 32px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+          }}
+          .modal-footer button {{
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          }}
+          .modal-footer button.primary {{
+            background: var(--accent);
+            color: white;
+            box-shadow: var(--shadow-sm);
+          }}
+          .modal-footer button.primary:hover {{
+            background: var(--accent-hover);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-1px);
+          }}
+          .modal-footer button.secondary {{
+            background: var(--bg);
+            color: var(--ink);
+            border: 1px solid var(--border);
+          }}
+          .modal-footer button.secondary:hover {{
+            background: var(--card);
+            border-color: var(--ink);
+          }}
           @media (max-width: 1200px) {{
             .charts-grid {{
               grid-template-columns: 1fr;
@@ -921,6 +1102,13 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             }}
             .footer {{
               padding: 24px;
+            }}
+            .modal-content {{
+              max-height: 95vh;
+            }}
+            .modal-header, .modal-body, .modal-footer {{
+              padding-left: 20px;
+              padding-right: 20px;
             }}
           }}
         </style>
@@ -988,6 +1176,11 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               </div>
               <button id="apply-filters">Apply</button>
               <button id="reset-filters" class="secondary">Reset</button>
+              <div class="settings-icon" id="settings-button" title="Configure Dashboard">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+                </svg>
+              </div>
             </div>
           </div>
         </div>
@@ -1072,6 +1265,113 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
                 <select id="panel-selector" multiple></select>
               </div>
               <div id="panel-series-chart" class="chart"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-overlay" id="config-modal">
+          <div class="modal-content">
+            <div class="modal-header">
+              <div class="modal-title">Configure Dashboard</div>
+              <button class="modal-close" id="modal-close">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="config-section">
+                <div class="config-section-title">
+                  Key Performance Indicators
+                  <span class="badge">KPI</span>
+                </div>
+                <div class="panel-list">
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-total-energy" checked />
+                    <label for="panel-total-energy">Total Energy</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-total-cost" checked />
+                    <label for="panel-total-cost">Estimated Cost</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-average-load" checked />
+                    <label for="panel-average-load">Average Load</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-peak-load" checked />
+                    <label for="panel-peak-load">Peak Load</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-meter-stats" checked />
+                    <label for="panel-meter-stats">Meter Statistics Grid</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="config-section">
+                <div class="config-section-title">
+                  Usage Groups
+                  <span class="badge">USAGE</span>
+                </div>
+                <div class="panel-list">
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-usage-section" checked />
+                    <label for="panel-usage-section">Usage by Group Section</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="config-section">
+                <div class="config-section-title">
+                  Energy Analytics
+                  <span class="badge">CHARTS</span>
+                </div>
+                <div class="panel-list">
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-rolling-load" checked />
+                    <label for="panel-rolling-load">Smoothed Load Profile</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-heatmap" checked />
+                    <label for="panel-heatmap">Time-of-Day Heatmap</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-hourly-profile" checked />
+                    <label for="panel-hourly-profile">Average Hourly Profile</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-weekday-profile" checked />
+                    <label for="panel-weekday-profile">Weekday Distribution</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-daily-energy" checked />
+                    <label for="panel-daily-energy">Daily Energy Consumption</label>
+                  </div>
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-group-load" checked />
+                    <label for="panel-group-load">Group Loads Chart</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="config-section">
+                <div class="config-section-title">
+                  Panel Trends
+                  <span class="badge">PANELS</span>
+                </div>
+                <div class="panel-list">
+                  <div class="panel-item">
+                    <input type="checkbox" id="panel-panels-section" checked />
+                    <label for="panel-panels-section">Panel Trends Section</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="secondary" id="config-reset">Reset to Default</button>
+              <button class="secondary" id="config-cancel">Cancel</button>
+              <button class="primary" id="config-apply">Apply Changes</button>
             </div>
           </div>
         </div>
@@ -1981,6 +2281,135 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           initPanelSelector();
           renderDashboard();
           applyLogo(logoPath);
+
+          // Panel Configuration Modal
+          const configModal = document.getElementById("config-modal");
+          const settingsButton = document.getElementById("settings-button");
+          const modalClose = document.getElementById("modal-close");
+          const configCancel = document.getElementById("config-cancel");
+          const configApply = document.getElementById("config-apply");
+          const configReset = document.getElementById("config-reset");
+
+          const PANEL_CONFIG_KEY = "dashboard-panel-config";
+
+          const panelMappings = {{
+            "panel-total-energy": {{ element: () => document.querySelector(".stat-card:has(#total-energy)"), type: "card" }},
+            "panel-total-cost": {{ element: () => document.querySelector(".stat-card:has(#total-cost)"), type: "card" }},
+            "panel-average-load": {{ element: () => document.querySelector(".stat-card:has(#average-load)"), type: "card" }},
+            "panel-peak-load": {{ element: () => document.querySelector(".stat-card:has(#peak-load)"), type: "card" }},
+            "panel-meter-stats": {{ element: () => document.getElementById("meter-stat-grid"), type: "element" }},
+            "panel-usage-section": {{ element: () => document.getElementById("usage-section"), type: "section" }},
+            "panel-rolling-load": {{ element: () => document.querySelector(".chart-card:has(#rolling-load-chart)"), type: "card" }},
+            "panel-heatmap": {{ element: () => document.querySelector(".chart-card:has(#heatmap-chart)"), type: "card" }},
+            "panel-hourly-profile": {{ element: () => document.querySelector(".chart-card:has(#hourly-profile-chart)"), type: "card" }},
+            "panel-weekday-profile": {{ element: () => document.querySelector(".chart-card:has(#weekday-profile-chart)"), type: "card" }},
+            "panel-daily-energy": {{ element: () => document.querySelector(".chart-card:has(#daily-energy-chart)"), type: "card" }},
+            "panel-group-load": {{ element: () => document.querySelector(".chart-card:has(#group-load-chart)"), type: "card" }},
+            "panel-panels-section": {{ element: () => document.getElementById("panels-section"), type: "section" }}
+          }};
+
+          function getDefaultConfig() {{
+            const config = {{}};
+            Object.keys(panelMappings).forEach(key => {{
+              config[key] = true;
+            }});
+            return config;
+          }}
+
+          function loadPanelConfig() {{
+            try {{
+              const saved = localStorage.getItem(PANEL_CONFIG_KEY);
+              if (saved) {{
+                return {{ ...getDefaultConfig(), ...JSON.parse(saved) }};
+              }}
+            }} catch (e) {{
+              console.warn("Failed to load panel config:", e);
+            }}
+            return getDefaultConfig();
+          }}
+
+          function savePanelConfig(config) {{
+            try {{
+              localStorage.setItem(PANEL_CONFIG_KEY, JSON.stringify(config));
+            }} catch (e) {{
+              console.warn("Failed to save panel config:", e);
+            }}
+          }}
+
+          function applyPanelConfig(config) {{
+            Object.entries(panelMappings).forEach(([checkboxId, mapping]) => {{
+              const element = mapping.element();
+              if (element) {{
+                const isVisible = config[checkboxId] !== false;
+                element.style.display = isVisible ? "" : "none";
+              }}
+            }});
+          }}
+
+          function syncModalCheckboxes(config) {{
+            Object.entries(config).forEach(([checkboxId, isChecked]) => {{
+              const checkbox = document.getElementById(checkboxId);
+              if (checkbox) {{
+                checkbox.checked = isChecked;
+              }}
+            }});
+          }}
+
+          function openConfigModal() {{
+            const currentConfig = loadPanelConfig();
+            syncModalCheckboxes(currentConfig);
+            configModal.classList.add("active");
+            document.body.style.overflow = "hidden";
+          }}
+
+          function closeConfigModal() {{
+            configModal.classList.remove("active");
+            document.body.style.overflow = "";
+          }}
+
+          function applyConfigChanges() {{
+            const newConfig = {{}};
+            Object.keys(panelMappings).forEach(checkboxId => {{
+              const checkbox = document.getElementById(checkboxId);
+              if (checkbox) {{
+                newConfig[checkboxId] = checkbox.checked;
+              }}
+            }});
+            savePanelConfig(newConfig);
+            applyPanelConfig(newConfig);
+            closeConfigModal();
+          }}
+
+          function resetConfigToDefault() {{
+            const defaultConfig = getDefaultConfig();
+            syncModalCheckboxes(defaultConfig);
+          }}
+
+          // Event listeners
+          settingsButton.addEventListener("click", openConfigModal);
+          modalClose.addEventListener("click", closeConfigModal);
+          configCancel.addEventListener("click", closeConfigModal);
+          configApply.addEventListener("click", applyConfigChanges);
+          configReset.addEventListener("click", resetConfigToDefault);
+
+          // Close modal on overlay click
+          configModal.addEventListener("click", (e) => {{
+            if (e.target === configModal) {{
+              closeConfigModal();
+            }}
+          }});
+
+          // Close modal on Escape key
+          document.addEventListener("keydown", (e) => {{
+            if (e.key === "Escape" && configModal.classList.contains("active")) {{
+              closeConfigModal();
+            }}
+          }});
+
+          // Load and apply saved config on page load
+          const initialConfig = loadPanelConfig();
+          applyPanelConfig(initialConfig);
+
           {group_script}
         </script>
       </body>
