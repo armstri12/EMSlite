@@ -404,33 +404,13 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
         """
         group_script = """
           function renderGroupChart(data) {
-            let traces;
-            if (data.isComparison) {
-              // For comparison mode, create traces for both periods
-              const tracesA = Object.entries(data.periodA.groupSeries).map(([name, values]) => ({
-                x: data.periodA.timestamps,
-                y: values,
-                mode: "lines",
-                name: `${name} (A)`,
-                line: { width: 2.5, shape: "spline", dash: "solid" }
-              }));
-              const tracesB = Object.entries(data.periodB.groupSeries).map(([name, values]) => ({
-                x: data.periodB.timestamps,
-                y: values,
-                mode: "lines",
-                name: `${name} (B)`,
-                line: { width: 2.5, shape: "spline", dash: "dot" }
-              }));
-              traces = [...tracesA, ...tracesB];
-            } else {
-              traces = Object.entries(data.groupSeries).map(([name, values]) => ({
-                x: data.timestamps,
-                y: values,
-                mode: "lines",
-                name: name,
-                line: { width: 2.5, shape: "spline" }
-              }));
-            }
+            const traces = Object.entries(data.groupSeries).map(([name, values]) => ({
+              x: data.timestamps,
+              y: values,
+              mode: "lines",
+              name: name,
+              line: { width: 2.5, shape: "spline" }
+            }));
             Plotly.newPlot("group-load-chart", traces, {
               margin: { t: 16, l: 60, r: 24, b: 50 },
               legend: { orientation: "h", y: -0.15 },
@@ -626,96 +606,124 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
           .filters button.secondary:hover {{
             background: var(--ink-strong);
           }}
+          .panel-filter-wrapper {{
+            position: relative;
+          }}
+          .panel-filter-btn {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink);
+            background: var(--card);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+          }}
+          .panel-filter-btn:hover {{
+            border-color: var(--accent);
+          }}
+          .panel-filter-btn .count-badge {{
+            background: var(--accent);
+            color: #fff;
+            border-radius: 10px;
+            padding: 1px 8px;
+            font-size: 11px;
+            font-weight: 700;
+          }}
+          .panel-filter-dropdown {{
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            min-width: 280px;
+            max-height: 360px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            box-shadow: var(--shadow-lg);
+            z-index: 2000;
+            flex-direction: column;
+          }}
+          .panel-filter-dropdown.open {{
+            display: flex;
+          }}
+          .panel-filter-actions {{
+            display: flex;
+            gap: 8px;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+          }}
+          .panel-filter-actions button {{
+            border: none;
+            background: none;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent);
+            cursor: pointer;
+            padding: 2px 4px;
+          }}
+          .panel-filter-actions button:hover {{
+            text-decoration: underline;
+          }}
+          .panel-filter-list {{
+            overflow-y: auto;
+            padding: 6px 0;
+          }}
+          .panel-filter-item {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 7px 14px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.15s ease;
+          }}
+          .panel-filter-item:hover {{
+            background: var(--accent-soft);
+          }}
+          .panel-filter-item input[type="checkbox"] {{
+            width: 15px;
+            height: 15px;
+            cursor: pointer;
+            accent-color: var(--accent);
+          }}
+          .panel-filter-chips {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-width: 480px;
+          }}
+          .panel-chip {{
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--accent-soft);
+            border: 1px solid var(--outline);
+            border-radius: 6px;
+            padding: 3px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink);
+          }}
+          .panel-chip .chip-remove {{
+            cursor: pointer;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1;
+            margin-left: 2px;
+          }}
+          .panel-chip .chip-remove:hover {{
+            color: var(--accent);
+          }}
           .filters .divider {{
             width: 1px;
             height: 30px;
             background: var(--border);
-          }}
-          .comparison-toggle {{
-            display: flex;
-            align-items: center;
-            gap: 8px;
-          }}
-          .comparison-toggle input[type="checkbox"] {{
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-          }}
-          .comparison-toggle label {{
-            cursor: pointer;
-            margin: 0;
-          }}
-          .period-group {{
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            align-items: center;
-            padding: 8px 12px;
-            border-radius: 8px;
-            background: var(--accent-soft);
-            border: 1px solid var(--outline);
-          }}
-          .period-label {{
-            font-size: 11px;
-            font-weight: 700;
-            color: var(--accent);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }}
-          .comparison-badge {{
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-left: 8px;
-          }}
-          .comparison-badge.period-a {{
-            background: var(--accent);
-            color: white;
-          }}
-          .comparison-badge.period-b {{
-            background: var(--ink);
-            color: white;
-          }}
-          .stat-comparison {{
-            display: flex;
-            gap: 12px;
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid var(--border);
-          }}
-          .stat-period {{
-            flex: 1;
-          }}
-          .stat-period-label {{
-            font-size: 10px;
-            font-weight: 600;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 4px;
-          }}
-          .stat-period-value {{
-            font-size: 16px;
-            font-weight: 600;
-            color: var(--ink);
-          }}
-          .stat-delta {{
-            font-size: 12px;
-            font-weight: 600;
-            margin-top: 4px;
-          }}
-          .stat-delta.positive {{
-            color: #28a745;
-          }}
-          .stat-delta.negative {{
-            color: #dc3545;
-          }}
-          .stat-delta.neutral {{
-            color: var(--muted);
           }}
           .container {{
             max-width: 1920px;
@@ -947,44 +955,27 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               <a class="nav-pill" href="#panels-section">Panel Trends</a>
             </div>
             <div class="filters">
-              <div class="comparison-toggle">
-                <input type="checkbox" id="comparison-mode" />
-                <label for="comparison-mode">Compare Periods</label>
+              <div class="panel-filter-wrapper" id="panel-filter-wrapper">
+                <button class="panel-filter-btn" id="panel-filter-btn">
+                  Panels <span class="count-badge" id="panel-count-badge">All</span>
+                </button>
+                <div class="panel-filter-dropdown" id="panel-filter-dropdown">
+                  <div class="panel-filter-actions">
+                    <button id="panel-select-all">Select All</button>
+                    <button id="panel-select-none">Clear</button>
+                  </div>
+                  <div class="panel-filter-list" id="panel-filter-list"></div>
+                </div>
               </div>
+              <div id="panel-chips" class="panel-filter-chips"></div>
               <div class="divider"></div>
-              <div id="single-period-filters">
-                <div>
-                  <label for="start-date">Start</label>
-                  <input type="date" id="start-date" />
-                </div>
-                <div>
-                  <label for="end-date">End</label>
-                  <input type="date" id="end-date" />
-                </div>
+              <div>
+                <label for="start-date">Start</label>
+                <input type="date" id="start-date" />
               </div>
-              <div id="comparison-filters" style="display: none; flex-wrap: wrap; gap: 12px; align-items: center;">
-                <div class="period-group">
-                  <span class="period-label">Period A</span>
-                  <div>
-                    <label for="start-date-a">Start</label>
-                    <input type="date" id="start-date-a" />
-                  </div>
-                  <div>
-                    <label for="end-date-a">End</label>
-                    <input type="date" id="end-date-a" />
-                  </div>
-                </div>
-                <div class="period-group">
-                  <span class="period-label">Period B</span>
-                  <div>
-                    <label for="start-date-b">Start</label>
-                    <input type="date" id="start-date-b" />
-                  </div>
-                  <div>
-                    <label for="end-date-b">End</label>
-                    <input type="date" id="end-date-b" />
-                  </div>
-                </div>
+              <div>
+                <label for="end-date">End</label>
+                <input type="date" id="end-date" />
               </div>
               <button id="apply-filters">Apply</button>
               <button id="reset-filters" class="secondary">Reset</button>
@@ -1067,10 +1058,6 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               <div class="section-description">Individual panel load curves with weekend highlighting</div>
             </div>
             <div class="chart-card full-width">
-              <div class="panel-controls">
-                <label for="panel-selector">Select Panels</label>
-                <select id="panel-selector" multiple></select>
-              </div>
               <div id="panel-series-chart" class="chart"></div>
             </div>
           </div>
@@ -1096,19 +1083,13 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
 
           const startInput = document.getElementById("start-date");
           const endInput = document.getElementById("end-date");
-          const comparisonModeCheckbox = document.getElementById("comparison-mode");
-          const singlePeriodFilters = document.getElementById("single-period-filters");
-          const comparisonFilters = document.getElementById("comparison-filters");
-          const startInputA = document.getElementById("start-date-a");
-          const endInputA = document.getElementById("end-date-a");
-          const startInputB = document.getElementById("start-date-b");
-          const endInputB = document.getElementById("end-date-b");
           const applyButton = document.getElementById("apply-filters");
           const resetButton = document.getElementById("reset-filters");
           const logoImage = document.getElementById("logo-image");
           const logoPlaceholder = document.getElementById("logo-placeholder");
 
-          let isComparisonMode = false;
+          // Panel selection state — all selected by default
+          let selectedPanels = new Set(dashboardData.panel_names || []);
 
           function applyLogo(src) {{
             if (!src) {{
@@ -1127,90 +1108,180 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
 
           function initDateInputs() {{
             const timestamps = dashboardData.timestamps;
-            if (!timestamps.length) {{
-              return;
-            }}
+            if (!timestamps.length) return;
             const dates = timestamps.map((ts) => new Date(ts));
             const minDate = new Date(Math.min(...dates));
             const maxDate = new Date(Math.max(...dates));
             const minDateStr = toDateOnly(minDate);
             const maxDateStr = toDateOnly(maxDate);
-
-            // Initialize single period inputs
             startInput.min = minDateStr;
             startInput.max = maxDateStr;
             endInput.min = minDateStr;
             endInput.max = maxDateStr;
             startInput.value = minDateStr;
             endInput.value = maxDateStr;
-
-            // Initialize comparison period inputs
-            startInputA.min = minDateStr;
-            startInputA.max = maxDateStr;
-            endInputA.min = minDateStr;
-            endInputA.max = maxDateStr;
-            startInputB.min = minDateStr;
-            startInputB.max = maxDateStr;
-            endInputB.min = minDateStr;
-            endInputB.max = maxDateStr;
-
-            // Set default comparison periods (first half vs second half)
-            const midDate = new Date((minDate.getTime() + maxDate.getTime()) / 2);
-            startInputA.value = minDateStr;
-            endInputA.value = toDateOnly(midDate);
-            startInputB.value = toDateOnly(new Date(midDate.getTime() + 86400000)); // Next day
-            endInputB.value = maxDateStr;
           }}
 
-          function filterDataByDateRange(startDateStr, endDateStr) {{
-            const startDate = startDateStr ? new Date(`${{startDateStr}}T00:00:00Z`) : null;
-            const endDate = endDateStr ? new Date(`${{endDateStr}}T23:59:59Z`) : null;
+          /* ---- Panel filter dropdown ---- */
+          function initPanelFilter() {{
+            const allPanels = dashboardData.panel_names || [];
+            if (!allPanels.length) {{
+              document.getElementById("panel-filter-wrapper").style.display = "none";
+              return;
+            }}
+            const list = document.getElementById("panel-filter-list");
+            allPanels.forEach((panel) => {{
+              const item = document.createElement("label");
+              item.className = "panel-filter-item";
+              const cb = document.createElement("input");
+              cb.type = "checkbox";
+              cb.value = panel;
+              cb.checked = true;
+              cb.addEventListener("change", () => {{
+                if (cb.checked) {{
+                  selectedPanels.add(panel);
+                }} else {{
+                  selectedPanels.delete(panel);
+                }}
+                syncPanelUI();
+              }});
+              const span = document.createElement("span");
+              span.textContent = panel;
+              item.appendChild(cb);
+              item.appendChild(span);
+              list.appendChild(item);
+            }});
+
+            // Toggle dropdown
+            document.getElementById("panel-filter-btn").addEventListener("click", (e) => {{
+              e.stopPropagation();
+              document.getElementById("panel-filter-dropdown").classList.toggle("open");
+            }});
+            document.addEventListener("click", (e) => {{
+              const wrapper = document.getElementById("panel-filter-wrapper");
+              if (!wrapper.contains(e.target)) {{
+                document.getElementById("panel-filter-dropdown").classList.remove("open");
+              }}
+            }});
+
+            // Select all / clear
+            document.getElementById("panel-select-all").addEventListener("click", () => {{
+              selectedPanels = new Set(allPanels);
+              syncPanelCheckboxes();
+              syncPanelUI();
+            }});
+            document.getElementById("panel-select-none").addEventListener("click", () => {{
+              selectedPanels.clear();
+              syncPanelCheckboxes();
+              syncPanelUI();
+            }});
+
+            syncPanelUI();
+          }}
+
+          function syncPanelCheckboxes() {{
+            const cbs = document.querySelectorAll("#panel-filter-list input[type=checkbox]");
+            cbs.forEach((cb) => {{
+              cb.checked = selectedPanels.has(cb.value);
+            }});
+          }}
+
+          function syncPanelUI() {{
+            const allPanels = dashboardData.panel_names || [];
+            const badge = document.getElementById("panel-count-badge");
+            const chipsEl = document.getElementById("panel-chips");
+            if (selectedPanels.size === 0 || selectedPanels.size === allPanels.length) {{
+              badge.textContent = selectedPanels.size === 0 ? "None" : "All";
+              chipsEl.innerHTML = "";
+            }} else {{
+              badge.textContent = selectedPanels.size;
+              chipsEl.innerHTML = Array.from(selectedPanels).map((p) =>
+                `<span class="panel-chip">${{p}}<span class="chip-remove" data-panel="${{p}}">&times;</span></span>`
+              ).join("");
+              chipsEl.querySelectorAll(".chip-remove").forEach((el) => {{
+                el.addEventListener("click", () => {{
+                  selectedPanels.delete(el.dataset.panel);
+                  syncPanelCheckboxes();
+                  syncPanelUI();
+                }});
+              }});
+            }}
+          }}
+
+          /* ---- Data filtering ---- */
+          function filterData() {{
+            const startDate = startInput.value ? new Date(`${{startInput.value}}T00:00:00Z`) : null;
+            const endDate = endInput.value ? new Date(`${{endInput.value}}T23:59:59Z`) : null;
+            const allPanels = dashboardData.panel_names || [];
+            const activePanels = selectedPanels.size ? Array.from(selectedPanels) : allPanels;
+            const activePanelSet = new Set(activePanels);
+
             const filtered = {{
               timestamps: [],
               totalKw: [],
-              groupSeries: Object.fromEntries(Object.keys(dashboardData.group_series).map((key) => [key, []])),
-              meterSeries: Object.fromEntries(Object.keys(dashboardData.meter_series).map((key) => [key, []])),
-              panelSeries: Object.fromEntries(Object.keys(dashboardData.panel_series || {{}}).map((key) => [key, []]))
+              groupSeries: Object.fromEntries(Object.keys(dashboardData.group_series).map((k) => [k, []])),
+              meterSeries: Object.fromEntries(Object.keys(dashboardData.meter_series).map((k) => [k, []])),
+              panelSeries: Object.fromEntries(allPanels.map((k) => [k, []]))
             }};
+
+            // Build lookup: which panels belong to each group / meter
+            const groupPanelMap = {{}};
+            dashboardData.group_definitions.forEach((g) => {{
+              groupPanelMap[g.name] = (g.panels || []).filter((p) => activePanelSet.has(p));
+            }});
+            const meterPanelMap = {{}};
+            dashboardData.utility_meters.forEach((m) => {{
+              meterPanelMap[m.name] = (m.panels || []).filter((p) => activePanelSet.has(p));
+            }});
+
             dashboardData.timestamps.forEach((ts, idx) => {{
               const date = new Date(ts);
-              if (startDate && date < startDate) {{
-                return;
-              }}
-              if (endDate && date > endDate) {{
-                return;
-              }}
+              if (startDate && date < startDate) return;
+              if (endDate && date > endDate) return;
+
               filtered.timestamps.push(ts);
-              filtered.totalKw.push(dashboardData.total_kw[idx]);
-              Object.keys(dashboardData.group_series).forEach((key) => {{
-                filtered.groupSeries[key].push(dashboardData.group_series[key][idx]);
+
+              // total_kw = sum of selected panels' kW
+              let totalKw = 0;
+              activePanels.forEach((p) => {{
+                totalKw += (dashboardData.panel_series[p] || [])[idx] || 0;
               }});
-              Object.keys(dashboardData.meter_series).forEach((key) => {{
-                filtered.meterSeries[key].push(dashboardData.meter_series[key][idx]);
+              filtered.totalKw.push(totalKw);
+
+              // Group series: recalculated from intersection of group panels & selected panels
+              Object.keys(dashboardData.group_series).forEach((groupName) => {{
+                const gPanels = groupPanelMap[groupName] || [];
+                if (!gPanels.length) {{
+                  filtered.groupSeries[groupName].push(0);
+                  return;
+                }}
+                let gSum = 0;
+                gPanels.forEach((p) => {{
+                  gSum += (dashboardData.panel_series[p] || [])[idx] || 0;
+                }});
+                filtered.groupSeries[groupName].push(gSum);
               }});
-              Object.keys(dashboardData.panel_series || {{}}).forEach((key) => {{
-                filtered.panelSeries[key].push(dashboardData.panel_series[key][idx]);
+
+              // Meter series: recalculated from intersection
+              Object.keys(dashboardData.meter_series).forEach((meterName) => {{
+                const mPanels = meterPanelMap[meterName] || [];
+                if (!mPanels.length) {{
+                  filtered.meterSeries[meterName].push(0);
+                  return;
+                }}
+                let mSum = 0;
+                mPanels.forEach((p) => {{
+                  mSum += (dashboardData.panel_series[p] || [])[idx] || 0;
+                }});
+                filtered.meterSeries[meterName].push(mSum);
+              }});
+
+              // Panel series: keep all for the panel trends chart
+              allPanels.forEach((p) => {{
+                filtered.panelSeries[p].push((dashboardData.panel_series[p] || [])[idx] || 0);
               }});
             }});
             return filtered;
-          }}
-
-          function filterData() {{
-            if (isComparisonMode) {{
-              const periodA = filterDataByDateRange(startInputA.value, endInputA.value);
-              const periodB = filterDataByDateRange(startInputB.value, endInputB.value);
-              return {{
-                isComparison: true,
-                periodA: periodA,
-                periodB: periodB
-              }};
-            }} else {{
-              const filtered = filterDataByDateRange(startInput.value, endInput.value);
-              return {{
-                isComparison: false,
-                ...filtered
-              }};
-            }}
           }}
 
           function computeMetrics(timestamps, totalKw) {{
@@ -1220,12 +1291,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             for (let i = 0; i < timestamps.length; i++) {{
               const kw = totalKw[i] ?? 0;
               sumKw += kw;
-              if (kw > peakKw) {{
-                peakKw = kw;
-              }}
-              if (i === 0) {{
-                continue;
-              }}
+              if (kw > peakKw) peakKw = kw;
+              if (i === 0) continue;
               const prev = new Date(timestamps[i - 1]).getTime();
               const curr = new Date(timestamps[i]).getTime();
               const hours = Math.max(0, (curr - prev) / 3600000);
@@ -1259,12 +1326,8 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               const dateObj = new Date(ts);
               const dateKey = dateObj.toISOString().slice(0, 10);
               const hour = dateObj.getUTCHours();
-              if (!buckets[dateKey]) {{
-                buckets[dateKey] = {{}};
-              }}
-              if (!buckets[dateKey][hour]) {{
-                buckets[dateKey][hour] = {{ sum: 0, count: 0 }};
-              }}
+              if (!buckets[dateKey]) buckets[dateKey] = {{}};
+              if (!buckets[dateKey][hour]) buckets[dateKey][hour] = {{ sum: 0, count: 0 }};
               buckets[dateKey][hour].sum += totalKw[idx] ?? 0;
               buckets[dateKey][hour].count += 1;
             }});
@@ -1273,10 +1336,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             const z = hours.map((hour) =>
               dates.map((date) => {{
                 const bucket = buckets[date][hour];
-                if (!bucket) {{
-                  return null;
-                }}
-                return bucket.sum / bucket.count;
+                return bucket ? bucket.sum / bucket.count : null;
               }})
             );
             return {{ dates, hours, z }};
@@ -1290,7 +1350,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               sums[hour] += totalKw[idx] ?? 0;
               counts[hour] += 1;
             }});
-            const averages = sums.map((sum, idx) => (counts[idx] ? sum / counts[idx] : 0));
+            const averages = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
             return {{ hours: Array.from({{ length: 24 }}, (_, i) => i), averages }};
           }}
 
@@ -1302,7 +1362,7 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               sums[weekday] += totalKw[idx] ?? 0;
               counts[weekday] += 1;
             }});
-            const averages = sums.map((sum, idx) => (counts[idx] ? sum / counts[idx] : 0));
+            const averages = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
             return {{
               weekdays: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
               averages
@@ -1311,86 +1371,62 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
 
           function buildDailyEnergy(timestamps, totalKw) {{
             const energyByDate = {{}};
-            for (let i = 0; i < timestamps.length; i++) {{
-              if (i === timestamps.length - 1) {{
-                break;
-              }}
+            for (let i = 0; i < timestamps.length - 1; i++) {{
               const start = new Date(timestamps[i]);
               const end = new Date(timestamps[i + 1]);
               const hours = Math.max(0, (end - start) / 3600000);
               const dateKey = start.toISOString().slice(0, 10);
-              if (!energyByDate[dateKey]) {{
-                energyByDate[dateKey] = 0;
-              }}
+              if (!energyByDate[dateKey]) energyByDate[dateKey] = 0;
               energyByDate[dateKey] += (totalKw[i] ?? 0) * hours;
             }}
             const dates = Object.keys(energyByDate).sort();
-            const values = dates.map((date) => energyByDate[date]);
+            const values = dates.map((d) => energyByDate[d]);
             return {{ dates, values }};
           }}
 
           function buildWeekendShapes(timestamps) {{
-            if (!timestamps.length) {{
-              return [];
-            }}
+            if (!timestamps.length) return [];
             const shapes = [];
             let weekendStart = null;
             for (let i = 0; i < timestamps.length; i++) {{
               const ts = timestamps[i];
               const day = new Date(ts).getUTCDay();
               const isWeekend = day === 0 || day === 6;
-              if (isWeekend && weekendStart === null) {{
-                weekendStart = ts;
-              }}
+              if (isWeekend && weekendStart === null) weekendStart = ts;
               if (!isWeekend && weekendStart !== null) {{
                 shapes.push({{
-                  type: "rect",
-                  xref: "x",
-                  yref: "paper",
-                  x0: weekendStart,
-                  x1: ts,
-                  y0: 0,
-                  y1: 1,
-                  line: {{ width: 0 }},
-                  fillcolor: "rgba(99, 102, 241, 0.14)"
+                  type: "rect", xref: "x", yref: "paper",
+                  x0: weekendStart, x1: ts, y0: 0, y1: 1,
+                  line: {{ width: 0 }}, fillcolor: "rgba(99, 102, 241, 0.14)"
                 }});
                 weekendStart = null;
               }}
             }}
             if (weekendStart !== null) {{
               shapes.push({{
-                type: "rect",
-                xref: "x",
-                yref: "paper",
-                x0: weekendStart,
-                x1: timestamps[timestamps.length - 1],
-                y0: 0,
-                y1: 1,
-                line: {{ width: 0 }},
-                fillcolor: "rgba(99, 102, 241, 0.14)"
+                type: "rect", xref: "x", yref: "paper",
+                x0: weekendStart, x1: timestamps[timestamps.length - 1], y0: 0, y1: 1,
+                line: {{ width: 0 }}, fillcolor: "rgba(99, 102, 241, 0.14)"
               }});
             }}
             return shapes;
           }}
 
+          /* ---- Chart rendering ---- */
           function renderCharts(data) {{
             const layoutBase = {{
               margin: {{ t: 16, l: 60, r: 24, b: 50 }},
               xaxis: {{
                 title: {{ text: "Time", font: {{ size: 12, weight: 600 }} }},
                 type: "date",
-                gridcolor: theme.grid,
-                zerolinecolor: theme.grid,
-                showline: true,
-                linecolor: theme.grid
+                gridcolor: theme.grid, zerolinecolor: theme.grid,
+                showline: true, linecolor: theme.grid
               }},
               yaxis: {{
                 title: {{ text: "kW", font: {{ size: 12, weight: 600 }} }},
                 rangemode: "tozero",
-                gridcolor: theme.grid,
-                zerolinecolor: theme.grid,
-                showline: true,
-                linecolor: theme.grid
+                gridcolor: theme.grid, zerolinecolor: theme.grid,
+                showline: true, linecolor: theme.grid
               }},
               paper_bgcolor: theme.card,
               plot_bgcolor: theme.card,
@@ -1400,343 +1436,90 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
               hoverlabel: {{ bgcolor: theme.inkStrong, font: {{ color: "#ffffff" }} }}
             }};
 
-            if (data.isComparison) {{
-              // Render comparison charts
-              const rollingValuesA = rollingMean(data.periodA.timestamps, data.periodA.totalKw, dashboardData.rolling_hours);
-              const rollingValuesB = rollingMean(data.periodB.timestamps, data.periodB.totalKw, dashboardData.rolling_hours);
-              const rollingTraceA = {{
-                x: data.periodA.timestamps,
-                y: rollingValuesA,
-                name: "Period A",
-                mode: "lines",
-                line: {{ color: theme.accent, width: 2.5, shape: "spline" }},
-                fill: "tozeroy",
-                fillcolor: "rgba(196, 38, 46, 0.08)"
-              }};
-              const rollingTraceB = {{
-                x: data.periodB.timestamps,
-                y: rollingValuesB,
-                name: "Period B",
-                mode: "lines",
-                line: {{ color: theme.accentDark, width: 2.5, shape: "spline" }},
-                fill: "tozeroy",
-                fillcolor: "rgba(45, 54, 58, 0.08)"
-              }};
-              Plotly.newPlot("rolling-load-chart", [rollingTraceA, rollingTraceB], {{
-                ...layoutBase,
-                showlegend: true,
-                legend: {{ x: 0.02, y: 0.98, bgcolor: "rgba(255,255,255,0.9)", bordercolor: theme.border, borderwidth: 1 }}
-              }}, {{ displaylogo: false, responsive: true }});
-            }} else {{
-              // Render single period charts
-              const rollingValues = rollingMean(data.timestamps, data.totalKw, dashboardData.rolling_hours);
-              const rollingTrace = {{
-                x: data.timestamps,
-                y: rollingValues,
-                mode: "lines",
-                line: {{ color: theme.accent, width: 2.5, shape: "spline" }},
-                fill: "tozeroy",
-                fillcolor: "rgba(196, 38, 46, 0.08)"
-              }};
-              Plotly.newPlot("rolling-load-chart", [rollingTrace], {{
-                ...layoutBase
-              }}, {{ displaylogo: false, responsive: true }});
-            }}
+            // Smoothed Load Profile
+            const rollingValues = rollingMean(data.timestamps, data.totalKw, dashboardData.rolling_hours);
+            Plotly.newPlot("rolling-load-chart", [{{
+              x: data.timestamps,
+              y: rollingValues,
+              mode: "lines",
+              line: {{ color: theme.accent, width: 2.5, shape: "spline" }},
+              fill: "tozeroy",
+              fillcolor: "rgba(196, 38, 46, 0.08)"
+            }}], {{ ...layoutBase }}, {{ displaylogo: false, responsive: true }});
 
-            // For heatmap in comparison mode, show Period A only (or combined - keeping simple for now)
-            const heatmapData = data.isComparison ? data.periodA : data;
-            const heatmap = buildHeatmap(heatmapData.timestamps, heatmapData.totalKw);
+            // Heatmap
+            const heatmap = buildHeatmap(data.timestamps, data.totalKw);
             Plotly.newPlot("heatmap-chart", [{{
-              x: heatmap.dates,
-              y: heatmap.hours,
-              z: heatmap.z,
+              x: heatmap.dates, y: heatmap.hours, z: heatmap.z,
               type: "heatmap",
-              colorscale: [
-                [0, "#f8f9fa"],
-                [0.3, "#dee2e6"],
-                [0.6, "#6c757d"],
-                [0.8, "#495057"],
-                [1, "#c4262e"]
-              ],
-              zsmooth: "best",
-              connectgaps: true,
+              colorscale: [[0, "#f8f9fa"], [0.3, "#dee2e6"], [0.6, "#6c757d"], [0.8, "#495057"], [1, "#c4262e"]],
+              zsmooth: "best", connectgaps: true,
               colorbar: {{ title: {{ text: "kW", font: {{ size: 11 }} }}, thickness: 15 }}
             }}], {{
               ...layoutBase,
-              xaxis: {{ title: {{ text: "Date" + (data.isComparison ? " (Period A)" : ""), font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              xaxis: {{ title: {{ text: "Date", font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
               yaxis: {{ title: {{ text: "Hour of Day", font: {{ size: 12, weight: 600 }} }}, autorange: "reversed", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }}
             }}, {{ displaylogo: false, responsive: true }});
 
-            if (data.isComparison) {{
-              const hourlyProfileA = buildHourlyProfile(data.periodA.timestamps, data.periodA.totalKw);
-              const hourlyProfileB = buildHourlyProfile(data.periodB.timestamps, data.periodB.totalKw);
-              const hourlyTraceA = {{
-                x: hourlyProfileA.hours,
-                y: hourlyProfileA.averages,
-                name: "Period A",
-                mode: "lines+markers",
-                line: {{ color: theme.accent, width: 2.5, shape: "spline" }},
-                marker: {{ size: 8, color: theme.accent, line: {{ color: "#ffffff", width: 2 }} }}
-              }};
-              const hourlyTraceB = {{
-                x: hourlyProfileB.hours,
-                y: hourlyProfileB.averages,
-                name: "Period B",
-                mode: "lines+markers",
-                line: {{ color: theme.accentDark, width: 2.5, shape: "spline" }},
-                marker: {{ size: 8, color: theme.accentDark, line: {{ color: "#ffffff", width: 2 }} }}
-              }};
-              Plotly.newPlot("hourly-profile-chart", [hourlyTraceA, hourlyTraceB], {{
-                ...layoutBase,
-                xaxis: {{ title: {{ text: "Hour of Day (UTC)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                showlegend: true,
-                legend: {{ x: 0.02, y: 0.98, bgcolor: "rgba(255,255,255,0.9)", bordercolor: theme.border, borderwidth: 1 }}
-              }}, {{ displaylogo: false, responsive: true }});
-            }} else {{
-              const hourlyProfile = buildHourlyProfile(data.timestamps, data.totalKw);
-              const hourlyTrace = {{
-                x: hourlyProfile.hours,
-                y: hourlyProfile.averages,
-                mode: "lines+markers",
-                line: {{ color: theme.accentDark, width: 2.5, shape: "spline" }},
-                marker: {{ size: 8, color: theme.accentDark, line: {{ color: "#ffffff", width: 2 }} }},
-                fill: "tozeroy",
-                fillcolor: "rgba(45, 54, 58, 0.08)"
-              }};
-              Plotly.newPlot("hourly-profile-chart", [hourlyTrace], {{
-                ...layoutBase,
-                xaxis: {{ title: {{ text: "Hour of Day (UTC)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }}
-              }}, {{ displaylogo: false, responsive: true }});
-            }}
+            // Hourly Profile
+            const hourlyProfile = buildHourlyProfile(data.timestamps, data.totalKw);
+            Plotly.newPlot("hourly-profile-chart", [{{
+              x: hourlyProfile.hours, y: hourlyProfile.averages,
+              mode: "lines+markers",
+              line: {{ color: theme.accentDark, width: 2.5, shape: "spline" }},
+              marker: {{ size: 8, color: theme.accentDark, line: {{ color: "#ffffff", width: 2 }} }},
+              fill: "tozeroy", fillcolor: "rgba(45, 54, 58, 0.08)"
+            }}], {{
+              ...layoutBase,
+              xaxis: {{ title: {{ text: "Hour of Day (UTC)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }}
+            }}, {{ displaylogo: false, responsive: true }});
 
-            if (data.isComparison) {{
-              const weekdayProfileA = buildWeekdayProfile(data.periodA.timestamps, data.periodA.totalKw);
-              const weekdayProfileB = buildWeekdayProfile(data.periodB.timestamps, data.periodB.totalKw);
-              const weekdayTraceA = {{
-                x: weekdayProfileA.weekdays,
-                y: weekdayProfileA.averages,
-                name: "Period A",
-                type: "bar",
-                marker: {{
-                  color: theme.accent,
-                  line: {{ color: theme.accent, width: 0 }}
-                }}
-              }};
-              const weekdayTraceB = {{
-                x: weekdayProfileB.weekdays,
-                y: weekdayProfileB.averages,
-                name: "Period B",
-                type: "bar",
-                marker: {{
-                  color: theme.accentDark,
-                  line: {{ color: theme.accentDark, width: 0 }}
-                }}
-              }};
-              Plotly.newPlot("weekday-profile-chart", [weekdayTraceA, weekdayTraceB], {{
-                ...layoutBase,
-                xaxis: {{ title: {{ text: "Day of Week", font: {{ size: 12, weight: 600 }} }}, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                bargap: 0.2,
-                barmode: "group",
-                showlegend: true,
-                legend: {{ x: 0.02, y: 0.98, bgcolor: "rgba(255,255,255,0.9)", bordercolor: theme.border, borderwidth: 1 }}
-              }}, {{ displaylogo: false, responsive: true }});
-            }} else {{
-              const weekdayProfile = buildWeekdayProfile(data.timestamps, data.totalKw);
-              const weekdayTrace = {{
-                x: weekdayProfile.weekdays,
-                y: weekdayProfile.averages,
-                type: "bar",
-                marker: {{
-                  color: theme.accent,
-                  line: {{ color: theme.accent, width: 0 }}
-                }}
-              }};
-              Plotly.newPlot("weekday-profile-chart", [weekdayTrace], {{
-                ...layoutBase,
-                xaxis: {{ title: {{ text: "Day of Week", font: {{ size: 12, weight: 600 }} }}, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                bargap: 0.2
-              }}, {{ displaylogo: false, responsive: true }});
-            }}
+            // Weekday Distribution
+            const weekdayProfile = buildWeekdayProfile(data.timestamps, data.totalKw);
+            Plotly.newPlot("weekday-profile-chart", [{{
+              x: weekdayProfile.weekdays, y: weekdayProfile.averages,
+              type: "bar",
+              marker: {{ color: theme.accent, line: {{ color: theme.accent, width: 0 }} }}
+            }}], {{
+              ...layoutBase,
+              xaxis: {{ title: {{ text: "Day of Week", font: {{ size: 12, weight: 600 }} }}, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              bargap: 0.2
+            }}, {{ displaylogo: false, responsive: true }});
 
-            if (data.isComparison) {{
-              const dailyEnergyA = buildDailyEnergy(data.periodA.timestamps, data.periodA.totalKw);
-              const dailyEnergyB = buildDailyEnergy(data.periodB.timestamps, data.periodB.totalKw);
-              const dailyEnergyTraceA = {{
-                x: dailyEnergyA.dates.map(d => `A: ${{d}}`),
-                y: dailyEnergyA.values,
-                name: "Period A",
-                type: "bar",
-                marker: {{
-                  color: theme.accent,
-                  line: {{ color: theme.accent, width: 0 }}
-                }}
-              }};
-              const dailyEnergyTraceB = {{
-                x: dailyEnergyB.dates.map(d => `B: ${{d}}`),
-                y: dailyEnergyB.values,
-                name: "Period B",
-                type: "bar",
-                marker: {{
-                  color: theme.accentDark,
-                  line: {{ color: theme.accentDark, width: 0 }}
-                }}
-              }};
-              Plotly.newPlot("daily-energy-chart", [dailyEnergyTraceA, dailyEnergyTraceB], {{
-                ...layoutBase,
-                xaxis: {{ title: {{ text: "Date", font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                yaxis: {{ title: {{ text: "Energy (kWh)", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                bargap: 0.15,
-                showlegend: true,
-                legend: {{ x: 0.02, y: 0.98, bgcolor: "rgba(255,255,255,0.9)", bordercolor: theme.border, borderwidth: 1 }}
-              }}, {{ displaylogo: false, responsive: true }});
-            }} else {{
-              const dailyEnergy = buildDailyEnergy(data.timestamps, data.totalKw);
-              const dailyEnergyTrace = {{
-                x: dailyEnergy.dates,
-                y: dailyEnergy.values,
-                type: "bar",
-                marker: {{
-                  color: theme.accentDark,
-                  line: {{ color: theme.accentDark, width: 0 }}
-                }}
-              }};
-              Plotly.newPlot("daily-energy-chart", [dailyEnergyTrace], {{
-                ...layoutBase,
-                xaxis: {{ title: {{ text: "Date", font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                yaxis: {{ title: {{ text: "Energy (kWh)", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
-                bargap: 0.15
-              }}, {{ displaylogo: false, responsive: true }});
-            }}
+            // Daily Energy
+            const dailyEnergy = buildDailyEnergy(data.timestamps, data.totalKw);
+            Plotly.newPlot("daily-energy-chart", [{{
+              x: dailyEnergy.dates, y: dailyEnergy.values,
+              type: "bar",
+              marker: {{ color: theme.accentDark, line: {{ color: theme.accentDark, width: 0 }} }}
+            }}], {{
+              ...layoutBase,
+              xaxis: {{ title: {{ text: "Date", font: {{ size: 12, weight: 600 }} }}, type: "category", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              yaxis: {{ title: {{ text: "Energy (kWh)", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+              bargap: 0.15
+            }}, {{ displaylogo: false, responsive: true }});
 
-            if (data.isComparison) {{
-              if (Object.keys(data.periodA.groupSeries).length) {{
-                renderGroupChart(data);
-              }}
-              renderPanelChart(data);
-            }} else {{
-              if (Object.keys(data.groupSeries).length) {{
-                renderGroupChart(data);
-              }}
-              renderPanelChart(data);
+            if (Object.keys(data.groupSeries).length) {{
+              renderGroupChart(data);
             }}
-          }}
-
-          function formatDelta(value, isPercentage = false) {{
-            const sign = value > 0 ? '+' : '';
-            if (isPercentage) {{
-              return `${{sign}}${{value.toFixed(1)}}%`;
-            }}
-            return `${{sign}}${{value.toFixed(2)}}`;
-          }}
-
-          function getDeltaClass(value) {{
-            if (Math.abs(value) < 0.01) return 'neutral';
-            return value > 0 ? 'positive' : 'negative';
+            renderPanelChart(data);
           }}
 
           function updateMetrics(data) {{
-            if (data.isComparison) {{
-              const metricsA = computeMetrics(data.periodA.timestamps, data.periodA.totalKw);
-              const metricsB = computeMetrics(data.periodB.timestamps, data.periodB.totalKw);
-              const costA = metricsA.totalKwh * dashboardData.price_per_kwh;
-              const costB = metricsB.totalKwh * dashboardData.price_per_kwh;
-
-              // Calculate deltas
-              const deltaEnergy = metricsB.totalKwh - metricsA.totalKwh;
-              const deltaCost = costB - costA;
-              const deltaAvg = metricsB.avgKw - metricsA.avgKw;
-              const deltaPeak = metricsB.peakKw - metricsA.peakKw;
-
-              const pctEnergy = metricsA.totalKwh > 0 ? (deltaEnergy / metricsA.totalKwh * 100) : 0;
-              const pctCost = costA > 0 ? (deltaCost / costA * 100) : 0;
-              const pctAvg = metricsA.avgKw > 0 ? (deltaAvg / metricsA.avgKw * 100) : 0;
-              const pctPeak = metricsA.peakKw > 0 ? (deltaPeak / metricsA.peakKw * 100) : 0;
-
-              // Update Total Energy with comparison
-              const energyEl = document.getElementById("total-energy");
-              energyEl.innerHTML = `
-                <div class="stat-comparison">
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period A</div>
-                    <div class="stat-period-value">${{metricsA.totalKwh.toFixed(2)}} kWh</div>
-                  </div>
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period B</div>
-                    <div class="stat-period-value">${{metricsB.totalKwh.toFixed(2)}} kWh</div>
-                  </div>
-                </div>
-                <div class="stat-delta ${{getDeltaClass(deltaEnergy)}}">${{formatDelta(deltaEnergy)}} kWh (${{formatDelta(pctEnergy, true)}})</div>
-              `;
-
-              // Update Cost with comparison
-              const costEl = document.getElementById("total-cost");
-              costEl.innerHTML = `
-                <div class="stat-comparison">
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period A</div>
-                    <div class="stat-period-value">$${{costA.toFixed(2)}}</div>
-                  </div>
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period B</div>
-                    <div class="stat-period-value">$${{costB.toFixed(2)}}</div>
-                  </div>
-                </div>
-                <div class="stat-delta ${{getDeltaClass(deltaCost)}}">${{formatDelta(deltaCost)}} (${{formatDelta(pctCost, true)}})</div>
-              `;
-
-              // Update Average Load with comparison
-              const avgEl = document.getElementById("average-load");
-              avgEl.innerHTML = `
-                <div class="stat-comparison">
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period A</div>
-                    <div class="stat-period-value">${{metricsA.avgKw.toFixed(2)}} kW</div>
-                  </div>
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period B</div>
-                    <div class="stat-period-value">${{metricsB.avgKw.toFixed(2)}} kW</div>
-                  </div>
-                </div>
-                <div class="stat-delta ${{getDeltaClass(deltaAvg)}}">${{formatDelta(deltaAvg)}} kW (${{formatDelta(pctAvg, true)}})</div>
-              `;
-
-              // Update Peak Load with comparison
-              const peakEl = document.getElementById("peak-load");
-              peakEl.innerHTML = `
-                <div class="stat-comparison">
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period A</div>
-                    <div class="stat-period-value">${{metricsA.peakKw.toFixed(2)}} kW</div>
-                  </div>
-                  <div class="stat-period">
-                    <div class="stat-period-label">Period B</div>
-                    <div class="stat-period-value">${{metricsB.peakKw.toFixed(2)}} kW</div>
-                  </div>
-                </div>
-                <div class="stat-delta ${{getDeltaClass(deltaPeak)}}">${{formatDelta(deltaPeak)}} kW (${{formatDelta(pctPeak, true)}})</div>
-              `;
-            }} else {{
-              const metrics = computeMetrics(data.timestamps, data.totalKw);
-              document.getElementById("total-energy").textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
-              document.getElementById("average-load").textContent = `${{metrics.avgKw.toFixed(2)}} kW`;
-              document.getElementById("peak-load").textContent = `${{metrics.peakKw.toFixed(2)}} kW`;
-              const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
-              document.getElementById("total-cost").textContent = `$${{totalCost.toFixed(2)}}`;
-            }}
+            const metrics = computeMetrics(data.timestamps, data.totalKw);
+            document.getElementById("total-energy").textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+            document.getElementById("average-load").textContent = `${{metrics.avgKw.toFixed(2)}} kW`;
+            document.getElementById("peak-load").textContent = `${{metrics.peakKw.toFixed(2)}} kW`;
+            const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+            document.getElementById("total-cost").textContent = `$${{totalCost.toFixed(2)}}`;
           }}
 
           function updateMeterCards(data) {{
-            if (!dashboardData.utility_meters.length) {{
-              return;
-            }}
+            if (!dashboardData.utility_meters.length) return;
             const container = document.getElementById("meter-stat-grid");
-            if (!container) {{
-              return;
-            }}
+            if (!container) return;
             container.style.display = "grid";
             if (!container.dataset.initialized) {{
               container.innerHTML = dashboardData.utility_meters
@@ -1754,61 +1537,24 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
                 .join("");
               container.dataset.initialized = "true";
             }}
-
-            if (data.isComparison) {{
-              dashboardData.utility_meters.forEach((meter, idx) => {{
-                const seriesA = data.periodA.meterSeries[meter.name] || [];
-                const seriesB = data.periodB.meterSeries[meter.name] || [];
-                const metricsA = computeMetrics(data.periodA.timestamps, seriesA);
-                const metricsB = computeMetrics(data.periodB.timestamps, seriesB);
-                const costA = metricsA.totalKwh * dashboardData.price_per_kwh;
-                const costB = metricsB.totalKwh * dashboardData.price_per_kwh;
-                const delta = metricsB.totalKwh - metricsA.totalKwh;
-                const pct = metricsA.totalKwh > 0 ? (delta / metricsA.totalKwh * 100) : 0;
-
-                const energyEl = document.getElementById(`meter-energy-${{idx}}`);
-                if (energyEl) {{
-                  energyEl.innerHTML = `
-                    <div style="display: flex; gap: 8px; font-size: 14px;">
-                      <span>A: ${{metricsA.totalKwh.toFixed(1)}}</span>
-                      <span>|</span>
-                      <span>B: ${{metricsB.totalKwh.toFixed(1)}}</span>
-                    </div>
-                    <div style="font-size: 11px; margin-top: 4px;" class="${{getDeltaClass(delta)}}">${{formatDelta(delta)}} (${{formatDelta(pct, true)}})</div>
-                  `;
-                }}
-
-                const costEl = document.getElementById(`meter-cost-${{idx}}`);
-                if (costEl) {{
-                  costEl.textContent = `A: $${{costA.toFixed(2)}} | B: $${{costB.toFixed(2)}}`;
-                }}
-              }});
-            }} else {{
-              dashboardData.utility_meters.forEach((meter, idx) => {{
-                const series = data.meterSeries[meter.name] || [];
-                const metrics = computeMetrics(data.timestamps, series);
-                const energyEl = document.getElementById(`meter-energy-${{idx}}`);
-                const costEl = document.getElementById(`meter-cost-${{idx}}`);
-                if (energyEl) {{
-                  energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
-                }}
-                if (costEl) {{
-                  const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
-                  costEl.textContent = `$${{totalCost.toFixed(2)}}`;
-                }}
-              }});
-            }}
+            dashboardData.utility_meters.forEach((meter, idx) => {{
+              const series = data.meterSeries[meter.name] || [];
+              const metrics = computeMetrics(data.timestamps, series);
+              const energyEl = document.getElementById(`meter-energy-${{idx}}`);
+              const costEl = document.getElementById(`meter-cost-${{idx}}`);
+              if (energyEl) energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+              if (costEl) {{
+                const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+                costEl.textContent = `$${{totalCost.toFixed(2)}}`;
+              }}
+            }});
           }}
 
           function updateUsageCards(data) {{
-            if (!dashboardData.group_definitions.length) {{
-              return;
-            }}
+            if (!dashboardData.group_definitions.length) return;
             const section = document.getElementById("usage-section");
             const container = document.getElementById("usage-cards");
-            if (!section || !container) {{
-              return;
-            }}
+            if (!section || !container) return;
             section.style.display = "block";
             if (!container.dataset.initialized) {{
               container.innerHTML = dashboardData.group_definitions
@@ -1826,113 +1572,34 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
                 .join("");
               container.dataset.initialized = "true";
             }}
-
-            if (data.isComparison) {{
-              dashboardData.group_definitions.forEach((group, idx) => {{
-                const seriesA = data.periodA.groupSeries[group.name] || [];
-                const seriesB = data.periodB.groupSeries[group.name] || [];
-                const metricsA = computeMetrics(data.periodA.timestamps, seriesA);
-                const metricsB = computeMetrics(data.periodB.timestamps, seriesB);
-                const costA = metricsA.totalKwh * dashboardData.price_per_kwh;
-                const costB = metricsB.totalKwh * dashboardData.price_per_kwh;
-
-                const energyEl = document.getElementById(`group-energy-${{idx}}`);
-                const costEl = document.getElementById(`group-cost-${{idx}}`);
-                if (energyEl) {{
-                  energyEl.textContent = `A: ${{metricsA.totalKwh.toFixed(1)}} | B: ${{metricsB.totalKwh.toFixed(1)}} kWh`;
-                }}
-                if (costEl) {{
-                  costEl.textContent = `A: $${{costA.toFixed(2)}} | B: $${{costB.toFixed(2)}}`;
-                }}
-              }});
-            }} else {{
-              dashboardData.group_definitions.forEach((group, idx) => {{
-                const series = data.groupSeries[group.name]
-                  || Array(data.timestamps.length).fill(0);
-                const metrics = computeMetrics(data.timestamps, series);
-                const energyEl = document.getElementById(`group-energy-${{idx}}`);
-                const costEl = document.getElementById(`group-cost-${{idx}}`);
-                if (energyEl) {{
-                  energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
-                }}
-                if (costEl) {{
-                  const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
-                  costEl.textContent = `$${{totalCost.toFixed(2)}}`;
-                }}
-              }});
-            }}
-          }}
-
-          function initPanelSelector() {{
-            if (!dashboardData.panel_names || !dashboardData.panel_names.length) {{
-              return;
-            }}
-            const selector = document.getElementById("panel-selector");
-            const card = document.getElementById("panels-section");
-            if (!selector || !card) {{
-              return;
-            }}
-            card.style.display = "block";
-            if (selector.options.length) {{
-              return;
-            }}
-            dashboardData.panel_names.forEach((panel) => {{
-              const option = document.createElement("option");
-              option.value = panel;
-              option.textContent = panel;
-              option.selected = true;
-              selector.appendChild(option);
+            dashboardData.group_definitions.forEach((group, idx) => {{
+              const series = data.groupSeries[group.name]
+                || Array(data.timestamps.length).fill(0);
+              const metrics = computeMetrics(data.timestamps, series);
+              const energyEl = document.getElementById(`group-energy-${{idx}}`);
+              const costEl = document.getElementById(`group-cost-${{idx}}`);
+              if (energyEl) energyEl.textContent = `${{metrics.totalKwh.toFixed(2)}} kWh`;
+              if (costEl) {{
+                const totalCost = metrics.totalKwh * dashboardData.price_per_kwh;
+                costEl.textContent = `$${{totalCost.toFixed(2)}}`;
+              }}
             }});
-            selector.addEventListener("change", () => {{
-              renderPanelChart(filterData());
-            }});
-          }}
-
-          function getSelectedPanels() {{
-            const selector = document.getElementById("panel-selector");
-            if (!selector) {{
-              return [];
-            }}
-            return Array.from(selector.selectedOptions).map((option) => option.value);
           }}
 
           function renderPanelChart(data) {{
-            if (!dashboardData.panel_names || !dashboardData.panel_names.length) {{
-              return;
-            }}
-            const selected = getSelectedPanels();
-            const panelsToShow = selected.length ? selected : dashboardData.panel_names;
-
-            let traces;
-            let weekendShapes;
-            if (data.isComparison) {{
-              const tracesA = panelsToShow.map((panel) => ({{
-                x: data.periodA.timestamps,
-                y: (data.periodA.panelSeries && data.periodA.panelSeries[panel]) || [],
-                mode: "lines",
-                name: `${{panel}} (A)`,
-                line: {{ width: 2, shape: "spline", dash: "solid" }}
-              }}));
-              const tracesB = panelsToShow.map((panel) => ({{
-                x: data.periodB.timestamps,
-                y: (data.periodB.panelSeries && data.periodB.panelSeries[panel]) || [],
-                mode: "lines",
-                name: `${{panel}} (B)`,
-                line: {{ width: 2, shape: "spline", dash: "dot" }}
-              }}));
-              traces = [...tracesA, ...tracesB];
-              weekendShapes = buildWeekendShapes(data.periodA.timestamps);
-            }} else {{
-              traces = panelsToShow.map((panel) => ({{
-                x: data.timestamps,
-                y: (data.panelSeries && data.panelSeries[panel]) || [],
-                mode: "lines",
-                name: panel,
-                line: {{ width: 2, shape: "spline" }}
-              }}));
-              weekendShapes = buildWeekendShapes(data.timestamps);
-            }}
-
+            const allPanels = dashboardData.panel_names || [];
+            if (!allPanels.length) return;
+            const panelsSection = document.getElementById("panels-section");
+            if (panelsSection) panelsSection.style.display = "block";
+            const panelsToShow = selectedPanels.size ? Array.from(selectedPanels) : allPanels;
+            const traces = panelsToShow.map((panel) => ({{
+              x: data.timestamps,
+              y: (data.panelSeries && data.panelSeries[panel]) || [],
+              mode: "lines",
+              name: panel,
+              line: {{ width: 2, shape: "spline" }}
+            }}));
+            const weekendShapes = buildWeekendShapes(data.timestamps);
             Plotly.newPlot("panel-series-chart", traces, {{
               margin: {{ t: 16, l: 60, r: 24, b: 50 }},
               legend: {{ orientation: "h", y: -0.15 }},
@@ -1956,29 +1623,17 @@ def build_dashboard(df: pd.DataFrame, output_dir: Path, window: str) -> Path:
             updateUsageCards(filtered);
           }}
 
-          comparisonModeCheckbox.addEventListener("change", () => {{
-            isComparisonMode = comparisonModeCheckbox.checked;
-            if (isComparisonMode) {{
-              singlePeriodFilters.style.display = "none";
-              comparisonFilters.style.display = "flex";
-            }} else {{
-              singlePeriodFilters.style.display = "flex";
-              comparisonFilters.style.display = "none";
-            }}
-          }});
-
           applyButton.addEventListener("click", renderDashboard);
           resetButton.addEventListener("click", () => {{
+            selectedPanels = new Set(dashboardData.panel_names || []);
+            syncPanelCheckboxes();
+            syncPanelUI();
             initDateInputs();
-            comparisonModeCheckbox.checked = false;
-            isComparisonMode = false;
-            singlePeriodFilters.style.display = "flex";
-            comparisonFilters.style.display = "none";
             renderDashboard();
           }});
 
           initDateInputs();
-          initPanelSelector();
+          initPanelFilter();
           renderDashboard();
           applyLogo(logoPath);
           {group_script}
