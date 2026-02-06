@@ -44,6 +44,7 @@ DEFAULT_CONFIG = {
     "dashboard_logo_path": "",
     "visualizations": {},
     "product_test": {
+        "test_data_file": "",
         "panels": [],
         "output": "product_test_dashboard.html",
     },
@@ -1094,8 +1095,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--test-data",
-        required=True,
-        help="Path to the product test spreadsheet (CSV or XLSX).",
+        default=None,
+        help="Path to the product test spreadsheet (CSV or XLSX). Overrides config product_test.test_data_file.",
     )
     parser.add_argument(
         "--config",
@@ -1124,14 +1125,21 @@ def main() -> None:
     output_dir = Path(args.output_dir or CONFIG["output_dir"])
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    pt_config = CONFIG.get("product_test", {})
+    test_data_path = args.test_data or pt_config.get("test_data_file", "")
+    if not test_data_path:
+        raise ValueError(
+            "No test data file specified. Set product_test.test_data_file in the config "
+            "or pass --test-data on the command line."
+        )
+
     print(f"Loading EMS energy data from: {input_path}")
     energy_df = load_energy_data(input_path)
 
-    print(f"Loading product test data from: {args.test_data}")
-    test_df = load_test_data(Path(args.test_data))
+    print(f"Loading product test data from: {test_data_path}")
+    test_df = load_test_data(Path(test_data_path))
     print(f"  Found {len(test_df)} test records")
 
-    pt_config = CONFIG.get("product_test", {})
     panel_names = pt_config.get("panels", [])
     print(f"  Energy panels for cost calculation: {panel_names}")
 

@@ -23,6 +23,7 @@
   "rolling_window": "1h",
   "dashboard_logo_path": "",
   "product_test": {
+    "test_data_file": "",
     "panels": [],
     "output": "product_test_dashboard.html"
   },
