@@ -270,14 +270,14 @@ def build_product_test_dashboard(
             "sn": str(row["Product SN"]),
             "start": row["Test Start Date"].isoformat() if pd.notna(row["Test Start Date"]) else "",
             "end": row["Test End Date"].isoformat() if pd.notna(row["Test End Date"]) else "",
-            "duration_min": float(row["Total Test Time"]),
-            "result": str(row["Pass/Fail"]),
-            "avg_kw": round(float(row["Avg kW"]), 4),
-            "kwh": round(float(row["Energy (kWh)"]), 4),
-            "cost": round(float(row["Energy Cost ($)"]), 4),
+            "duration_min": float(row["Total Test Time"]) if pd.notna(row["Total Test Time"]) else 0.0,
+            "result": str(row["Pass/Fail"]) if pd.notna(row["Pass/Fail"]) else "Unknown",
+            "avg_kw": round(float(row["Avg kW"]), 4) if pd.notna(row["Avg kW"]) else 0.0,
+            "kwh": round(float(row["Energy (kWh)"]), 4) if pd.notna(row["Energy (kWh)"]) else 0.0,
+            "cost": round(float(row["Energy Cost ($)"]), 4) if pd.notna(row["Energy Cost ($)"]) else 0.0,
             "method": str(row["Calc Method"]),
             "retest": bool(row["Retest"]),
-            "test_count": int(row["Test Count"]),
+            "test_count": int(row["Test Count"]) if pd.notna(row["Test Count"]) else 1,
         })
 
     # Summary statistics
