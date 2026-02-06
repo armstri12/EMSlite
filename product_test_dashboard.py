@@ -1135,10 +1135,22 @@ def main() -> None:
 
     print(f"Loading EMS energy data from: {input_path}")
     energy_df = load_energy_data(input_path)
+    energy_min = energy_df["Timestamp"].min()
+    energy_max = energy_df["Timestamp"].max()
+    print(f"  Energy data range: {energy_min} to {energy_max}")
 
     print(f"Loading product test data from: {test_data_path}")
     test_df = load_test_data(Path(test_data_path))
-    print(f"  Found {len(test_df)} test records")
+    total_loaded = len(test_df)
+
+    # Filter test data to only include tests within the energy data date range
+    test_df = test_df[
+        (test_df["Test Start Date"] >= energy_min)
+        & (test_df["Test Start Date"] <= energy_max)
+    ].reset_index(drop=True)
+    excluded = total_loaded - len(test_df)
+    print(f"  Found {total_loaded} test records, {len(test_df)} within energy data range"
+          + (f" ({excluded} excluded)" if excluded else ""))
 
     panel_names = pt_config.get("panels", [])
     print(f"  Energy panels for cost calculation: {panel_names}")
