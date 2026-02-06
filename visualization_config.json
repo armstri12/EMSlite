@@ -22,6 +22,10 @@
   },
   "rolling_window": "1h",
   "dashboard_logo_path": "",
+  "product_test": {
+    "panels": [],
+    "output": "product_test_dashboard.html"
+  },
   "visualizations": {
     "total_kw_timeseries": {
       "enabled": true,
