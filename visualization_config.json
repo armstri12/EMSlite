@@ -22,31 +22,30 @@
   },
   "rolling_window": "1h",
   "dashboard_logo_path": "",
-  "product_test": {
-    "test_data_file": "",
-    "panels": [],
-    "output": "product_test_dashboard.html"
-  },
   "visualizations": {
     "total_kw_timeseries": {
-      "enabled": true,
+      "enabled": false,
       "output": "total_kw_timeseries.html"
     },
     "total_kw_rolling": {
-      "enabled": true,
+      "enabled": false,
       "output": "total_kw_rolling_1h.html"
     },
     "daily_hour_heatmap": {
-      "enabled": true,
+      "enabled": false,
       "output": "daily_hour_heatmap.html"
     },
     "group_columns_plot": {
-      "enabled": true,
+      "enabled": false,
       "output": "group_columns_plot.html"
     },
     "dashboard": {
       "enabled": true,
       "output": "dashboard.html"
+    },
+    "comparison_dashboard": {
+      "enabled": true,
+      "output": "comparison_dashboard.html"
     }
   }
 }
