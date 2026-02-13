@@ -4,7 +4,7 @@
 """
 visualize_meter_data.py
 
-Generate multiple visualizations from EMS meter data in a wide CSV format.
+Generate visualizations from EMS meter data in a wide CSV format.
 
 Expected input format:
 - Timestamp column named "Timestamp".
@@ -15,10 +15,7 @@ Config:
 - Config loader accepts JSON with optional // or /* */ comments and trailing commas.
 
 Outputs:
-- total_kw_timeseries.html
-- total_kw_rolling_1h.html
-- daily_hour_heatmap.html
-- group_columns_plot.html
+- dashboard.html (main energy management dashboard)
 """
 
 from __future__ import annotations
@@ -61,24 +58,28 @@ DEFAULT_CONFIG = {
     "dashboard_logo_path": "",
     "visualizations": {
         "total_kw_timeseries": {
-            "enabled": True,
+            "enabled": False,
             "output": "total_kw_timeseries.html",
         },
         "total_kw_rolling": {
-            "enabled": True,
+            "enabled": False,
             "output": "total_kw_rolling_1h.html",
         },
         "daily_hour_heatmap": {
-            "enabled": True,
+            "enabled": False,
             "output": "daily_hour_heatmap.html",
         },
         "group_columns_plot": {
-            "enabled": True,
+            "enabled": False,
             "output": "group_columns_plot.html",
         },
         "dashboard": {
             "enabled": True,
             "output": "dashboard.html",
+        },
+        "comparison_dashboard": {
+            "enabled": True,
+            "output": "comparison_dashboard.html",
         },
     },
 }
