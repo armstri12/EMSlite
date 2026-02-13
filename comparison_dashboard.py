@@ -1314,7 +1314,7 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
         }}
       ], {{
         ...layoutBase,
-        xaxis: {{ title: {{ text: "Hour of Day", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+        xaxis: {{ title: {{ text: "Hour of Day (Local Time)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
         yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
         legend: {{ orientation: "h", y: -0.15 }}
       }}, {{ displaylogo: false, responsive: true }});
@@ -1338,7 +1338,8 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
       const sums = Array(24).fill(0);
       const counts = Array(24).fill(0);
       timestamps.forEach((ts, idx) => {{
-        const hour = new Date(ts).getUTCHours();
+        const date = new Date(ts);
+        const hour = date.getHours();  // Use local hours instead of UTC
         sums[hour] += kw[idx] ?? 0;
         counts[hour] += 1;
       }});
@@ -1350,7 +1351,8 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
       const sums = Array(7).fill(0);
       const counts = Array(7).fill(0);
       timestamps.forEach((ts, idx) => {{
-        const weekday = new Date(ts).getUTCDay();
+        const date = new Date(ts);
+        const weekday = date.getDay();  // Use local day instead of UTC
         sums[weekday] += kw[idx] ?? 0;
         counts[weekday] += 1;
       }});
