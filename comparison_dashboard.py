@@ -229,6 +229,13 @@ def build_comparison_dashboard(
         name: amps_to_kw(ordered[name].fillna(0)).fillna(0).tolist() for name in panel_columns
     }
 
+    # Resolve group definitions for preset filters
+    group_definitions = []
+    for group_name, group_panels in CONFIG["combo_columns"].items():
+        resolved_panels = resolve_columns(ordered.columns, group_panels, f"combo_columns[{group_name}]")
+        if resolved_panels:  # Only include groups that have panels
+            group_definitions.append({"name": group_name, "panels": resolved_panels})
+
     # Get min/max dates for the date inputs
     min_date = ordered["Timestamp"].min().strftime("%Y-%m-%d")
     max_date = ordered["Timestamp"].max().strftime("%Y-%m-%d")
@@ -240,6 +247,7 @@ def build_comparison_dashboard(
         "timestamps": timestamps,
         "panel_series": panel_series,
         "panel_names": panel_columns,
+        "group_definitions": group_definitions,
         "period1_dates": period1_dates,
         "period2_dates": period2_dates,
         "min_date": min_date,
@@ -478,6 +486,35 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
     .panel-filter-item:hover {{ background: var(--accent-soft); }}
     .panel-filter-item input[type="checkbox"] {{
       width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent);
+    }}
+    .preset-filters {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .preset-btn {{
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(10px);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }}
+    .preset-btn:hover {{
+      border-color: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }}
+    .preset-btn.active {{
+      background: #ffffff;
+      color: #667eea;
+      border-color: #ffffff;
     }}
     .container {{
       max-width: 1920px;
@@ -805,6 +842,7 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
             <div class="panel-filter-list" id="panel-filter-list"></div>
           </div>
         </div>
+        <div class="preset-filters" id="preset-filters"></div>
       </div>
       <div class="control-row">
         <label>Period 1:</label>
@@ -996,6 +1034,7 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
     function init() {{
       applyLogo(logoPath);
       initPanelFilter();
+      initPresetFilters();
       initPeriodInputs();
       renderDashboard();
     }}
@@ -1051,6 +1090,7 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
             selectedPanels.delete(panel);
           }}
           syncPanelUI();
+          updatePresetButtonStates();
         }});
         const span = document.createElement("span");
         span.textContent = panel;
@@ -1074,11 +1114,13 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
         selectedPanels = new Set(allPanels);
         syncPanelCheckboxes();
         syncPanelUI();
+        updatePresetButtonStates();
       }});
       document.getElementById("panel-select-none").addEventListener("click", () => {{
         selectedPanels.clear();
         syncPanelCheckboxes();
         syncPanelUI();
+        updatePresetButtonStates();
       }});
 
       syncPanelUI();
@@ -1099,6 +1141,61 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
       }} else {{
         badge.textContent = selectedPanels.size;
       }}
+    }}
+
+    function initPresetFilters() {{
+      const groups = dashboardData.group_definitions || [];
+      if (!groups.length) {{
+        document.getElementById("preset-filters").style.display = "none";
+        return;
+      }}
+
+      const container = document.getElementById("preset-filters");
+      groups.forEach((group) => {{
+        const btn = document.createElement("button");
+        btn.className = "preset-btn";
+        btn.textContent = group.name;
+        btn.dataset.groupName = group.name;
+        btn.addEventListener("click", () => {{
+          togglePresetGroup(group);
+        }});
+        container.appendChild(btn);
+      }});
+
+      // Initialize button states based on current selection
+      updatePresetButtonStates();
+    }}
+
+    function togglePresetGroup(group) {{
+      const groupPanels = new Set(group.panels);
+      const allSelected = group.panels.every(p => selectedPanels.has(p));
+
+      if (allSelected) {{
+        // Deselect all panels in this group
+        group.panels.forEach(p => selectedPanels.delete(p));
+      }} else {{
+        // Select all panels in this group
+        group.panels.forEach(p => selectedPanels.add(p));
+      }}
+
+      syncPanelCheckboxes();
+      syncPanelUI();
+      updatePresetButtonStates();
+    }}
+
+    function updatePresetButtonStates() {{
+      const groups = dashboardData.group_definitions || [];
+      groups.forEach((group) => {{
+        const btn = document.querySelector(`.preset-btn[data-group-name="${{group.name}}"]`);
+        if (!btn) return;
+
+        const allSelected = group.panels.every(p => selectedPanels.has(p));
+        if (allSelected) {{
+          btn.classList.add("active");
+        }} else {{
+          btn.classList.remove("active");
+        }}
+      }});
     }}
 
     function filterDataByPanelsAndPeriods() {{
@@ -1314,7 +1411,7 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
         }}
       ], {{
         ...layoutBase,
-        xaxis: {{ title: {{ text: "Hour of Day (Local Time)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
+        xaxis: {{ title: {{ text: "Hour of Day (Eastern Time)", font: {{ size: 12, weight: 600 }} }}, dtick: 2, gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
         yaxis: {{ title: {{ text: "Average kW", font: {{ size: 12, weight: 600 }} }}, rangemode: "tozero", gridcolor: theme.grid, zerolinecolor: theme.grid, showline: true, linecolor: theme.grid }},
         legend: {{ orientation: "h", y: -0.15 }}
       }}, {{ displaylogo: false, responsive: true }});
