@@ -266,80 +266,194 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
   <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
   <style>
     :root {{
-      --bg: #f8f9fa; --card: #ffffff; --ink: #2d363a; --ink-strong: #1a1f22;
-      --muted: #6c757d; --accent: #c4262e; --accent-hover: #a61f26;
-      --accent-soft: rgba(196, 38, 46, 0.08); --success: #10b981;
-      --success-soft: rgba(16, 185, 129, 0.08); --warning: #f59e0b;
-      --warning-soft: rgba(245, 158, 11, 0.08); --outline: rgba(45, 54, 58, 0.08);
-      --border: rgba(45, 54, 58, 0.12); --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08); --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+      --bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --bg-light: #f0f4f8;
+      --card: #ffffff;
+      --ink: #2d3748;
+      --ink-strong: #1a202c;
+      --muted: #718096;
+      --accent: #c4262e;
+      --accent-hover: #a61f26;
+      --accent-soft: rgba(196, 38, 46, 0.08);
+      --success: #48bb78;
+      --success-dark: #38a169;
+      --success-soft: rgba(72, 187, 120, 0.1);
+      --warning: #ed8936;
+      --warning-dark: #dd6b20;
+      --warning-soft: rgba(237, 137, 54, 0.1);
+      --outline: rgba(45, 54, 58, 0.08);
+      --border: rgba(45, 54, 58, 0.08);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.12);
+      --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.15);
     }}
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--bg); color: var(--ink); line-height: 1.6; padding-top: 200px;
+      background: var(--bg-light);
+      color: var(--ink);
+      line-height: 1.6;
+      padding-top: 280px;
     }}
     .header-wrapper {{
-      position: fixed; top: 0; left: 0; right: 0; background: var(--card);
-      border-bottom: 1px solid var(--border); box-shadow: var(--shadow-sm); z-index: 1000;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
+      backdrop-filter: blur(20px);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     }}
     .top-bar {{
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 24px; padding: 20px 48px; max-width: 1920px; margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 20px 48px;
+      max-width: 1920px;
+      margin: 0 auto;
     }}
-    .brand {{ display: flex; align-items: center; gap: 20px; }}
+    .brand {{
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }}
     .logo-wrapper {{
-      width: 56px; height: 56px; border-radius: 12px; background: var(--accent-soft);
-      border: 2px solid var(--outline); display: flex; align-items: center;
-      justify-content: center; overflow: hidden; flex-shrink: 0;
+      width: 60px;
+      height: 60px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }}
-    .logo-wrapper img {{ width: 100%; height: 100%; object-fit: contain; }}
+    .logo-wrapper img {{
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }}
     .logo-placeholder {{
-      font-size: 10px; font-weight: 600; color: var(--accent);
-      text-align: center; padding: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #ffffff;
+      text-align: center;
+      padding: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
     }}
-    .brand-text {{ display: flex; flex-direction: column; }}
+    .brand-text {{
+      display: flex;
+      flex-direction: column;
+    }}
     .title {{
-      font-size: 28px; font-weight: 700; color: var(--ink-strong); letter-spacing: -0.5px;
+      font-size: 32px;
+      font-weight: 900;
+      color: #ffffff;
+      letter-spacing: -0.8px;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
     }}
-    .subtitle {{ margin-top: 2px; color: var(--muted); font-size: 13px; font-weight: 500; }}
+    .subtitle {{
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }}
     .controls {{
-      padding: 16px 48px; max-width: 1920px; margin: 0 auto;
-      display: flex; flex-direction: column; gap: 16px;
+      padding: 20px 48px 24px;
+      max-width: 1920px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
     }}
     .control-row {{
-      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
     }}
     .control-row label {{
-      font-size: 11px; font-weight: 600; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.5px; min-width: 80px;
+      font-size: 12px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.95);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      min-width: 80px;
     }}
     .control-row input {{
-      border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
-      font-size: 13px; color: var(--ink); background: var(--card); transition: all 0.2s ease;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }}
+    .control-row input::placeholder {{
+      color: rgba(255, 255, 255, 0.6);
     }}
     .control-row input:focus {{
-      outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+      outline: none;
+      border-color: rgba(255, 255, 255, 0.6);
+      background: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
     }}
     .control-row button {{
-      border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px;
-      font-weight: 600; color: #ffffff; background: var(--accent);
-      cursor: pointer; transition: all 0.2s ease; box-shadow: var(--shadow-sm);
+      border: none;
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #667eea;
+      background: #ffffff;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }}
     .control-row button:hover {{
-      background: var(--accent-hover); box-shadow: var(--shadow-md); transform: translateY(-1px);
+      background: #f7fafc;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      transform: translateY(-2px);
     }}
-    .panel-filter-wrapper {{ position: relative; }}
+    .panel-filter-wrapper {{
+      position: relative;
+    }}
     .panel-filter-btn {{
-      display: flex; align-items: center; gap: 8px; border: 1px solid var(--border);
-      border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600;
-      color: var(--ink); background: var(--card); cursor: pointer;
-      transition: all 0.2s ease; white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.15);
+      backdrop-filter: blur(10px);
+      cursor: pointer;
+      transition: all 0.3s ease;
+      white-space: nowrap;
     }}
-    .panel-filter-btn:hover {{ border-color: var(--accent); }}
+    .panel-filter-btn:hover {{
+      border-color: rgba(255, 255, 255, 0.5);
+      background: rgba(255, 255, 255, 0.2);
+    }}
     .panel-filter-btn .count-badge {{
-      background: var(--accent); color: #fff; border-radius: 10px;
-      padding: 1px 8px; font-size: 11px; font-weight: 700;
+      background: #ffffff;
+      color: #667eea;
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 12px;
+      font-weight: 800;
     }}
     .panel-filter-dropdown {{
       display: none; position: absolute; top: calc(100% + 6px); left: 0;
@@ -365,93 +479,301 @@ def generate_dashboard_html(data: dict, logo_path: str) -> str:
     .panel-filter-item input[type="checkbox"] {{
       width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent);
     }}
-    .container {{ max-width: 1920px; margin: 0 auto; padding: 24px 48px; }}
-    .section {{ margin-bottom: 48px; }}
-    .section-header {{ margin-bottom: 24px; }}
-    .section-title {{
-      font-size: 20px; font-weight: 700; color: var(--ink-strong);
-      letter-spacing: -0.3px; margin-bottom: 4px;
+    .container {{
+      max-width: 1920px;
+      margin: 0 auto;
+      padding: 32px 48px;
     }}
-    .section-description {{ font-size: 14px; color: var(--muted); }}
+    .section {{
+      margin-bottom: 60px;
+    }}
+    .section-header {{
+      margin-bottom: 32px;
+      position: relative;
+      padding-left: 20px;
+    }}
+    .section-header::before {{
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: linear-gradient(180deg, #667eea, #764ba2);
+      border-radius: 2px;
+    }}
+    .section-title {{
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--ink-strong);
+      letter-spacing: -0.8px;
+      margin-bottom: 8px;
+    }}
+    .section-description {{
+      font-size: 15px;
+      color: var(--muted);
+      font-weight: 500;
+    }}
     .comparison-grid {{
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 32px;
     }}
     .comparison-card {{
-      background: var(--card); border-radius: 12px; padding: 24px;
-      box-shadow: var(--shadow-md); border: 1px solid var(--border); transition: all 0.2s ease;
+      background: var(--card);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: var(--shadow-md);
+      border: 2px solid transparent;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
     }}
-    .comparison-card:hover {{ box-shadow: var(--shadow-lg); transform: translateY(-2px); }}
+    .comparison-card::before {{
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }}
+    .comparison-card:hover {{
+      box-shadow: var(--shadow-xl);
+      transform: translateY(-4px);
+      border-color: var(--accent);
+    }}
+    .comparison-card:hover::before {{
+      opacity: 1;
+    }}
     .comparison-card.savings {{
-      border: 2px solid var(--success); background: linear-gradient(135deg, var(--card), var(--success-soft));
+      border-color: var(--success);
+      background: linear-gradient(135deg, var(--card) 0%, var(--success-soft) 100%);
+    }}
+    .comparison-card.savings::before {{
+      background: linear-gradient(90deg, var(--success), var(--success-dark), var(--success));
+      opacity: 1;
     }}
     .comparison-card.increase {{
-      border: 2px solid var(--warning); background: linear-gradient(135deg, var(--card), var(--warning-soft));
+      border-color: var(--warning);
+      background: linear-gradient(135deg, var(--card) 0%, var(--warning-soft) 100%);
+    }}
+    .comparison-card.increase::before {{
+      background: linear-gradient(90deg, var(--warning), var(--warning-dark), var(--warning));
+      opacity: 1;
     }}
     .metric-label {{
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.8px; color: var(--muted); margin-bottom: 12px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--muted);
+      margin-bottom: 16px;
     }}
     .metric-row {{
-      display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
     }}
     .metric-period {{
-      font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
     }}
-    .metric-value {{ font-size: 20px; font-weight: 700; color: var(--ink-strong); }}
+    .metric-value {{
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--ink-strong);
+    }}
     .metric-delta {{
-      margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
-      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 2px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }}
     .delta-label {{
-      font-size: 11px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.8px; color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
     }}
-    .delta-value {{ font-size: 18px; font-weight: 700; }}
-    .delta-value.positive {{ color: var(--success); }}
-    .delta-value.negative {{ color: var(--warning); }}
+    .delta-value {{
+      font-size: 22px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    .delta-value.positive {{
+      color: var(--success);
+    }}
+    .delta-value.positive::before {{
+      content: '↓';
+      font-size: 28px;
+      line-height: 1;
+    }}
+    .delta-value.negative {{
+      color: var(--warning);
+    }}
+    .delta-value.negative::before {{
+      content: '↑';
+      font-size: 28px;
+      line-height: 1;
+    }}
     .savings-summary {{
-      background: linear-gradient(135deg, var(--success), #059669);
-      color: #ffffff; border-radius: 12px; padding: 32px;
-      margin-bottom: 32px; box-shadow: var(--shadow-lg);
+      background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+      color: #ffffff;
+      border-radius: 20px;
+      padding: 48px;
+      margin-bottom: 40px;
+      box-shadow: var(--shadow-xl);
+      position: relative;
+      overflow: hidden;
     }}
-    .savings-title {{ font-size: 24px; font-weight: 700; margin-bottom: 20px; }}
+    .savings-summary::before {{
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+      animation: pulse 15s ease-in-out infinite;
+    }}
+    @keyframes pulse {{
+      0%, 100% {{ transform: translate(0, 0) scale(1); }}
+      50% {{ transform: translate(-20px, -20px) scale(1.1); }}
+    }}
+    .savings-title {{
+      font-size: 32px;
+      font-weight: 800;
+      margin-bottom: 24px;
+      position: relative;
+      z-index: 1;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }}
     .savings-grid {{
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+      position: relative;
+      z-index: 1;
     }}
     .savings-item {{
-      background: rgba(255, 255, 255, 0.1); border-radius: 8px; padding: 16px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.3s ease;
+    }}
+    .savings-item:hover {{
+      background: rgba(255, 255, 255, 0.2);
+      transform: translateY(-4px);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
     }}
     .savings-item-label {{
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.8px; opacity: 0.9; margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      opacity: 0.95;
+      margin-bottom: 12px;
     }}
-    .savings-item-value {{ font-size: 24px; font-weight: 700; line-height: 1; }}
+    .savings-item-value {{
+      font-size: 36px;
+      font-weight: 900;
+      line-height: 1;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }}
     .chart-card {{
-      background: var(--card); border-radius: 12px; padding: 24px;
-      box-shadow: var(--shadow-md); border: 1px solid var(--border);
-      transition: all 0.2s ease; margin-bottom: 24px;
+      background: var(--card);
+      border-radius: 16px;
+      padding: 32px;
+      box-shadow: var(--shadow-md);
+      border: 1px solid var(--border);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-bottom: 32px;
+      position: relative;
+      overflow: hidden;
     }}
-    .chart-card:hover {{ box-shadow: var(--shadow-lg); }}
+    .chart-card::before {{
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), #764ba2, var(--accent));
+    }}
+    .chart-card:hover {{
+      box-shadow: var(--shadow-xl);
+      transform: translateY(-2px);
+    }}
     .chart-title {{
-      font-size: 16px; font-weight: 700; color: var(--ink-strong);
-      margin-bottom: 16px; letter-spacing: -0.2px;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--ink-strong);
+      margin-bottom: 20px;
+      letter-spacing: -0.3px;
     }}
-    .chart {{ min-height: 380px; }}
+    .chart {{
+      min-height: 400px;
+    }}
     .footer {{
-      padding: 32px 48px; color: var(--muted); font-size: 12px;
-      text-align: center; border-top: 1px solid var(--border);
-      background: var(--card); margin-top: 48px;
+      padding: 40px 48px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      text-align: center;
+      border-top: 2px solid var(--border);
+      background: var(--card);
+      margin-top: 60px;
     }}
     @media (max-width: 1200px) {{
-      .comparison-grid {{ grid-template-columns: repeat(2, 1fr); }}
+      .comparison-grid {{
+        grid-template-columns: repeat(2, 1fr);
+      }}
     }}
     @media (max-width: 768px) {{
-      body {{ padding-top: 300px; }}
-      .container {{ padding: 0 24px; }}
-      .top-bar {{ flex-direction: column; align-items: flex-start; padding: 16px 24px; }}
-      .controls {{ padding: 0 24px 12px; }}
-      .comparison-grid {{ grid-template-columns: 1fr; }}
-      .footer {{ padding: 24px; }}
+      body {{
+        padding-top: 340px;
+      }}
+      .container {{
+        padding: 24px 24px;
+      }}
+      .top-bar {{
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px 24px;
+      }}
+      .controls {{
+        padding: 16px 24px 20px;
+      }}
+      .comparison-grid {{
+        grid-template-columns: 1fr;
+      }}
+      .savings-grid {{
+        grid-template-columns: 1fr;
+      }}
+      .footer {{
+        padding: 32px 24px;
+      }}
+      .section-header {{
+        padding-left: 16px;
+      }}
+      .section-header::before {{
+        width: 3px;
+      }}
     }}
   </style>
 </head>
