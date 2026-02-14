@@ -1926,17 +1926,29 @@ function renderAnalytics(data) {{
   }}
 }}
 
+/* ── Comparison data: filters raw D by panel selection only, no main date filter ── */
+function comparisonData() {{
+  const all = D.panel_names || [], active = selPanels.size ? Array.from(selPanels) : all;
+  const ts = D.timestamps, kw = [];
+  for (let i = 0; i < ts.length; i++) {{
+    let tot = 0; active.forEach(p => {{ tot += (D.panel_series[p]||[])[i]||0; }}); kw.push(tot);
+  }}
+  return {{ timestamps: ts, totalKw: kw }};
+}}
+
 /* ═══════ RENDER COMPARISON ═══════ */
-function renderComparison(data) {{
+function renderComparison() {{
   const t=T();
+  const cData=comparisonData();
   const p1s=new Date(document.getElementById("c-p1s").value+"T00:00:00Z");
   const p1e=new Date(document.getElementById("c-p1e").value+"T23:59:59Z");
   const p2s=new Date(document.getElementById("c-p2s").value+"T00:00:00Z");
   const p2e=new Date(document.getElementById("c-p2e").value+"T23:59:59Z");
+  if(isNaN(p1s)||isNaN(p1e)||isNaN(p2s)||isNaN(p2e)) return;
   const pd1={{ts:[],kw:[]}},pd2={{ts:[],kw:[]}};
-  data.timestamps.forEach((ts,i)=>{{ const d=new Date(ts);
-    if(d>=p1s&&d<=p1e){{ pd1.ts.push(ts); pd1.kw.push(data.totalKw[i]); }}
-    if(d>=p2s&&d<=p2e){{ pd2.ts.push(ts); pd2.kw.push(data.totalKw[i]); }}
+  cData.timestamps.forEach((ts,i)=>{{ const d=new Date(ts);
+    if(d>=p1s&&d<=p1e){{ pd1.ts.push(ts); pd1.kw.push(cData.totalKw[i]); }}
+    if(d>=p2s&&d<=p2e){{ pd2.ts.push(ts); pd2.kw.push(cData.totalKw[i]); }}
   }});
   const m1=metrics(pd1.ts,pd1.kw), m2=metrics(pd2.ts,pd2.kw);
   const c1=m1.totalKwh*PRICE, c2=m2.totalKwh*PRICE;
@@ -2080,7 +2092,7 @@ function refreshAll() {{
   const data=filterData();
   renderOverview(data);
   renderAnalytics(data);
-  renderComparison(data);
+  renderComparison();
   buildTable(data);
 }}
 
@@ -2091,7 +2103,7 @@ document.getElementById("reset-btn").addEventListener("click",()=>{{
   document.querySelectorAll("#dd-list input").forEach(c=>c.checked=true);
   syncBadge(); initDates(); refreshAll();
 }});
-document.getElementById("compare-btn").addEventListener("click",()=>{{ renderComparison(filterData()); }});
+document.getElementById("compare-btn").addEventListener("click",()=>{{ renderComparison(); }});
 document.getElementById("table-search").addEventListener("input",()=>{{ tPage=0; renderTable(); }});
 
 /* ─── Init ─── */
