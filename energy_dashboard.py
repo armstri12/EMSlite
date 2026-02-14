@@ -1621,8 +1621,8 @@ function syncBadge() {{
 function initDates() {{
   const ts = D.timestamps;
   if (!ts.length) return;
-  const mn = new Date(Math.min(...ts.map(t=>new Date(t)))).toISOString().slice(0,10);
-  const mx = new Date(Math.max(...ts.map(t=>new Date(t)))).toISOString().slice(0,10);
+  const mn = new Date(ts[0]).toISOString().slice(0,10);
+  const mx = new Date(ts[ts.length-1]).toISOString().slice(0,10);
   ["f-start","f-end"].forEach(id => {{ const el=document.getElementById(id); el.min=mn; el.max=mx; }});
   document.getElementById("f-start").value = mn;
   document.getElementById("f-end").value = mx;
@@ -2068,8 +2068,8 @@ function renderTable() {{
 /* ─── CSV Export ─── */
 document.getElementById("export-csv").addEventListener("click",()=>{{
   const panels=selPanels.size?Array.from(selPanels):(D.panel_names||[]);
-  let csv=["Timestamp","Total_kW",...panels].join(",")+"\n";
-  tData.forEach(r=>{{ csv+=r.join(",")+"\n"; }});
+  let csv=["Timestamp","Total_kW",...panels].join(",")+"\\n";
+  tData.forEach(r=>{{ csv+=r.join(",")+"\\n"; }});
   const blob=new Blob([csv],{{type:"text/csv"}});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   a.download="energy_export.csv"; a.click(); URL.revokeObjectURL(a.href);
