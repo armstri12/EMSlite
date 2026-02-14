@@ -1297,36 +1297,10 @@ body {{
 <main class="main">
   <div class="main-container">
 
-    <!-- Filter bar -->
-    <div class="filter-bar">
-      <div class="dropdown-wrap" id="dd-wrap">
-        <button class="dropdown-trigger" id="dd-trigger">
-          Panels <span class="dd-badge" id="dd-badge">All</span>
-        </button>
-        <div class="dropdown-menu" id="dd-menu">
-          <div class="dd-actions">
-            <button id="dd-all">Select All</button>
-            <button id="dd-none">Clear</button>
-          </div>
-          <div class="dd-list" id="dd-list"></div>
-        </div>
-      </div>
-      <div class="filter-divider"></div>
-      <div class="filter-group">
-        <label for="f-start">From</label>
-        <input type="date" id="f-start" class="filter-input"/>
-      </div>
-      <div class="filter-group">
-        <label for="f-end">To</label>
-        <input type="date" id="f-end" class="filter-input"/>
-      </div>
-      <button class="btn btn-primary" id="apply-btn">Apply</button>
-      <button class="btn btn-ghost" id="reset-btn">Reset</button>
-    </div>
-
     <!-- Tab contents -->
     <!-- ═══════ OVERVIEW ═══════ -->
     <div class="tab-content active" id="tab-overview">
+      <div class="filter-bar" id="ov-filter-bar"></div>
       <div class="kpi-grid" id="kpi-grid">
         <div class="kpi-card animate">
           <div class="kpi-header">
@@ -1414,6 +1388,7 @@ body {{
 
     <!-- ═══════ ANALYTICS ═══════ -->
     <div class="tab-content" id="tab-analytics">
+      <div class="filter-bar" id="an-filter-bar"></div>
       <div class="charts-grid">
         <div class="panel panel-6">
           <div class="panel-title">Time-of-Day Heatmap</div>
@@ -1444,13 +1419,7 @@ body {{
 
     <!-- ═══════ COMPARISON ═══════ -->
     <div class="tab-content" id="tab-comparison">
-      <div class="comparison-controls">
-        <div class="comp-field"><label>Period 1 Start</label><input type="date" id="c-p1s" class="filter-input"/></div>
-        <div class="comp-field"><label>Period 1 End</label><input type="date" id="c-p1e" class="filter-input"/></div>
-        <div class="comp-field"><label>Period 2 Start</label><input type="date" id="c-p2s" class="filter-input"/></div>
-        <div class="comp-field"><label>Period 2 End</label><input type="date" id="c-p2e" class="filter-input"/></div>
-        <button class="btn btn-primary" id="compare-btn">Compare</button>
-      </div>
+      <div class="filter-bar" id="cp-filter-bar"></div>
       <div class="savings-banner positive" id="sav-banner">
         <h3 id="sav-title">Energy Savings Impact</h3>
         <div class="savings-grid">
@@ -1495,6 +1464,7 @@ body {{
 
     <!-- ═══════ DATA TABLE ═══════ -->
     <div class="tab-content" id="tab-data">
+      <div class="filter-bar" id="dt-filter-bar"></div>
       <div class="table-controls">
         <input type="text" class="table-search" id="table-search" placeholder="Search timestamps, values..."/>
         <button class="btn btn-ghost btn-sm" id="export-csv">Export CSV</button>
@@ -1525,6 +1495,9 @@ body {{
 const D = {json.dumps(data_payload)};
 const LOGO = {json.dumps(logo_path)};
 const PRICE = {price_per_kwh};
+const ALL_PANELS = D.panel_names || [];
+const DATE_MIN = D.timestamps.length ? new Date(D.timestamps[0]).toISOString().slice(0,10) : "";
+const DATE_MAX = D.timestamps.length ? new Date(D.timestamps[D.timestamps.length-1]).toISOString().slice(0,10) : "";
 
 /* ─── Theme ─── */
 const lightC = {{
@@ -1549,27 +1522,30 @@ document.getElementById("theme-toggle").addEventListener("click", () => {{
   document.getElementById("theme-icon").innerHTML = isDark
     ? '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>'
     : '<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>';
-  refreshAll();
+  renderCurrentTab();
 }});
 
 /* ─── Sidebar / Mobile ─── */
 const sidebar = document.getElementById("sidebar");
-const overlay = document.getElementById("sidebar-overlay");
+const sidebarOverlay = document.getElementById("sidebar-overlay");
 document.getElementById("hamburger").addEventListener("click", () => {{
   sidebar.classList.toggle("open");
-  overlay.classList.toggle("active");
+  sidebarOverlay.classList.toggle("active");
 }});
-overlay.addEventListener("click", () => {{
+sidebarOverlay.addEventListener("click", () => {{
   sidebar.classList.remove("open");
-  overlay.classList.remove("active");
+  sidebarOverlay.classList.remove("active");
 }});
 
-/* ─── Tab Navigation (sidebar + inline) ─── */
+/* ─── Tab Navigation ─── */
+let activeTab = "overview";
 function switchTab(tabId) {{
+  activeTab = tabId;
   document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
   document.querySelectorAll(".nav-item[data-tab]").forEach(n => n.classList.remove("active"));
   document.getElementById("tab-" + tabId).classList.add("active");
   document.querySelectorAll('.nav-item[data-tab="' + tabId + '"]').forEach(n => n.classList.add("active"));
+  renderCurrentTab();
   window.dispatchEvent(new Event("resize"));
 }}
 document.querySelectorAll(".nav-item[data-tab]").forEach(n => {{
@@ -1577,79 +1553,179 @@ document.querySelectorAll(".nav-item[data-tab]").forEach(n => {{
     e.preventDefault();
     switchTab(n.dataset.tab);
     sidebar.classList.remove("open");
-    overlay.classList.remove("active");
+    sidebarOverlay.classList.remove("active");
   }});
 }});
 
-/* ─── Panel Filter ─── */
-let selPanels = new Set(D.panel_names || []);
-function initPanelFilter() {{
-  const panels = D.panel_names || [];
-  if (!panels.length) {{ document.getElementById("dd-wrap").classList.add("hidden"); return; }}
-  const list = document.getElementById("dd-list");
-  panels.forEach(p => {{
-    const lbl = document.createElement("label"); lbl.className = "dd-item";
-    const cb = document.createElement("input"); cb.type = "checkbox"; cb.value = p; cb.checked = true;
-    cb.addEventListener("change", () => {{ cb.checked ? selPanels.add(p) : selPanels.delete(p); syncBadge(); }});
-    const sp = document.createElement("span"); sp.textContent = p;
-    lbl.appendChild(cb); lbl.appendChild(sp); list.appendChild(lbl);
-  }});
-  document.getElementById("dd-trigger").addEventListener("click", e => {{
-    e.stopPropagation(); document.getElementById("dd-menu").classList.toggle("open");
-  }});
-  document.addEventListener("click", e => {{
-    if (!document.getElementById("dd-wrap").contains(e.target)) document.getElementById("dd-menu").classList.remove("open");
-  }});
-  document.getElementById("dd-all").addEventListener("click", () => {{
-    selPanels = new Set(panels);
-    document.querySelectorAll("#dd-list input").forEach(c => c.checked = true);
-    syncBadge();
-  }});
-  document.getElementById("dd-none").addEventListener("click", () => {{
-    selPanels.clear();
-    document.querySelectorAll("#dd-list input").forEach(c => c.checked = false);
-    syncBadge();
-  }});
-  syncBadge();
-}}
-function syncBadge() {{
-  const all = D.panel_names || [];
-  document.getElementById("dd-badge").textContent = selPanels.size === all.length ? "All" : selPanels.size === 0 ? "None" : selPanels.size;
-}}
+/* ═══════════════════════════════════════════════════════
+   PER-TAB STATE & FILTER BAR BUILDER
+   ═══════════════════════════════════════════════════════ */
+const tabState = {{
+  overview:   {{ panels: new Set(ALL_PANELS), startDate: DATE_MIN, endDate: DATE_MAX }},
+  analytics:  {{ panels: new Set(ALL_PANELS), startDate: DATE_MIN, endDate: DATE_MAX }},
+  comparison: {{ panels: new Set(ALL_PANELS), p1Start: "", p1End: "", p2Start: "", p2End: "" }},
+  data:       {{ panels: new Set(ALL_PANELS), startDate: DATE_MIN, endDate: DATE_MAX }}
+}};
 
-/* ─── Date Init ─── */
-function initDates() {{
-  const ts = D.timestamps;
-  if (!ts.length) return;
-  const mn = new Date(ts[0]).toISOString().slice(0,10);
-  const mx = new Date(ts[ts.length-1]).toISOString().slice(0,10);
-  ["f-start","f-end"].forEach(id => {{ const el=document.getElementById(id); el.min=mn; el.max=mx; }});
-  document.getElementById("f-start").value = mn;
-  document.getElementById("f-end").value = mx;
-  const totalDays = (new Date(mx) - new Date(mn)) / 86400000;
+/* Auto-init comparison periods */
+(function() {{
+  const totalDays = DATE_MIN && DATE_MAX ? (new Date(DATE_MAX) - new Date(DATE_MIN)) / 86400000 : 0;
+  const st = tabState.comparison;
   if (totalDays >= 14) {{
-    const e2 = new Date(mx), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
+    const e2 = new Date(DATE_MAX), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
     const e1 = new Date(s2); e1.setDate(e1.getDate()-1);
     const s1 = new Date(e1); s1.setDate(s1.getDate()-6);
-    document.getElementById("c-p1s").value = s1.toISOString().slice(0,10);
-    document.getElementById("c-p1e").value = e1.toISOString().slice(0,10);
-    document.getElementById("c-p2s").value = s2.toISOString().slice(0,10);
-    document.getElementById("c-p2e").value = e2.toISOString().slice(0,10);
-  }} else {{
-    const mid = new Date(mn); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
+    st.p1Start = s1.toISOString().slice(0,10);
+    st.p1End   = e1.toISOString().slice(0,10);
+    st.p2Start = s2.toISOString().slice(0,10);
+    st.p2End   = e2.toISOString().slice(0,10);
+  }} else if (totalDays > 0) {{
+    const mid = new Date(DATE_MIN); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
     const midN = new Date(mid); midN.setDate(midN.getDate()+1);
-    document.getElementById("c-p1s").value = mn;
-    document.getElementById("c-p1e").value = mid.toISOString().slice(0,10);
-    document.getElementById("c-p2s").value = midN.toISOString().slice(0,10);
-    document.getElementById("c-p2e").value = mx;
+    st.p1Start = DATE_MIN;
+    st.p1End   = mid.toISOString().slice(0,10);
+    st.p2Start = midN.toISOString().slice(0,10);
+    st.p2End   = DATE_MAX;
   }}
+}})();
+
+/* Build a reusable filter bar inside a container element.
+   mode = "daterange" (Overview / Analytics / Data Table)  or  "comparison" */
+function buildFilterBar(containerId, tabKey, mode) {{
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const st = tabState[tabKey];
+  const uid = tabKey; // unique prefix for IDs
+
+  let html = '';
+
+  /* Panel dropdown */
+  if (ALL_PANELS.length) {{
+    html += `<div class="dropdown-wrap" id="dd-${{uid}}">
+      <button class="dropdown-trigger" id="ddt-${{uid}}">Panels <span class="dd-badge" id="ddb-${{uid}}">All</span></button>
+      <div class="dropdown-menu" id="ddm-${{uid}}">
+        <div class="dd-actions">
+          <button id="dda-${{uid}}">Select All</button>
+          <button id="ddn-${{uid}}">Clear</button>
+        </div>
+        <div class="dd-list" id="ddl-${{uid}}"></div>
+      </div>
+    </div>
+    <div class="filter-divider"></div>`;
+  }}
+
+  if (mode === "daterange") {{
+    html += `<div class="filter-group"><label>From</label>
+      <input type="date" id="fs-${{uid}}" class="filter-input" value="${{st.startDate}}" min="${{DATE_MIN}}" max="${{DATE_MAX}}"/></div>
+    <div class="filter-group"><label>To</label>
+      <input type="date" id="fe-${{uid}}" class="filter-input" value="${{st.endDate}}" min="${{DATE_MIN}}" max="${{DATE_MAX}}"/></div>`;
+  }} else if (mode === "comparison") {{
+    html += `<div class="filter-group"><label>Period 1 Start</label>
+      <input type="date" id="cp1s-${{uid}}" class="filter-input" value="${{st.p1Start}}"/></div>
+    <div class="filter-group"><label>Period 1 End</label>
+      <input type="date" id="cp1e-${{uid}}" class="filter-input" value="${{st.p1End}}"/></div>
+    <div class="filter-divider"></div>
+    <div class="filter-group"><label>Period 2 Start</label>
+      <input type="date" id="cp2s-${{uid}}" class="filter-input" value="${{st.p2Start}}"/></div>
+    <div class="filter-group"><label>Period 2 End</label>
+      <input type="date" id="cp2e-${{uid}}" class="filter-input" value="${{st.p2End}}"/></div>`;
+  }}
+
+  html += `<button class="btn btn-primary" id="apply-${{uid}}">Apply</button>
+    <button class="btn btn-ghost" id="reset-${{uid}}">Reset</button>`;
+
+  container.innerHTML = html;
+
+  /* Wire panel dropdown */
+  if (ALL_PANELS.length) {{
+    const list = document.getElementById("ddl-" + uid);
+    ALL_PANELS.forEach(p => {{
+      const lbl = document.createElement("label"); lbl.className = "dd-item";
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.value = p; cb.checked = st.panels.has(p);
+      cb.addEventListener("change", () => {{ cb.checked ? st.panels.add(p) : st.panels.delete(p); syncDDBadge(uid, st); }});
+      const sp = document.createElement("span"); sp.textContent = p;
+      lbl.appendChild(cb); lbl.appendChild(sp); list.appendChild(lbl);
+    }});
+    document.getElementById("ddt-" + uid).addEventListener("click", e => {{
+      e.stopPropagation(); document.getElementById("ddm-" + uid).classList.toggle("open");
+    }});
+    document.addEventListener("click", e => {{
+      const wrap = document.getElementById("dd-" + uid);
+      if (wrap && !wrap.contains(e.target)) document.getElementById("ddm-" + uid).classList.remove("open");
+    }});
+    document.getElementById("dda-" + uid).addEventListener("click", () => {{
+      st.panels = new Set(ALL_PANELS);
+      document.querySelectorAll("#ddl-" + uid + " input").forEach(c => c.checked = true);
+      syncDDBadge(uid, st);
+    }});
+    document.getElementById("ddn-" + uid).addEventListener("click", () => {{
+      st.panels.clear();
+      document.querySelectorAll("#ddl-" + uid + " input").forEach(c => c.checked = false);
+      syncDDBadge(uid, st);
+    }});
+    syncDDBadge(uid, st);
+  }}
+
+  /* Wire Apply */
+  document.getElementById("apply-" + uid).addEventListener("click", () => {{
+    if (mode === "daterange") {{
+      st.startDate = document.getElementById("fs-" + uid).value || DATE_MIN;
+      st.endDate   = document.getElementById("fe-" + uid).value || DATE_MAX;
+    }} else {{
+      st.p1Start = document.getElementById("cp1s-" + uid).value;
+      st.p1End   = document.getElementById("cp1e-" + uid).value;
+      st.p2Start = document.getElementById("cp2s-" + uid).value;
+      st.p2End   = document.getElementById("cp2e-" + uid).value;
+    }}
+    renderTab(tabKey);
+  }});
+
+  /* Wire Reset */
+  document.getElementById("reset-" + uid).addEventListener("click", () => {{
+    st.panels = new Set(ALL_PANELS);
+    document.querySelectorAll("#ddl-" + uid + " input").forEach(c => c.checked = true);
+    syncDDBadge(uid, st);
+    if (mode === "daterange") {{
+      st.startDate = DATE_MIN; st.endDate = DATE_MAX;
+      document.getElementById("fs-" + uid).value = DATE_MIN;
+      document.getElementById("fe-" + uid).value = DATE_MAX;
+    }} else {{
+      /* re-init comparison defaults */
+      const totalDays = DATE_MIN && DATE_MAX ? (new Date(DATE_MAX) - new Date(DATE_MIN)) / 86400000 : 0;
+      if (totalDays >= 14) {{
+        const e2 = new Date(DATE_MAX), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
+        const e1 = new Date(s2); e1.setDate(e1.getDate()-1);
+        const s1 = new Date(e1); s1.setDate(s1.getDate()-6);
+        st.p1Start = s1.toISOString().slice(0,10); st.p1End = e1.toISOString().slice(0,10);
+        st.p2Start = s2.toISOString().slice(0,10); st.p2End = e2.toISOString().slice(0,10);
+      }} else {{
+        const mid = new Date(DATE_MIN); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
+        const midN = new Date(mid); midN.setDate(midN.getDate()+1);
+        st.p1Start = DATE_MIN; st.p1End = mid.toISOString().slice(0,10);
+        st.p2Start = midN.toISOString().slice(0,10); st.p2End = DATE_MAX;
+      }}
+      document.getElementById("cp1s-" + uid).value = st.p1Start;
+      document.getElementById("cp1e-" + uid).value = st.p1End;
+      document.getElementById("cp2s-" + uid).value = st.p2Start;
+      document.getElementById("cp2e-" + uid).value = st.p2End;
+    }}
+    renderTab(tabKey);
+  }});
 }}
 
-/* ─── Data Filtering ─── */
-function filterData() {{
-  const sD = document.getElementById("f-start").value ? new Date(document.getElementById("f-start").value+"T00:00:00Z") : null;
-  const eD = document.getElementById("f-end").value ? new Date(document.getElementById("f-end").value+"T23:59:59Z") : null;
-  const all = D.panel_names || [], active = selPanels.size ? Array.from(selPanels) : all;
+function syncDDBadge(uid, st) {{
+  const el = document.getElementById("ddb-" + uid);
+  if (el) el.textContent = st.panels.size === ALL_PANELS.length ? "All" : st.panels.size === 0 ? "None" : st.panels.size;
+}}
+
+/* ═══════════════════════════════════════════════════════
+   PER-TAB DATA FILTERING
+   ═══════════════════════════════════════════════════════ */
+function filterForTab(tabKey) {{
+  const st = tabState[tabKey];
+  const sD = st.startDate ? new Date(st.startDate + "T00:00:00Z") : null;
+  const eD = st.endDate   ? new Date(st.endDate   + "T23:59:59Z") : null;
+  const active = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
   const aSet = new Set(active);
   const gMap = {{}}, mMap = {{}};
   D.group_definitions.forEach(g => {{ gMap[g.name] = (g.panels||[]).filter(p=>aSet.has(p)); }});
@@ -1657,7 +1733,7 @@ function filterData() {{
   const f = {{ timestamps:[], totalKw:[],
     groupSeries: Object.fromEntries(Object.keys(D.group_series).map(k=>[k,[]])),
     meterSeries: Object.fromEntries(Object.keys(D.meter_series).map(k=>[k,[]])),
-    panelSeries: Object.fromEntries(all.map(k=>[k,[]]))
+    panelSeries: Object.fromEntries(ALL_PANELS.map(k=>[k,[]]))
   }};
   D.timestamps.forEach((ts,i) => {{
     const d = new Date(ts);
@@ -1670,12 +1746,14 @@ function filterData() {{
     Object.keys(D.meter_series).forEach(m => {{
       let s=0; (mMap[m]||[]).forEach(p => {{ s += (D.panel_series[p]||[])[i]||0; }}); f.meterSeries[m].push(s);
     }});
-    all.forEach(p => {{ f.panelSeries[p].push((D.panel_series[p]||[])[i]||0); }});
+    ALL_PANELS.forEach(p => {{ f.panelSeries[p].push((D.panel_series[p]||[])[i]||0); }});
   }});
   return f;
 }}
 
-/* ─── Metrics ─── */
+/* ═══════════════════════════════════════════════════════
+   SHARED HELPERS
+   ═══════════════════════════════════════════════════════ */
 function metrics(ts, kw) {{
   let kwh=0, pk=0, sum=0;
   for (let i=0;i<ts.length;i++) {{ const v=kw[i]??0; sum+=v; if(v>pk)pk=v;
@@ -1706,8 +1784,6 @@ function weekdayProfile(ts,kw) {{
   ts.forEach((t,i)=>{{ const w=new Date(t).getUTCDay(); s[w]+=kw[i]??0; c[w]++; }});
   return {{ days:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], avgs:s.map((v,i)=>c[i]?v/c[i]:0) }};
 }}
-
-/* ─── Sparkline SVG ─── */
 function sparkSVG(vals, color) {{
   if(!vals.length) return "";
   const w=200,h=32, mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
@@ -1730,8 +1806,6 @@ function pLayout(ov) {{
 function xA(ov) {{ const t=T(); return Object.assign({{gridcolor:t.grid,zerolinecolor:t.grid,showline:true,linecolor:t.grid}},ov); }}
 function yA(ov) {{ const t=T(); return Object.assign({{rangemode:"tozero",gridcolor:t.grid,zerolinecolor:t.grid,showline:true,linecolor:t.grid}},ov); }}
 const pCfg = {{displaylogo:false, responsive:true}};
-
-/* ─── Weekend shapes ─── */
 function weekendShapes(ts) {{
   if(!ts.length)return[];const shapes=[];let ws=null;
   for(let i=0;i<ts.length;i++){{ const d=new Date(ts[i]).getUTCDay();const isWe=d===0||d===6;
@@ -1739,10 +1813,15 @@ function weekendShapes(ts) {{
   }} if(ws!==null)shapes.push({{type:"rect",xref:"x",yref:"paper",x0:ws,x1:ts[ts.length-1],y0:0,y1:1,line:{{width:0}},fillcolor:"rgba(139,212,53,0.06)"}}); return shapes;
 }}
 
-/* ═══════ RENDER OVERVIEW ═══════ */
-function renderOverview(data) {{
+/* ═══════════════════════════════════════════════════════
+   TAB RENDERERS — each is self-contained
+   ═══════════════════════════════════════════════════════ */
+
+/* ═══════ OVERVIEW ═══════ */
+function renderOverview() {{
+  const data = filterForTab("overview");
+  const st = tabState.overview;
   const t=T(), m=metrics(data.timestamps,data.totalKw), cost=m.totalKwh*PRICE;
-  // Trend: compare first half vs second half
   const mid=Math.floor(data.timestamps.length/2);
   const m1=metrics(data.timestamps.slice(0,mid),data.totalKw.slice(0,mid));
   const m2=metrics(data.timestamps.slice(mid),data.totalKw.slice(mid));
@@ -1766,7 +1845,6 @@ function renderOverview(data) {{
   setBadge("kpi-cost",m1.totalKwh*PRICE,m2.totalKwh*PRICE,true);
   setBadge("kpi-peak",m1.peakKw,m2.peakKw,true);
 
-  // Sparklines
   const de=dailyEnergy(data.timestamps,data.totalKw);
   document.getElementById("spark-energy").innerHTML=sparkSVG(de.values,"#8BD435");
   document.getElementById("spark-cost").innerHTML=sparkSVG(de.values.map(v=>v*PRICE),"#8BD435");
@@ -1775,7 +1853,6 @@ function renderOverview(data) {{
   const dayPeaks=Object.keys(byDay).sort().map(dk=>Math.max(...byDay[dk]));
   document.getElementById("spark-peak").innerHTML=sparkSVG(dayPeaks,"#8BD435");
 
-  // Energy Use — daily bar chart with gradient
   Plotly.newPlot("chart-energy-bars",[{{
     x:de.dates, y:de.values, type:"bar",
     marker:{{ color:de.values.map((_,i)=>{{ const frac=de.values.length>1?i/(de.values.length-1):0;
@@ -1783,19 +1860,14 @@ function renderOverview(data) {{
     }}) }}
   }}],pLayout({{
     xaxis:xA({{title:{{text:"Date",font:{{size:12}}}},type:"category"}}),
-    yaxis:yA({{title:{{text:"kWh",font:{{size:12}}}}}}),
-    bargap:0.2
+    yaxis:yA({{title:{{text:"kWh",font:{{size:12}}}}}}), bargap:0.2
   }}),pCfg);
 
-  // Donut — Load Factor
-  const lf=m.peakKw>0?m.avgKw/m.peakKw*100:0;
-  const offPeak=100-lf;
+  const lf=m.peakKw>0?m.avgKw/m.peakKw*100:0, offPeak=100-lf;
   Plotly.newPlot("chart-donut",[{{
     values:[lf,offPeak], labels:["Active Load","Reserve Capacity"],
-    type:"pie", hole:0.65,
-    marker:{{ colors:[t.donutA, t.donutB] }},
-    textinfo:"none",
-    hovertemplate:"%{{label}}: %{{value:.1f}}%<extra></extra>"
+    type:"pie", hole:0.65, marker:{{ colors:[t.donutA, t.donutB] }},
+    textinfo:"none", hovertemplate:"%{{label}}: %{{value:.1f}}%<extra></extra>"
   }}],pLayout({{ margin:{{t:10,b:10,l:10,r:10}}, showlegend:false, height:280,
     annotations:[{{ text:lf.toFixed(0)+"%", font:{{size:28,color:t.ink,family:"Inter"}}, showarrow:false }}]
   }}),pCfg);
@@ -1803,11 +1875,10 @@ function renderOverview(data) {{
     <div class="donut-legend-item"><div class="donut-legend-dot" style="background:${{t.donutA}}"></div>Active Load — ${{lf.toFixed(1)}}%</div>
     <div class="donut-legend-item"><div class="donut-legend-dot" style="background:${{t.donutB}}"></div>Reserve Capacity — ${{offPeak.toFixed(1)}}%</div>`;
 
-  // Horizontal bars — top 5 panels by consumption
-  const panelEnergies = (D.panel_names||[]).map(p => {{
+  const active = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
+  const panelEnergies = active.map(p => {{
     const series=data.panelSeries[p]||[];
-    const pm=metrics(data.timestamps,series);
-    return {{ name:p, kwh:pm.totalKwh }};
+    return {{ name:p, kwh:metrics(data.timestamps,series).totalKwh }};
   }}).sort((a,b)=>b.kwh-a.kwh).slice(0,8);
   const maxKwh=panelEnergies.length?panelEnergies[0].kwh:1;
   document.getElementById("hbar-panels").innerHTML=panelEnergies.map(pe=>`
@@ -1817,7 +1888,6 @@ function renderOverview(data) {{
       <div class="hbar-value">${{pe.kwh>=1000?(pe.kwh/1000).toFixed(1)+"k":pe.kwh.toFixed(0)}} kWh</div>
     </div>`).join("");
 
-  // Load profile
   const rolling=rollingMean(data.timestamps,data.totalKw,D.rolling_hours);
   Plotly.newPlot("chart-load",[{{
     x:data.timestamps, y:rolling, mode:"lines",
@@ -1829,13 +1899,11 @@ function renderOverview(data) {{
     yaxis:yA({{title:{{text:"kW",font:{{size:12}}}}}})
   }}),pCfg);
 
-  // Meter bars
   if(D.utility_meters.length) {{
     document.getElementById("meter-section").classList.remove("hidden");
     const meterEnergies=D.utility_meters.map(mt=>{{
       const s=data.meterSeries[mt.name]||[];
-      const mm=metrics(data.timestamps,s);
-      return {{name:mt.name, kwh:mm.totalKwh}};
+      return {{name:mt.name, kwh:metrics(data.timestamps,s).totalKwh}};
     }});
     const mMax=meterEnergies.length?Math.max(...meterEnergies.map(m=>m.kwh)):1;
     document.getElementById("meter-bars").innerHTML=meterEnergies.map(me=>`
@@ -1847,10 +1915,12 @@ function renderOverview(data) {{
   }}
 }}
 
-/* ═══════ RENDER ANALYTICS ═══════ */
-function renderAnalytics(data) {{
+/* ═══════ ANALYTICS ═══════ */
+function renderAnalytics() {{
+  const data = filterForTab("analytics");
+  const st = tabState.analytics;
   const t=T();
-  // Heatmap
+
   const bk={{}};
   data.timestamps.forEach((ts,i)=>{{ const d=new Date(ts),dk=d.toISOString().slice(0,10),h=d.getUTCHours();
     if(!bk[dk])bk[dk]={{}}; if(!bk[dk][h])bk[dk][h]={{s:0,c:0}}; bk[dk][h].s+=data.totalKw[i]??0; bk[dk][h].c++; }});
@@ -1867,7 +1937,6 @@ function renderAnalytics(data) {{
     yaxis:Object.assign(yA({{title:{{text:"Hour",font:{{size:12}}}}}}),{{autorange:"reversed",rangemode:undefined}})
   }}),pCfg);
 
-  // Hourly
   const hp=hourlyProfile(data.timestamps,data.totalKw);
   Plotly.newPlot("chart-hourly",[{{
     x:hp.hours,y:hp.avgs, mode:"lines+markers",
@@ -1879,27 +1948,22 @@ function renderAnalytics(data) {{
     yaxis:yA({{title:{{text:"Avg kW",font:{{size:12}}}}}})
   }}),pCfg);
 
-  // Weekday
   const wp=weekdayProfile(data.timestamps,data.totalKw);
   Plotly.newPlot("chart-weekday",[{{
-    x:wp.days,y:wp.avgs, type:"bar",
-    marker:{{color:t.accent}}
+    x:wp.days,y:wp.avgs, type:"bar", marker:{{color:t.accent}}
   }}],pLayout({{
     xaxis:xA({{title:{{text:"Day",font:{{size:12}}}}}}),
     yaxis:yA({{title:{{text:"Avg kW",font:{{size:12}}}}}}), bargap:0.2
   }}),pCfg);
 
-  // Daily Energy
   const de=dailyEnergy(data.timestamps,data.totalKw);
   Plotly.newPlot("chart-daily-energy",[{{
-    x:de.dates,y:de.values, type:"bar",
-    marker:{{color:t.accentDark}}
+    x:de.dates,y:de.values, type:"bar", marker:{{color:t.accentDark}}
   }}],pLayout({{
     xaxis:xA({{title:{{text:"Date",font:{{size:12}}}},type:"category"}}),
     yaxis:yA({{title:{{text:"kWh",font:{{size:12}}}}}}), bargap:0.15
   }}),pCfg);
 
-  // Group chart
   const gNames=Object.keys(data.groupSeries).filter(g=>{{ const def=D.group_definitions.find(d=>d.name===g); return def&&def.panels&&def.panels.length; }});
   if(gNames.length) {{
     document.getElementById("group-chart-panel").style.display="";
@@ -1912,8 +1976,7 @@ function renderAnalytics(data) {{
     }}),pCfg);
   }}
 
-  // Panels
-  const pShow=selPanels.size?Array.from(selPanels):(D.panel_names||[]);
+  const pShow = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
   if(pShow.length) {{
     Plotly.newPlot("chart-panels",pShow.map(p=>({{
       x:data.timestamps, y:data.panelSeries[p]||[], mode:"lines",name:p,line:{{width:2,shape:"spline"}}
@@ -1926,17 +1989,25 @@ function renderAnalytics(data) {{
   }}
 }}
 
-/* ═══════ RENDER COMPARISON ═══════ */
-function renderComparison(data) {{
+/* ═══════ COMPARISON ═══════ */
+function renderComparison() {{
+  const st = tabState.comparison;
   const t=T();
-  const p1s=new Date(document.getElementById("c-p1s").value+"T00:00:00Z");
-  const p1e=new Date(document.getElementById("c-p1e").value+"T23:59:59Z");
-  const p2s=new Date(document.getElementById("c-p2s").value+"T00:00:00Z");
-  const p2e=new Date(document.getElementById("c-p2e").value+"T23:59:59Z");
+  const active = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
+  /* Build total kW from raw D using this tab's panel selection */
+  const allTs = D.timestamps, allKw = [];
+  for (let i = 0; i < allTs.length; i++) {{
+    let tot = 0; active.forEach(p => {{ tot += (D.panel_series[p]||[])[i]||0; }}); allKw.push(tot);
+  }}
+
+  const p1s=new Date(st.p1Start+"T00:00:00Z"), p1e=new Date(st.p1End+"T23:59:59Z");
+  const p2s=new Date(st.p2Start+"T00:00:00Z"), p2e=new Date(st.p2End+"T23:59:59Z");
+  if(isNaN(p1s)||isNaN(p1e)||isNaN(p2s)||isNaN(p2e)) return;
+
   const pd1={{ts:[],kw:[]}},pd2={{ts:[],kw:[]}};
-  data.timestamps.forEach((ts,i)=>{{ const d=new Date(ts);
-    if(d>=p1s&&d<=p1e){{ pd1.ts.push(ts); pd1.kw.push(data.totalKw[i]); }}
-    if(d>=p2s&&d<=p2e){{ pd2.ts.push(ts); pd2.kw.push(data.totalKw[i]); }}
+  allTs.forEach((ts,i)=>{{ const d=new Date(ts);
+    if(d>=p1s&&d<=p1e){{ pd1.ts.push(ts); pd1.kw.push(allKw[i]); }}
+    if(d>=p2s&&d<=p2e){{ pd2.ts.push(ts); pd2.kw.push(allKw[i]); }}
   }});
   const m1=metrics(pd1.ts,pd1.kw), m2=metrics(pd2.ts,pd2.kw);
   const c1=m1.totalKwh*PRICE, c2=m2.totalKwh*PRICE;
@@ -1958,33 +2029,31 @@ function renderComparison(data) {{
   document.getElementById("sav-peak").textContent=pRed.toFixed(1)+" kW";
   document.getElementById("sav-lf").textContent=lfC.toFixed(1)+" pts";
 
-  function setCC(id,v1f,v2f,diff,cls) {{
-    document.getElementById("cc-"+id).className="comp-card "+cls;
-  }}
+  function setCC(id,cls) {{ document.getElementById("cc-"+id).className="comp-card "+cls; }}
   document.getElementById("cc-e1").textContent=m1.totalKwh.toFixed(0)+" kWh";
   document.getElementById("cc-e2").textContent=m2.totalKwh.toFixed(0)+" kWh";
   const ced=document.getElementById("cc-ed"); ced.textContent=(m2.totalKwh-m1.totalKwh).toFixed(0)+" kWh";
-  ced.className="delta-val "+(eSav>0?"pos":"neg"); setCC("energy",0,0,0,eSav>0?"savings":"increase");
+  ced.className="delta-val "+(eSav>0?"pos":"neg"); setCC("energy",eSav>0?"savings":"increase");
 
   document.getElementById("cc-c1").textContent="$"+c1.toFixed(0);
   document.getElementById("cc-c2").textContent="$"+c2.toFixed(0);
   const ccd=document.getElementById("cc-cd"); ccd.textContent="$"+(c2-c1).toFixed(0);
-  ccd.className="delta-val "+(cSav>0?"pos":"neg"); setCC("cost",0,0,0,cSav>0?"savings":"increase");
+  ccd.className="delta-val "+(cSav>0?"pos":"neg"); setCC("cost",cSav>0?"savings":"increase");
 
   document.getElementById("cc-a1").textContent=m1.avgKw.toFixed(1)+" kW";
   document.getElementById("cc-a2").textContent=m2.avgKw.toFixed(1)+" kW";
   const cad=document.getElementById("cc-ad"); cad.textContent=(m2.avgKw-m1.avgKw).toFixed(1)+" kW";
-  cad.className="delta-val "+(m2.avgKw<m1.avgKw?"pos":"neg"); setCC("avg",0,0,0,m2.avgKw<m1.avgKw?"savings":"increase");
+  cad.className="delta-val "+(m2.avgKw<m1.avgKw?"pos":"neg"); setCC("avg",m2.avgKw<m1.avgKw?"savings":"increase");
 
   document.getElementById("cc-p1").textContent=m1.peakKw.toFixed(1)+" kW";
   document.getElementById("cc-p2").textContent=m2.peakKw.toFixed(1)+" kW";
   const cpd=document.getElementById("cc-pd"); cpd.textContent=(m2.peakKw-m1.peakKw).toFixed(1)+" kW";
-  cpd.className="delta-val "+(pRed>0?"pos":"neg"); setCC("peak",0,0,0,pRed>0?"savings":"increase");
+  cpd.className="delta-val "+(pRed>0?"pos":"neg"); setCC("peak",pRed>0?"savings":"increase");
 
   document.getElementById("cc-l1").textContent=lf1.toFixed(1)+"%";
   document.getElementById("cc-l2").textContent=lf2.toFixed(1)+"%";
   const cld=document.getElementById("cc-ld"); cld.textContent=lfC.toFixed(1)+" pts";
-  cld.className="delta-val "+(lfC>0?"pos":"neg"); setCC("lf",0,0,0,lfC>0?"savings":"increase");
+  cld.className="delta-val "+(lfC>0?"pos":"neg"); setCC("lf",lfC>0?"savings":"increase");
 
   const p1D=pd1.ts.length>0?Math.max(1,(new Date(pd1.ts[pd1.ts.length-1])-new Date(pd1.ts[0]))/86400000+1):1;
   const p2D=pd2.ts.length>0?Math.max(1,(new Date(pd2.ts[pd2.ts.length-1])-new Date(pd2.ts[0]))/86400000+1):1;
@@ -1992,9 +2061,8 @@ function renderComparison(data) {{
   document.getElementById("cc-d2").textContent=(m2.totalKwh/p2D).toFixed(0)+" kWh/d";
   const cdd=document.getElementById("cc-dd"); const dDiff=(m2.totalKwh/p2D)-(m1.totalKwh/p1D);
   cdd.textContent=dDiff.toFixed(0)+" kWh/d"; cdd.className="delta-val "+(dDiff<0?"pos":"neg");
-  setCC("daily",0,0,0,dDiff<0?"savings":"increase");
+  setCC("daily",dDiff<0?"savings":"increase");
 
-  // Charts
   Plotly.newPlot("chart-comp-load",[
     {{x:pd1.ts,y:pd1.kw,mode:"lines",name:"Period 1",line:{{color:t.accent,width:2.5,shape:"spline"}}}},
     {{x:pd2.ts,y:pd2.kw,mode:"lines",name:"Period 2",line:{{color:t.accentDark,width:2.5,shape:"spline"}}}}
@@ -2025,8 +2093,10 @@ function renderComparison(data) {{
 /* ═══════ DATA TABLE ═══════ */
 let tData=[],tSortCol=0,tSortAsc=true,tPage=0;
 const PAGE_SZ=50;
-function buildTable(data) {{
-  const panels=selPanels.size?Array.from(selPanels):(D.panel_names||[]);
+function renderDataTable() {{
+  const data = filterForTab("data");
+  const st = tabState.data;
+  const panels = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
   tData=data.timestamps.map((ts,i)=>{{ const r=[ts,(data.totalKw[i]??0).toFixed(2)];
     panels.forEach(p=>r.push((data.panelSeries[p]?.[i]??0).toFixed(2))); return r; }});
   const thead=document.getElementById("table-head");
@@ -2035,11 +2105,11 @@ function buildTable(data) {{
     ${{panels.map((p,i)=>`<th data-col="${{i+2}}">${{p}} <span class="sort-icon"></span></th>`).join("")}}</tr>`;
   thead.querySelectorAll("th").forEach(th=>{{
     th.addEventListener("click",()=>{{ const c=parseInt(th.dataset.col);
-      if(tSortCol===c)tSortAsc=!tSortAsc; else{{tSortCol=c;tSortAsc=true;}} renderTable(); }});
+      if(tSortCol===c)tSortAsc=!tSortAsc; else{{tSortCol=c;tSortAsc=true;}} renderTableRows(); }});
   }});
-  tSortCol=0;tSortAsc=true;tPage=0; renderTable();
+  tSortCol=0;tSortAsc=true;tPage=0; renderTableRows();
 }}
-function renderTable() {{
+function renderTableRows() {{
   const q=document.getElementById("table-search").value.toLowerCase();
   let f=tData; if(q) f=tData.filter(r=>r.some(c=>c.toLowerCase().includes(q)));
   f.sort((a,b)=>{{ let va=a[tSortCol],vb=b[tSortCol];
@@ -2056,48 +2126,50 @@ function renderTable() {{
   }}).join("");
   document.getElementById("table-info").textContent=`Showing ${{s+1}}-${{Math.min(s+PAGE_SZ,f.length)}} of ${{f.length}}`;
   const pag=document.getElementById("pagination"); pag.innerHTML="";
-  if(tPage>0){{ const b=document.createElement("button"); b.textContent="Prev"; b.addEventListener("click",()=>{{tPage--;renderTable();}}); pag.appendChild(b); }}
+  if(tPage>0){{ const b=document.createElement("button"); b.textContent="Prev"; b.addEventListener("click",()=>{{tPage--;renderTableRows();}}); pag.appendChild(b); }}
   const sP=Math.max(0,tPage-3),eP=Math.min(tp,sP+7);
   for(let p=sP;p<eP;p++){{ const b=document.createElement("button"); b.textContent=p+1; if(p===tPage)b.className="active";
-    b.addEventListener("click",()=>{{tPage=p;renderTable();}}); pag.appendChild(b); }}
-  if(tPage<tp-1){{ const b=document.createElement("button"); b.textContent="Next"; b.addEventListener("click",()=>{{tPage++;renderTable();}}); pag.appendChild(b); }}
+    b.addEventListener("click",()=>{{tPage=p;renderTableRows();}}); pag.appendChild(b); }}
+  if(tPage<tp-1){{ const b=document.createElement("button"); b.textContent="Next"; b.addEventListener("click",()=>{{tPage++;renderTableRows();}}); pag.appendChild(b); }}
   document.querySelectorAll("#table-head th").forEach(th=>{{ const ic=th.querySelector(".sort-icon"), c=parseInt(th.dataset.col);
     ic.innerHTML=c===tSortCol?(tSortAsc?"&#9650;":"&#9660;"):""; }});
 }}
 
 /* ─── CSV Export ─── */
 document.getElementById("export-csv").addEventListener("click",()=>{{
-  const panels=selPanels.size?Array.from(selPanels):(D.panel_names||[]);
+  const st = tabState.data;
+  const panels = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
   let csv=["Timestamp","Total_kW",...panels].join(",")+"\\n";
   tData.forEach(r=>{{ csv+=r.join(",")+"\\n"; }});
   const blob=new Blob([csv],{{type:"text/csv"}});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   a.download="energy_export.csv"; a.click(); URL.revokeObjectURL(a.href);
 }});
+document.getElementById("table-search").addEventListener("input",()=>{{ tPage=0; renderTableRows(); }});
 
-/* ═══════ MASTER RENDER ═══════ */
-function refreshAll() {{
-  const data=filterData();
-  renderOverview(data);
-  renderAnalytics(data);
-  renderComparison(data);
-  buildTable(data);
+/* ═══════════════════════════════════════════════════════
+   TAB DISPATCH
+   ═══════════════════════════════════════════════════════ */
+function renderTab(tabKey) {{
+  if      (tabKey === "overview")   renderOverview();
+  else if (tabKey === "analytics")  renderAnalytics();
+  else if (tabKey === "comparison") renderComparison();
+  else if (tabKey === "data")       renderDataTable();
 }}
 
-/* ─── Bindings ─── */
-document.getElementById("apply-btn").addEventListener("click",refreshAll);
-document.getElementById("reset-btn").addEventListener("click",()=>{{
-  selPanels=new Set(D.panel_names||[]);
-  document.querySelectorAll("#dd-list input").forEach(c=>c.checked=true);
-  syncBadge(); initDates(); refreshAll();
-}});
-document.getElementById("compare-btn").addEventListener("click",()=>{{ renderComparison(filterData()); }});
-document.getElementById("table-search").addEventListener("input",()=>{{ tPage=0; renderTable(); }});
+function renderCurrentTab() {{
+  renderTab(activeTab);
+}}
 
-/* ─── Init ─── */
-initPanelFilter();
-initDates();
-refreshAll();
+/* ═══════════════════════════════════════════════════════
+   INIT — build filter bars, render default tab
+   ═══════════════════════════════════════════════════════ */
+buildFilterBar("ov-filter-bar", "overview",   "daterange");
+buildFilterBar("an-filter-bar", "analytics",  "daterange");
+buildFilterBar("cp-filter-bar", "comparison", "comparison");
+buildFilterBar("dt-filter-bar", "data",       "daterange");
+
+renderOverview();
 </script>
 </body>
 </html>"""
