@@ -46,6 +46,10 @@
     "comparison_dashboard": {
       "enabled": true,
       "output": "comparison_dashboard.html"
+    },
+    "next_gen_dashboard": {
+      "enabled": true,
+      "output": "next_gen_dashboard.html"
     }
   }
 }
