@@ -1,0 +1,475 @@
+{
+  // ═══════════════════════════════════════════════════════════════════════
+  //  EMSlite — Energy Monitoring Dashboard · UI Design Brief
+  //  Version: 1.0 · Date: 2026-02-14
+  //  Source: Dashboard screenshot analysis (light-mode reference)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ─── COLOR SYSTEM ─────────────────────────────────────────────────────
+  "colors": {
+    // Two main brand ramps (Tailwind-style 50-950)
+    "primary": {
+      "description": "Chartreuse / lime-green — brand energy accent used for active states, CTAs, positive indicators, and the sidebar active highlight.",
+      "50":  "#F4FDE8",
+      "100": "#E6FACB",
+      "200": "#CCEF9D",
+      "300": "#ABDF65",
+      "400": "#8BD thirteen35", // main reference ≈ #8BD435
+      "500": "#6DBF1A",
+      "600": "#539A11",
+      "700": "#407512",
+      "800": "#355D14",
+      "900": "#2E4F16",
+      "950": "#152B06",
+      // Corrected 400
+      "_400_hex": "#8BD435"
+    },
+    "secondary": {
+      "description": "Deep navy / dark teal — sidebar background, dark card fills, horizontal bar chart bars, donut inactive segment.",
+      "50":  "#EEF6FA",
+      "100": "#D4EAF2",
+      "200": "#ADD6E8",
+      "300": "#74B6D5",
+      "400": "#398EB9",
+      "500": "#24729D",
+      "600": "#1D5B83",
+      "700": "#1B4A6C",
+      "800": "#1B3E5A",
+      "900": "#132D42",
+      "950": "#0B1E2E"
+    },
+
+    // Neutral grays (used for backgrounds, borders, body text)
+    "gray": {
+      "50":  "#F8FAFB",  // page background (light)
+      "100": "#F1F4F6",  // card hover / zebra rows
+      "200": "#E3E8EC",  // borders, dividers
+      "300": "#CDD4DB",  // disabled text, placeholder
+      "400": "#9BA5B0",  // muted / caption text
+      "500": "#6C7784",  // secondary body text
+      "600": "#4F5966",  // primary body text (light mode)
+      "700": "#3A424D",  // headings (light mode)
+      "800": "#252C35",  // body text (dark mode)
+      "900": "#171C23",  // card surfaces (dark mode)
+      "950": "#0D1117"   // page background (dark mode)
+    },
+
+    // Accent tokens for complex visuals
+    "accents": {
+      "positive": {
+        "description": "Up-trend badge background + text (carbon reduction, generation, savings).",
+        "bg":   "#ECFDF3",
+        "text": "#16A34A"
+      },
+      "negative": {
+        "description": "Down-trend / alert badge (not shown but mirrored pair).",
+        "bg":   "#FEF2F2",
+        "text": "#DC2626"
+      },
+      "warning": {
+        "description": "Hex-map warm cells (medium-consumption states).",
+        "value": "#F97316"
+      },
+      "danger": {
+        "description": "Hex-map hot cells (high-consumption states — coral/red hex tiles).",
+        "value": "#EF4444"
+      },
+      "info": {
+        "description": "Hex-map cool cells / misc info highlights.",
+        "value": "#38BDF8"
+      },
+
+      // Gradient used in the 'Energy Use' vertical bar chart
+      "chartGradient": {
+        "description": "Bottom-to-top gradient on energy-use bar chart columns.",
+        "from": "#0B1E2E",  // secondary-950
+        "to":   "#8BD435"   // primary-400
+      },
+
+      // Donut chart segments
+      "donutSolar": "#8BD435",       // primary-400 — Solar Energy 43%
+      "donutOffPeak": "#132D42",     // secondary-900 — Off-Peak 57%
+
+      // Sidebar gradient / shadow
+      "sidebarBg": {
+        "description": "Sidebar uses a nearly solid deep color with a subtle vertical gradient.",
+        "from": "#0F2A3C",
+        "to":   "#0B1E2E"
+      },
+
+      // Card shadow (light mode)
+      "cardShadow": "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
+      // Card shadow (dark mode)
+      "cardShadowDark": "0 1px 3px rgba(0,0,0,0.30), 0 1px 2px rgba(0,0,0,0.20)"
+    }
+  },
+
+  // ─── TYPOGRAPHY ───────────────────────────────────────────────────────
+  "typography": {
+    "fontFamily": {
+      "sans": "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif",
+      "mono": "JetBrains Mono, ui-monospace, monospace"
+    },
+    "scale": {
+      "xs":   { "size": "0.75rem",  "lineHeight": "1rem",    "usage": "Badges, chart axis labels" },
+      "sm":   { "size": "0.875rem", "lineHeight": "1.25rem", "usage": "Nav items, captions, table cells" },
+      "base": { "size": "1rem",     "lineHeight": "1.5rem",  "usage": "Body text, card descriptions" },
+      "lg":   { "size": "1.125rem", "lineHeight": "1.75rem", "usage": "Card titles, section headers" },
+      "xl":   { "size": "1.25rem",  "lineHeight": "1.75rem", "usage": "Page heading" },
+      "2xl":  { "size": "1.5rem",   "lineHeight": "2rem",    "usage": "KPI hero numbers (73t, 215,440 etc.)" },
+      "3xl":  { "size": "1.875rem", "lineHeight": "2.25rem", "usage": "Large KPI display variant" }
+    },
+    "weight": {
+      "normal":   400,
+      "medium":   500,
+      "semibold": 600,
+      "bold":     700
+    }
+  },
+
+  // ─── SPACING & SIZING ────────────────────────────────────────────────
+  "spacing": {
+    "unit": "0.25rem (4px base)",
+    "sidebarWidth": {
+      "collapsed": "5rem",    // 80px — icon only
+      "expanded":  "17rem"    // 272px — icon + label
+    },
+    "topbarHeight": "4rem",   // 64px
+    "pagePadding": {
+      "sm": "1rem",
+      "md": "1.5rem",
+      "lg": "2rem"
+    },
+    "cardPadding": "1.5rem",
+    "cardGap": "1.5rem",
+    "cardBorderRadius": "1rem",
+    "badgeBorderRadius": "9999px",
+    "iconSize": {
+      "nav": "1.25rem",
+      "topbar": "1.5rem",
+      "kpiCard": "2.5rem"
+    }
+  },
+
+  // ─── LAYOUT STRUCTURE ────────────────────────────────────────────────
+  "layout": {
+    "description": "Classic admin shell: fixed sidebar + scrollable main area.",
+    "regions": [
+      {
+        "id": "sidebar",
+        "position": "fixed left",
+        "width": "17rem (expanded) / 5rem (collapsed)",
+        "height": "100vh",
+        "background": "accents.sidebarBg gradient",
+        "children": [
+          {
+            "id": "sidebar-logo",
+            "description": "Brand mark (green leaf/bolt icon) + wordmark 'wondrwall'. Vertically centered in a ~5rem tall header zone.",
+            "logoIcon": "Custom SVG — stylised green leaf/lightning bolt, ~32×32px",
+            "wordmark": "Text 'wondrwall', font-semibold, text-base, white"
+          },
+          {
+            "id": "sidebar-nav",
+            "description": "Vertical nav list with icon + label per item. Scrollable if items exceed viewport.",
+            "items": [
+              { "label": "Dashboard",         "icon": "grid-2x2 / dashboard",    "active": true },
+              { "label": "User Management",   "icon": "users" },
+              { "label": "Device Management", "icon": "cpu / device" },
+              { "label": "Notifications",     "icon": "bell" },
+              { "label": "Home List",         "icon": "home" },
+              { "label": "Automation",        "icon": "zap / toggle" }
+            ],
+            "activeState": {
+              "background": "primary-400",
+              "text": "secondary-950",
+              "borderRadius": "0.5rem",
+              "fontWeight": 600
+            },
+            "inactiveState": {
+              "text": "white / 70% opacity",
+              "hoverBg": "white / 8% opacity"
+            }
+          },
+          {
+            "id": "sidebar-footer",
+            "description": "Logout button pinned to bottom of sidebar.",
+            "label": "Logout",
+            "icon": "log-out",
+            "style": "Same as inactive nav item"
+          }
+        ]
+      },
+
+      {
+        "id": "topbar",
+        "position": "sticky top",
+        "height": "4rem",
+        "background": "white (light) / gray-900 (dark)",
+        "borderBottom": "1px gray-200 (light) / gray-800 (dark)",
+        "children": [
+          {
+            "id": "topbar-left",
+            "description": "Empty or breadcrumb area — currently unused in screenshot."
+          },
+          {
+            "id": "topbar-right",
+            "description": "Right-aligned action cluster.",
+            "items": [
+              {
+                "id": "language-switcher",
+                "description": "Pill/button showing country flag + 'English' + chevron-down. Opens dropdown for locale selection.",
+                "flagSize": "20×14px",
+                "text": "sm, medium weight"
+              },
+              {
+                "id": "notification-bell",
+                "description": "Bell icon, 1.5rem, with optional unread dot badge (primary-400, absolute top-right)."
+              },
+              {
+                "id": "user-avatar",
+                "description": "40×40px rounded-full avatar image + chevron-down for profile dropdown."
+              }
+            ]
+          }
+        ]
+      },
+
+      {
+        "id": "main-content",
+        "description": "Scrollable area to the right of sidebar, below topbar.",
+        "background": "gray-50 (light) / gray-950 (dark)",
+        "sections": [
+
+          // ── ROW 1: KPI SUMMARY CARDS ──
+          {
+            "id": "kpi-row",
+            "layout": "3-column grid, equal width, gap-6",
+            "responsiveBehavior": "Stacks to 1-col on mobile, 2-col on tablet",
+            "cards": [
+              {
+                "id": "kpi-carbon",
+                "title": "Total Carbon Reduction",
+                "titleStyle": "text-sm, text-gray-500, font-medium",
+                "value": "73t",
+                "valueStyle": "text-2xl, font-bold, text-gray-800 (light) / white (dark)",
+                "badge": {
+                  "text": "12.97%",
+                  "icon": "arrow-up (inline, left of text)",
+                  "bg": "accents.positive.bg",
+                  "textColor": "accents.positive.text",
+                  "shape": "rounded-full, px-2 py-0.5"
+                },
+                "subtitle": "Compared Last Month",
+                "subtitleStyle": "text-xs, text-gray-400",
+                "icon": {
+                  "description": "Top-right decorative icon — green circular bg with a leaf/recycle glyph.",
+                  "size": "2.5rem",
+                  "bgColor": "primary-100",
+                  "iconColor": "primary-600"
+                },
+                "cardStyle": {
+                  "bg": "white (light) / gray-900 (dark)",
+                  "borderRadius": "1rem",
+                  "shadow": "accents.cardShadow",
+                  "padding": "1.5rem"
+                }
+              },
+              {
+                "id": "kpi-generation",
+                "title": "Generation",
+                "value": "215,440",
+                "badge": "+12.97%",
+                "subtitle": "Compared Last Month",
+                "icon": "lightning-bolt on green circle"
+              },
+              {
+                "id": "kpi-savings",
+                "title": "Savings Made",
+                "value": "$74,013",
+                "badge": "+12.97%",
+                "subtitle": "Compared Last Month",
+                "icon": "dollar/piggy on green circle"
+              }
+            ]
+          },
+
+          // ── ROW 2: CHARTS GRID ──
+          {
+            "id": "charts-row",
+            "layout": "12-col grid (Tailwind default), gap-6",
+            "responsiveBehavior": "All panels full-width on mobile; 2-col on md; described spans on lg+",
+            "panels": [
+
+              // ── 2A: Consumption by State (hex map) ──
+              {
+                "id": "panel-hex-map",
+                "gridSpan": "col-span-5 (lg+)",
+                "title": "Consumption by State",
+                "titleStyle": "text-lg font-semibold text-gray-800",
+                "content": {
+                  "type": "hexagonal-tile-map",
+                  "description": "US states as hexagon tiles in a geographic layout. Each hex shows the 2-letter state code centered. Color encodes consumption level.",
+                  "colorMapping": {
+                    "low":    "primary-400 (#8BD435)",
+                    "medium": "accents.warning (#F97316)",
+                    "high":   "accents.danger (#EF4444)",
+                    "veryHigh": "secondary-700 (#1B4A6C)",
+                    "noData": "gray-200"
+                  },
+                  "hexSize": "~40px wide",
+                  "gap": "2px between tiles",
+                  "controls": {
+                    "description": "Zoom +/- buttons in bottom-left of the map panel.",
+                    "style": "Small square buttons, gray-200 bg, rounded-md"
+                  }
+                },
+                "cardStyle": "Same white card treatment as KPI cards"
+              },
+
+              // ── 2B: Energy Use bar chart (below hex map) ──
+              {
+                "id": "panel-energy-use",
+                "gridSpan": "col-span-5 (lg+), sits below hex map — OR same card if combined",
+                "title": "Energy Use",
+                "titleStyle": "text-lg font-semibold",
+                "content": {
+                  "type": "vertical-bar-chart",
+                  "description": "12 vertical bars (likely months or categories). Each bar has a bottom-to-top gradient from secondary-950 to primary-400. Rounded top caps (border-radius ~4px top).",
+                  "xAxis": "Category labels below each bar (short text)",
+                  "yAxis": "Hidden or minimal — values shown on hover tooltip",
+                  "barWidth": "~28px",
+                  "barGap": "~12px",
+                  "gradient": "accents.chartGradient"
+                }
+              },
+
+              // ── 2C: Energy Utilisation Efficiency (donut) ──
+              {
+                "id": "panel-donut",
+                "gridSpan": "col-span-3 (lg+)",
+                "title": "Energy Utilisation Efficiency",
+                "titleStyle": "text-lg font-semibold",
+                "content": {
+                  "type": "donut-chart",
+                  "description": "Single-ring donut with two segments. Center text shows a summary label or percentage.",
+                  "segments": [
+                    { "label": "Solar Energy",   "value": "43%", "color": "primary-400 (#8BD435)" },
+                    { "label": "Off-Peak Energy", "value": "57%", "color": "secondary-900 (#132D42)" }
+                  ],
+                  "legend": {
+                    "position": "Below the donut",
+                    "layout": "Horizontal, dot indicator + label + percentage",
+                    "dotSize": "8px rounded-full"
+                  },
+                  "donutThickness": "~24px stroke",
+                  "donutSize": "~180px diameter"
+                }
+              },
+
+              // ── 2D: States for Energy Consumption (horizontal bars) ──
+              {
+                "id": "panel-state-bars",
+                "gridSpan": "col-span-4 (lg+)",
+                "title": "States for Energy Consumption",
+                "titleStyle": "text-lg font-semibold",
+                "content": {
+                  "type": "horizontal-bar-chart",
+                  "description": "Ranked list of states with horizontal progress bars. Each row: state name left-aligned, bar extending right, kWh value at far right.",
+                  "rows": [
+                    { "label": "Virginia",  "value": "4.72k Kwh" },
+                    { "label": "Mexico",    "value": "4.72k Kwh" },
+                    { "label": "Nevada",    "value": "4.72k Kwh" },
+                    { "label": "New York",  "value": "4.72k Kwh" },
+                    { "label": "Canada",    "value": "4.72k Kwh" }
+                  ],
+                  "barColor": "secondary-800",
+                  "barBorderRadius": "9999px (fully rounded pill)",
+                  "barHeight": "0.625rem (10px)",
+                  "barTrack": "gray-100 (light) / gray-800 (dark)",
+                  "rowSpacing": "1rem between rows"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+
+  // ─── RESPONSIVE BREAKPOINTS (Tailwind defaults) ───────────────────────
+  "breakpoints": {
+    "sm":  { "min": "640px",  "behavior": "Sidebar collapses to icon-only (5rem). KPI cards stack 1-col. All chart panels full-width." },
+    "md":  { "min": "768px",  "behavior": "KPI cards 2-col (third card wraps). Chart panels 2-col (hex-map + energy-use span left, donut + state-bars span right)." },
+    "lg":  { "min": "1024px", "behavior": "Sidebar expands. KPI cards 3-col. Charts adopt described grid spans (5 + 3 + 4 = 12)." },
+    "xl":  { "min": "1280px", "behavior": "Comfortable spacing; max-width container or fluid. No structural changes from lg." },
+    "2xl": { "min": "1536px", "behavior": "Optional max-width cap (e.g. 1440px centered) to prevent excessive stretching." }
+  },
+
+  // ─── DARK MODE RULES ──────────────────────────────────────────────────
+  "darkMode": {
+    "strategy": "class-based (.dark on <html>)",
+    "mappings": {
+      "pageBg":         "gray-50  → gray-950",
+      "cardBg":         "white    → gray-900",
+      "cardBorder":     "gray-200 → gray-800",
+      "cardShadow":     "accents.cardShadow → accents.cardShadowDark",
+      "headingText":    "gray-800 → gray-50",
+      "bodyText":       "gray-600 → gray-300",
+      "mutedText":      "gray-400 → gray-500",
+      "topbarBg":       "white    → gray-900",
+      "topbarBorder":   "gray-200 → gray-800",
+      "sidebarBg":      "No change (already dark)",
+      "inputBg":        "white    → gray-800",
+      "badgePositiveBg": "#ECFDF3 → rgba(22,163,74,0.15)",
+      "barTrack":       "gray-100 → gray-800",
+      "hexNoData":      "gray-200 → gray-700",
+      "donutOffPeak":   "secondary-900 → secondary-700 (slightly lighter for contrast)"
+    }
+  },
+
+  // ─── COMPONENT TOKENS (reusable) ─────────────────────────────────────
+  "tokens": {
+    "surface": {
+      "light": { "bg": "white",    "border": "gray-200", "shadow": "accents.cardShadow" },
+      "dark":  { "bg": "gray-900", "border": "gray-800", "shadow": "accents.cardShadowDark" }
+    },
+    "badge-positive": {
+      "light": { "bg": "#ECFDF3", "text": "#16A34A", "iconDirection": "up" },
+      "dark":  { "bg": "rgba(22,163,74,0.15)", "text": "#4ADE80" }
+    },
+    "badge-negative": {
+      "light": { "bg": "#FEF2F2", "text": "#DC2626", "iconDirection": "down" },
+      "dark":  { "bg": "rgba(220,38,38,0.15)", "text": "#F87171" }
+    },
+    "nav-item-active": {
+      "bg": "primary-400",
+      "text": "secondary-950",
+      "radius": "0.5rem",
+      "weight": 600
+    },
+    "nav-item-inactive": {
+      "text": "white/70",
+      "hoverBg": "white/8"
+    }
+  },
+
+  // ─── ICON SET ─────────────────────────────────────────────────────────
+  "icons": {
+    "recommended": "Lucide (consistent with Tailwind ecosystem)",
+    "mappings": {
+      "dashboard":    "LayoutDashboard",
+      "users":        "Users",
+      "devices":      "Cpu",
+      "notifications":"Bell",
+      "homeList":     "Home",
+      "automation":   "Zap",
+      "logout":       "LogOut",
+      "arrowUp":      "TrendingUp (badge icon)",
+      "arrowDown":    "TrendingDown",
+      "zoomIn":       "ZoomIn",
+      "zoomOut":      "ZoomOut",
+      "chevronDown":  "ChevronDown",
+      "flag":         "Country flag sprite / SVG per locale"
+    }
+  }
+}
