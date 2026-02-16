@@ -155,6 +155,24 @@
         </div>
       </div>
 
+      <div id="dept-section" class="hidden">
+        <div class="charts-grid">
+          <div class="panel panel-5">
+            <div class="panel-title">Energy by Department</div>
+            <div class="chart-area" id="chart-dept-bars"></div>
+          </div>
+          <div class="panel panel-3">
+            <div class="panel-title">Department Share</div>
+            <div class="chart-area" id="chart-dept-donut" style="min-height:280px"></div>
+            <div class="donut-legend" id="dept-donut-legend"></div>
+          </div>
+          <div class="panel panel-4">
+            <div class="panel-title">Department Breakdown</div>
+            <div class="hbar-list" id="hbar-depts"></div>
+          </div>
+        </div>
+      </div>
+
       <div id="meter-section" class="hidden">
         <div class="charts-grid">
           <div class="panel panel-12" id="meter-cards-panel">
@@ -184,6 +202,10 @@
         <div class="panel panel-6">
           <div class="panel-title">Daily Energy Consumption</div>
           <div class="chart-area" id="chart-daily-energy"></div>
+        </div>
+        <div class="panel panel-12" id="dept-chart-panel" style="display:none">
+          <div class="panel-title">Department Load Trends</div>
+          <div class="chart-area" id="chart-dept-trends"></div>
         </div>
         <div class="panel panel-12" id="group-chart-panel" style="display:none">
           <div class="panel-title">Group Loads</div>

@@ -15,6 +15,8 @@ let DATE_MIN = "";
 let DATE_MAX = "";
 let isDark = false;
 let activeTab = "overview";
+let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
+let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
 
 /* ─── Theme Palettes ─── */
 const lightC = {
@@ -34,12 +36,28 @@ function T() { return isDark ? darkC : lightC; }
 /* ─── Init ─── */
 async function initDashboard() {
   try {
-    const data = await API.getData();
+    const [data, departments, devices] = await Promise.all([
+      API.getData(),
+      API.getDepartments(),
+      API.getDevices(),
+    ]);
     D = data;
     PRICE = data.price_per_kwh || 0.25;
     ALL_PANELS = data.panel_names || [];
     DATE_MIN = data.timestamps.length ? new Date(data.timestamps[0]).toISOString().slice(0,10) : "";
     DATE_MAX = data.timestamps.length ? new Date(data.timestamps[data.timestamps.length-1]).toISOString().slice(0,10) : "";
+
+    // Build department state
+    DEPARTMENTS = departments || [];
+    DEPT_DEVICE_MAP = {};
+    for (const dept of DEPARTMENTS) {
+      DEPT_DEVICE_MAP[dept.id] = [];
+    }
+    for (const dev of (devices || [])) {
+      if (dev.department_id && DEPT_DEVICE_MAP[dev.department_id]) {
+        DEPT_DEVICE_MAP[dev.department_id].push(dev.id);
+      }
+    }
 
     initTabState();
     setupThemeToggle();
@@ -63,10 +81,10 @@ async function initDashboard() {
    PER-TAB STATE
    ═══════════════════════════════════════════════════════ */
 const tabState = {
-  overview:   { panels: new Set(), startDate: "", endDate: "" },
-  analytics:  { panels: new Set(), startDate: "", endDate: "" },
-  comparison: { panels: new Set(), p1Start: "", p1End: "", p2Start: "", p2End: "" },
-  data:       { panels: new Set(), startDate: "", endDate: "" }
+  overview:   { panels: new Set(), startDate: "", endDate: "", department: "" },
+  analytics:  { panels: new Set(), startDate: "", endDate: "", department: "" },
+  comparison: { panels: new Set(), p1Start: "", p1End: "", p2Start: "", p2End: "", department: "" },
+  data:       { panels: new Set(), startDate: "", endDate: "", department: "" }
 };
 
 function initTabState() {
@@ -176,6 +194,16 @@ function buildFilterBar(containerId, tabKey, mode) {
 
   let html = '';
 
+  // Department filter
+  if (DEPARTMENTS.length) {
+    html += `<div class="filter-group"><label>Department</label>
+      <select id="dept-${uid}" class="filter-input">
+        <option value="">All Departments</option>
+        ${DEPARTMENTS.map(d => `<option value="${d.id}"${st.department === d.id ? ' selected' : ''}>${d.display_name}</option>`).join("")}
+      </select></div>
+    <div class="filter-divider"></div>`;
+  }
+
   if (ALL_PANELS.length) {
     html += `<div class="dropdown-wrap" id="dd-${uid}">
       <button class="dropdown-trigger" id="ddt-${uid}">Panels <span class="dd-badge" id="ddb-${uid}">All</span></button>
@@ -242,6 +270,27 @@ function buildFilterBar(containerId, tabKey, mode) {
     syncDDBadge(uid, st);
   }
 
+  // Wire department dropdown
+  const deptSel = document.getElementById("dept-" + uid);
+  if (deptSel) {
+    deptSel.addEventListener("change", () => {
+      st.department = deptSel.value;
+      // Auto-filter panels to match department
+      if (st.department && DEPT_DEVICE_MAP[st.department]) {
+        const deptPanels = new Set(DEPT_DEVICE_MAP[st.department]);
+        st.panels = new Set(ALL_PANELS.filter(p => deptPanels.has(p)));
+      } else {
+        st.panels = new Set(ALL_PANELS);
+      }
+      // Sync panel checkboxes
+      document.querySelectorAll("#ddl-" + uid + " input").forEach(c => {
+        c.checked = st.panels.has(c.value);
+      });
+      syncDDBadge(uid, st);
+      renderTab(tabKey);
+    });
+  }
+
   // Wire Apply
   document.getElementById("apply-" + uid).addEventListener("click", () => {
     if (mode === "daterange") {
@@ -258,6 +307,9 @@ function buildFilterBar(containerId, tabKey, mode) {
 
   // Wire Reset
   document.getElementById("reset-" + uid).addEventListener("click", () => {
+    st.department = "";
+    const deptReset = document.getElementById("dept-" + uid);
+    if (deptReset) deptReset.value = "";
     st.panels = new Set(ALL_PANELS);
     document.querySelectorAll("#ddl-" + uid + " input").forEach(c => c.checked = true);
     syncDDBadge(uid, st);
@@ -488,6 +540,50 @@ function renderOverview() {
         <div class="hbar-value">${me.kwh>=1000?(me.kwh/1000).toFixed(1)+"k":me.kwh.toFixed(0)} kWh</div>
       </div>`).join("");
   }
+
+  // Department breakdown
+  if (DEPARTMENTS.length) {
+    document.getElementById("dept-section").classList.remove("hidden");
+    const deptEnergies = DEPARTMENTS.map(dept => {
+      const panels = (DEPT_DEVICE_MAP[dept.id] || []).filter(p => active.includes(p));
+      let kwh = 0;
+      panels.forEach(p => { kwh += metrics(data.timestamps, data.panelSeries[p] || []).totalKwh; });
+      return { name: dept.display_name, color: dept.color || t.accent, kwh, count: panels.length };
+    }).filter(d => d.count > 0).sort((a, b) => b.kwh - a.kwh);
+
+    if (deptEnergies.length) {
+      // Bar chart
+      Plotly.newPlot("chart-dept-bars", [{
+        x: deptEnergies.map(d => d.name), y: deptEnergies.map(d => d.kwh), type: "bar",
+        marker: { color: deptEnergies.map(d => d.color) }
+      }], pLayout({
+        xaxis: xA({ title: { text: "Department", font: { size: 12 } } }),
+        yaxis: yA({ title: { text: "kWh", font: { size: 12 } } }), bargap: 0.2
+      }), pCfg);
+
+      // Donut chart
+      const totalDeptKwh = deptEnergies.reduce((s, d) => s + d.kwh, 0);
+      Plotly.newPlot("chart-dept-donut", [{
+        values: deptEnergies.map(d => d.kwh), labels: deptEnergies.map(d => d.name),
+        type: "pie", hole: 0.65, marker: { colors: deptEnergies.map(d => d.color) },
+        textinfo: "none", hovertemplate: "%{label}: %{value:.0f} kWh (%{percent})<extra></extra>"
+      }], pLayout({ margin: { t: 10, b: 10, l: 10, r: 10 }, showlegend: false, height: 280 }), pCfg);
+      document.getElementById("dept-donut-legend").innerHTML = deptEnergies.map(d =>
+        `<div class="donut-legend-item"><div class="donut-legend-dot" style="background:${d.color}"></div>${d.name} - ${totalDeptKwh ? (d.kwh / totalDeptKwh * 100).toFixed(1) : 0}%</div>`
+      ).join("");
+
+      // Horizontal bars
+      const dMax = deptEnergies[0].kwh || 1;
+      document.getElementById("hbar-depts").innerHTML = deptEnergies.map(d => `
+        <div class="hbar-row">
+          <div class="hbar-label">${d.name}</div>
+          <div class="hbar-track"><div class="hbar-fill" style="width:${(d.kwh / dMax * 100).toFixed(1)}%;background:${d.color}"></div></div>
+          <div class="hbar-value">${d.kwh >= 1000 ? (d.kwh / 1000).toFixed(1) + "k" : d.kwh.toFixed(0)} kWh</div>
+        </div>`).join("");
+    }
+  } else {
+    document.getElementById("dept-section").classList.add("hidden");
+  }
 }
 
 function renderAnalytics() {
@@ -537,6 +633,28 @@ function renderAnalytics() {
     xaxis:xA({title:{text:"Date",font:{size:12}},type:"category"}),
     yaxis:yA({title:{text:"kWh",font:{size:12}}}), bargap:0.15
   }),pCfg);
+
+  // Department load trends
+  if (DEPARTMENTS.length) {
+    const deptTraces = DEPARTMENTS.map(dept => {
+      const panels = (DEPT_DEVICE_MAP[dept.id] || []).filter(p => ALL_PANELS.includes(p));
+      if (!panels.length) return null;
+      const y = data.timestamps.map((_, i) => {
+        let sum = 0; panels.forEach(p => { sum += (data.panelSeries[p] || [])[i] || 0; }); return sum;
+      });
+      return { x: data.timestamps, y, mode: "lines", name: dept.display_name, line: { width: 2.5, shape: "spline", color: dept.color } };
+    }).filter(Boolean);
+    if (deptTraces.length) {
+      document.getElementById("dept-chart-panel").style.display = "";
+      Plotly.newPlot("chart-dept-trends", deptTraces, pLayout({
+        legend: { orientation: "h", y: -0.15 },
+        xaxis: xA({ title: { text: "Time", font: { size: 12 } }, type: "date" }),
+        yaxis: yA({ title: { text: "kW", font: { size: 12 } } })
+      }), pCfg);
+    } else {
+      document.getElementById("dept-chart-panel").style.display = "none";
+    }
+  }
 
   const gNames=Object.keys(data.groupSeries).filter(g=>{ const def=(D.group_definitions||[]).find(d=>d.name===g); return def&&def.panels&&def.panels.length; });
   if(gNames.length) {
