@@ -606,7 +606,7 @@ async function renderFloorPlanDashboard(data) {
       const plan = await API.getFloorPlan(fp.id);
       const pins = plan.pins || [];
 
-      // Compute metrics per device from the current filtered data
+      // Compute metrics per device
       const lastIdx = data.timestamps.length - 1;
       const deviceMetrics = {};
       const now = data.timestamps.length ? new Date(data.timestamps[lastIdx]) : new Date();
@@ -614,8 +614,6 @@ async function renderFloorPlanDashboard(data) {
         const series = data.panelSeries[pin.device_id] || [];
         const currentKw = lastIdx >= 0 ? (series[lastIdx] || 0) : 0;
         const m = metrics(data.timestamps, series);
-
-        // Weekly and monthly subsets
         const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
         const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
         let weekKwh = 0, monthKwh = 0;
@@ -629,7 +627,7 @@ async function renderFloorPlanDashboard(data) {
         deviceMetrics[pin.device_id] = { currentKw, totalKwh: m.totalKwh, peakKw: m.peakKw, avgKw: m.avgKw, weekKwh, monthKwh };
       });
 
-      // Aggregate stats across all pins on this floor plan
+      // Aggregate stats
       let totalCurrent = 0, totalWeek = 0, totalMonth = 0, totalEnergy = 0, overallPeak = 0;
       pins.forEach(p => {
         const dm = deviceMetrics[p.device_id] || {};
@@ -639,39 +637,39 @@ async function renderFloorPlanDashboard(data) {
         totalEnergy += dm.totalKwh || 0;
         if ((dm.peakKw || 0) > overallPeak) overallPeak = dm.peakKw;
       });
-
       const fmtKwh = v => v >= 10000 ? (v / 1000).toFixed(1) + " MWh" : v >= 100 ? v.toFixed(0) + " kWh" : v.toFixed(1) + " kWh";
 
-      // Build the block
       const block = document.createElement("div");
-      block.className = "fp-dashboard-block";
+      block.className = "fp-dashboard-block panel";
       block.innerHTML = `
-        <div class="panel">
-          <div class="panel-title">${fp.name}</div>
-          <div class="fp-image-wrap" id="fp-wrap-${fp.id}">
-            <img src="${plan.image_path}" id="fp-img-${fp.id}"/>
-            ${pins.map((pin, idx) => {
-              const dm = deviceMetrics[pin.device_id] || {};
-              const label = pin.label || pin.device_id;
-              const kw = (dm.currentKw || 0).toFixed(1);
-              const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
-              const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
-              return `<div class="fp-dash-pin" data-idx="${idx}" style="left:${pin.x_pct}%;top:${pin.y_pct}%">
-                <div class="fp-pin-dot" style="background:${dotColor}"></div>
-                <div class="fp-pin-tag" data-pin-idx="${idx}">${label} (${kw} kW)</div>
-                <div class="fp-dash-tooltip">
-                  <div class="fp-tt-title">${label}</div>
-                  <div class="fp-tt-row"><span>Current</span> <strong>${kw} kW</strong></div>
-                  <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw || 0).toFixed(1)} kW</strong></div>
-                  <div class="fp-tt-row"><span>Avg</span> <strong>${(dm.avgKw || 0).toFixed(1)} kW</strong></div>
-                  <div class="fp-tt-row"><span>Last 7 days</span> <strong>${fmtKwh(dm.weekKwh || 0)}</strong></div>
-                  <div class="fp-tt-row"><span>Last 30 days</span> <strong>${fmtKwh(dm.monthKwh || 0)}</strong></div>
-                  <div class="fp-tt-row"><span>Total (period)</span> <strong>${fmtKwh(dm.totalKwh || 0)}</strong></div>
-                </div>
-              </div>`;
-            }).join("")}
+        <div class="panel-title">${fp.name}</div>
+        <div class="fp-layout">
+          <div class="fp-layout-map">
+            <div class="fp-image-wrap" id="fp-wrap-${fp.id}">
+              <img src="${plan.image_path}" id="fp-img-${fp.id}"/>
+              ${pins.map((pin, idx) => {
+                const dm = deviceMetrics[pin.device_id] || {};
+                const label = pin.label || pin.device_id;
+                const kw = (dm.currentKw || 0).toFixed(1);
+                const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
+                const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
+                return `<div class="fp-dash-pin" data-idx="${idx}" style="left:${pin.x_pct}%;top:${pin.y_pct}%">
+                  <div class="fp-pin-dot" style="background:${dotColor}"></div>
+                  <div class="fp-pin-tag">${label}: ${kw} kW</div>
+                  <div class="fp-dash-tooltip">
+                    <div class="fp-tt-title">${label}</div>
+                    <div class="fp-tt-row"><span>Current</span> <strong>${kw} kW</strong></div>
+                    <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw || 0).toFixed(1)} kW</strong></div>
+                    <div class="fp-tt-row"><span>Avg</span> <strong>${(dm.avgKw || 0).toFixed(1)} kW</strong></div>
+                    <div class="fp-tt-row"><span>Last 7 days</span> <strong>${fmtKwh(dm.weekKwh || 0)}</strong></div>
+                    <div class="fp-tt-row"><span>Last 30 days</span> <strong>${fmtKwh(dm.monthKwh || 0)}</strong></div>
+                    <div class="fp-tt-row"><span>Total (period)</span> <strong>${fmtKwh(dm.totalKwh || 0)}</strong></div>
+                  </div>
+                </div>`;
+              }).join("")}
+            </div>
           </div>
-          <div class="fp-stat-cards">
+          <div class="fp-layout-sidebar">
             <div class="fp-stat-card">
               <div class="fp-sc-label">Live Load</div>
               <div class="fp-sc-value">${totalCurrent.toFixed(1)} kW</div>
@@ -702,45 +700,53 @@ async function renderFloorPlanDashboard(data) {
 
       grid.appendChild(block);
 
-      // ── Smart tooltip positioning (stays in frame) ──
       const wrap = block.querySelector(`#fp-wrap-${fp.id}`);
+
+      // ── Tooltip: JS show/hide + smart positioning ──
       block.querySelectorAll(".fp-dash-pin").forEach(pinEl => {
+        const tooltip = pinEl.querySelector(".fp-dash-tooltip");
+
         pinEl.addEventListener("mouseenter", () => {
-          const tooltip = pinEl.querySelector(".fp-dash-tooltip");
+          // Position tooltip relative to the wrap container (not the pin)
+          // so we can clamp it to stay fully visible.
           const wrapRect = wrap.getBoundingClientRect();
           const dotRect = pinEl.querySelector(".fp-pin-dot").getBoundingClientRect();
-          // Reset to measure natural size
-          tooltip.style.left = "0";
-          tooltip.style.top = "0";
-          tooltip.style.right = "auto";
-          tooltip.style.bottom = "auto";
-          tooltip.style.transform = "none";
-          tooltip.style.display = "block";
-          const ttRect = tooltip.getBoundingClientRect();
-          const ttW = ttRect.width;
-          const ttH = ttRect.height;
+
+          // Move tooltip to wrap so it's positioned in wrap coords
+          tooltip.style.left = "0px";
+          tooltip.style.top = "0px";
+          wrap.appendChild(tooltip);
+          tooltip.classList.add("fp-tt-visible");
+
+          const ttW = tooltip.offsetWidth;
+          const ttH = tooltip.offsetHeight;
           const pinCX = dotRect.left + dotRect.width / 2 - wrapRect.left;
           const pinCY = dotRect.top + dotRect.height / 2 - wrapRect.top;
-          // Horizontal: try center, clamp to edges
+
+          // Horizontal: center on pin, clamp to edges
           let left = pinCX - ttW / 2;
-          if (left < 4) left = 4;
-          if (left + ttW > wrapRect.width - 4) left = wrapRect.width - ttW - 4;
-          // Vertical: prefer above, fall below if no room
-          let top;
-          if (pinCY - ttH - 18 >= 0) {
-            top = pinCY - ttH - 18;
-          } else {
-            top = pinCY + 18;
-          }
-          if (top + ttH > wrapRect.height - 4) top = wrapRect.height - ttH - 4;
-          if (top < 4) top = 4;
+          left = Math.max(4, Math.min(left, wrapRect.width - ttW - 4));
+
+          // Vertical: prefer above pin; fall below if no room
+          let top = pinCY - ttH - 16;
+          if (top < 4) top = pinCY + 16;
+          top = Math.max(4, Math.min(top, wrapRect.height - ttH - 4));
+
           tooltip.style.left = left + "px";
           tooltip.style.top = top + "px";
         });
+
+        pinEl.addEventListener("mouseleave", () => {
+          tooltip.classList.remove("fp-tt-visible");
+          // Return tooltip to pin so DOM stays tidy
+          pinEl.appendChild(tooltip);
+        });
       });
 
-      // ── Anti-overlap for always-visible labels ──
-      _resolveFloorPlanLabelOverlaps(block, fp.id);
+      // ── Resolve label overlaps after image loads ──
+      const img = block.querySelector(`#fp-img-${fp.id}`);
+      const doLabels = () => _fpResolveLabels(wrap);
+      if (img.complete) doLabels(); else img.addEventListener("load", doLabels);
     }
   } catch (err) {
     console.error("Failed to render floor plan dashboard:", err);
@@ -749,44 +755,53 @@ async function renderFloorPlanDashboard(data) {
 }
 
 /**
- * Shift label positions so they don't overlap each other.
- * Labels start centered below the dot, then get nudged apart.
+ * Keep labels next to their pins and push them apart when they overlap.
+ * Labels stay as children of .fp-dash-pin — we only adjust the CSS
+ * left/top offsets so they don't pile on each other.
  */
-function _resolveFloorPlanLabelOverlaps(block, planId) {
-  const wrap = block.querySelector(`#fp-wrap-${planId}`);
-  if (!wrap) return;
-  const wrapRect = wrap.getBoundingClientRect();
-  const tags = Array.from(block.querySelectorAll(".fp-pin-tag"));
-  if (!tags.length) return;
+function _fpResolveLabels(wrap) {
+  const wrapW = wrap.offsetWidth;
+  const wrapH = wrap.offsetHeight;
+  if (!wrapW || !wrapH) return;
 
-  // Collect label rects in wrap-relative coords
-  const items = tags.map(tag => {
-    // Default: place centered below the dot
-    tag.style.left = "50%";
-    tag.style.top = "20px";
-    tag.style.transform = "translateX(-50%)";
-    const r = tag.getBoundingClientRect();
-    return {
-      el: tag,
-      x: r.left - wrapRect.left,
-      y: r.top - wrapRect.top,
-      w: r.width,
-      h: r.height,
-    };
-  });
+  const pinEls = Array.from(wrap.querySelectorAll(".fp-dash-pin"));
+  if (!pinEls.length) return;
 
-  // Simple iterative push-apart (up to 30 iterations)
-  for (let iter = 0; iter < 30; iter++) {
+  // Build a list of label rects in wrap-relative px coords
+  const labels = pinEls.map(pin => {
+    const tag = pin.querySelector(".fp-pin-tag");
+    if (!tag) return null;
+    // Pin center in px (from the % left/top on the pin element)
+    const px = parseFloat(pin.style.left) / 100 * wrapW;
+    const py = parseFloat(pin.style.top) / 100 * wrapH;
+    // Reset to default offset (right of dot)
+    tag.style.left = "12px";
+    tag.style.top = "-3px";
+    tag.style.transform = "none";
+    const tw = tag.offsetWidth;
+    const th = tag.offsetHeight;
+    // Absolute position of tag's top-left in wrap coords
+    // Pin is translate(-50%,-50%) so center is at (px, py).
+    // Dot is 14px. Tag default: left:12px, top:-3px from pin's top-left.
+    // Pin top-left = (px - 7, py - 7), so tag = (px - 7 + 12, py - 7 - 3) = (px + 5, py - 10)
+    let x = px + 5;
+    let y = py - 10;
+    // If label would go off right edge, flip to left side
+    if (x + tw > wrapW - 4) { x = px - tw - 5; }
+    return { el: tag, pin, x, y, w: tw, h: th, anchorX: px, anchorY: py };
+  }).filter(Boolean);
+
+  // Iterative push-apart: nudge overlapping labels vertically
+  for (let iter = 0; iter < 40; iter++) {
     let moved = false;
-    for (let i = 0; i < items.length; i++) {
-      for (let j = i + 1; j < items.length; j++) {
-        const a = items[i], b = items[j];
-        const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-        const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-        if (overlapX > 0 && overlapY > 0) {
-          // Push apart vertically (smaller displacement)
-          const push = (overlapY / 2) + 2;
-          if (a.y < b.y) { a.y -= push; b.y += push; }
+    for (let i = 0; i < labels.length; i++) {
+      for (let j = i + 1; j < labels.length; j++) {
+        const a = labels[i], b = labels[j];
+        const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        if (ox > 0 && oy > 0) {
+          const push = (oy / 2) + 2;
+          if (a.y <= b.y) { a.y -= push; b.y += push; }
           else { a.y += push; b.y -= push; }
           moved = true;
         }
@@ -795,19 +810,16 @@ function _resolveFloorPlanLabelOverlaps(block, planId) {
     if (!moved) break;
   }
 
-  // Clamp into wrap bounds and apply final positions
-  items.forEach(it => {
-    if (it.y < 0) it.y = 0;
-    if (it.y + it.h > wrapRect.height) it.y = wrapRect.height - it.h;
-    if (it.x < 0) it.x = 0;
-    if (it.x + it.w > wrapRect.width) it.x = wrapRect.width - it.w;
-    // Convert back to absolute positioning inside wrap
-    it.el.style.position = "absolute";
-    it.el.style.left = it.x + "px";
-    it.el.style.top = it.y + "px";
-    it.el.style.transform = "none";
-    // Re-parent into wrap so coords are correct
-    wrap.appendChild(it.el);
+  // Clamp and apply as offsets relative to the pin's top-left
+  labels.forEach(lb => {
+    lb.y = Math.max(0, Math.min(lb.y, wrapH - lb.h));
+    lb.x = Math.max(0, Math.min(lb.x, wrapW - lb.w));
+    // Convert wrap-absolute back to pin-relative offset
+    // Pin top-left in wrap coords = (anchorX - 7, anchorY - 7)
+    const offX = lb.x - (lb.anchorX - 7);
+    const offY = lb.y - (lb.anchorY - 7);
+    lb.el.style.left = offX + "px";
+    lb.el.style.top = offY + "px";
   });
 }
 
