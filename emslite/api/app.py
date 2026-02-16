@@ -16,6 +16,7 @@ from .routes_config import router as config_router
 from .routes_data import router as data_router
 from .routes_departments import router as departments_router
 from .routes_devices import router as devices_router
+from .routes_floorplans import router as floorplans_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(devices_router, prefix="/api")
     app.include_router(departments_router, prefix="/api")
     app.include_router(config_router, prefix="/api")
+    app.include_router(floorplans_router, prefix="/api")
 
     # Serve static frontend files
     static_dir = Path(__file__).resolve().parent.parent / "static"

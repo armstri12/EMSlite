@@ -181,6 +181,10 @@
           </div>
         </div>
       </div>
+
+      <div id="floorplan-dashboard-section" class="hidden">
+        <div class="charts-grid" id="floorplan-dashboard-grid"></div>
+      </div>
     </div>
 
     <!-- ANALYTICS TAB -->
@@ -288,6 +292,14 @@
       <div class="panel">
         <div class="panel-title">Device Configuration</div>
         <div id="device-table-container"></div>
+      </div>
+      <div class="panel" style="margin-top:1.5rem">
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+          Floor Plans
+          <button class="btn btn-primary btn-sm" id="btn-add-floorplan">Upload Floor Plan</button>
+        </div>
+        <div id="floorplan-list"></div>
+        <div id="floorplan-editor" class="hidden"></div>
       </div>
     </div>
 

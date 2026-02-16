@@ -82,6 +82,59 @@ const API = {
     return res.json();
   },
 
+  // ── Floor Plans ──
+  async getFloorPlans() {
+    const res = await fetch("/api/floorplans");
+    return res.json();
+  },
+
+  async getFloorPlan(id) {
+    const res = await fetch("/api/floorplans/" + id);
+    return res.json();
+  },
+
+  async createFloorPlan(formData) {
+    const res = await fetch("/api/floorplans", { method: "POST", body: formData });
+    return res.json();
+  },
+
+  async updateFloorPlan(id, data) {
+    const res = await fetch("/api/floorplans/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteFloorPlan(id) {
+    const res = await fetch("/api/floorplans/" + id, { method: "DELETE" });
+    return res.json();
+  },
+
+  async addFloorPlanPin(planId, data) {
+    const res = await fetch("/api/floorplans/" + planId + "/pins", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async updateFloorPlanPin(planId, pinId, data) {
+    const res = await fetch("/api/floorplans/" + planId + "/pins/" + pinId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteFloorPlanPin(planId, pinId) {
+    const res = await fetch("/api/floorplans/" + planId + "/pins/" + pinId, { method: "DELETE" });
+    return res.json();
+  },
+
   async getConfig() {
     const res = await fetch("/api/config");
     return res.json();

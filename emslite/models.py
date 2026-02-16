@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
     func,
@@ -111,6 +112,54 @@ class AlertRule(Base):
             "threshold_value": self.threshold_value,
             "severity": self.severity,
             "enabled": self.enabled,
+        }
+
+
+class FloorPlan(Base):
+    __tablename__ = "floor_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    image_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    show_on_dashboard: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    pins: Mapped[list[FloorPlanPin]] = relationship(
+        back_populates="floor_plan", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "image_path": self.image_path,
+            "show_on_dashboard": self.show_on_dashboard,
+            "pin_count": len(self.pins) if self.pins else 0,
+        }
+
+
+class FloorPlanPin(Base):
+    __tablename__ = "floor_plan_pins"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    floor_plan_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("floor_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    device_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    x_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    y_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    label: Mapped[str | None] = mapped_column(String(128), default=None)
+
+    floor_plan: Mapped[FloorPlan] = relationship(back_populates="pins")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "floor_plan_id": self.floor_plan_id,
+            "device_id": self.device_id,
+            "x_pct": self.x_pct,
+            "y_pct": self.y_pct,
+            "label": self.label,
         }
 
 
