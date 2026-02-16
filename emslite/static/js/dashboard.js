@@ -606,55 +606,209 @@ async function renderFloorPlanDashboard(data) {
       const plan = await API.getFloorPlan(fp.id);
       const pins = plan.pins || [];
 
-      // Compute latest metrics per device
+      // Compute metrics per device from the current filtered data
       const lastIdx = data.timestamps.length - 1;
       const deviceMetrics = {};
+      const now = data.timestamps.length ? new Date(data.timestamps[lastIdx]) : new Date();
       pins.forEach(pin => {
         const series = data.panelSeries[pin.device_id] || [];
         const currentKw = lastIdx >= 0 ? (series[lastIdx] || 0) : 0;
         const m = metrics(data.timestamps, series);
-        deviceMetrics[pin.device_id] = { currentKw, totalKwh: m.totalKwh, peakKw: m.peakKw, avgKw: m.avgKw };
+
+        // Weekly and monthly subsets
+        const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+        const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
+        let weekKwh = 0, monthKwh = 0;
+        for (let i = 1; i < data.timestamps.length; i++) {
+          const t = new Date(data.timestamps[i]);
+          const v = series[i] ?? 0;
+          const h = Math.max(0, (t - new Date(data.timestamps[i - 1])) / 3600000);
+          if (t >= weekAgo) weekKwh += v * h;
+          if (t >= monthAgo) monthKwh += v * h;
+        }
+        deviceMetrics[pin.device_id] = { currentKw, totalKwh: m.totalKwh, peakKw: m.peakKw, avgKw: m.avgKw, weekKwh, monthKwh };
       });
 
-      const panelEl = document.createElement("div");
-      panelEl.className = "panel panel-12";
-      panelEl.innerHTML = `
-        <div class="panel-title">${fp.name}</div>
-        <div style="position:relative;display:inline-block;max-width:100%;border-radius:8px;overflow:hidden">
-          <img src="${plan.image_path}" style="display:block;max-width:100%;height:auto"/>
-          ${pins.map(pin => {
-            const dm = deviceMetrics[pin.device_id] || {};
-            const kw = (dm.currentKw || 0).toFixed(1);
-            const label = pin.label || pin.device_id;
-            // Color based on load: green < 50%, yellow < 80%, red >= 80%
-            const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
-            const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
-            return `<div class="fp-dash-pin" style="position:absolute;left:${pin.x_pct}%;top:${pin.y_pct}%;transform:translate(-50%,-50%);z-index:2">
-              <div style="width:14px;height:14px;border-radius:50%;background:${dotColor};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:pointer"></div>
-              <div class="fp-dash-tooltip" style="display:none;position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,0.2);white-space:nowrap;z-index:10;font-size:0.8rem">
-                <div style="font-weight:600;color:var(--heading);margin-bottom:4px">${label}</div>
-                <div style="color:var(--muted)">Current: <strong style="color:var(--heading)">${kw} kW</strong></div>
-                <div style="color:var(--muted)">Peak: <strong style="color:var(--heading)">${(dm.peakKw || 0).toFixed(1)} kW</strong></div>
-                <div style="color:var(--muted)">Total: <strong style="color:var(--heading)">${(dm.totalKwh || 0).toFixed(0)} kWh</strong></div>
-                <div style="color:var(--muted)">Avg: <strong style="color:var(--heading)">${(dm.avgKw || 0).toFixed(1)} kW</strong></div>
-              </div>
-            </div>`;
-          }).join("")}
+      // Aggregate stats across all pins on this floor plan
+      let totalCurrent = 0, totalWeek = 0, totalMonth = 0, totalEnergy = 0, overallPeak = 0;
+      pins.forEach(p => {
+        const dm = deviceMetrics[p.device_id] || {};
+        totalCurrent += dm.currentKw || 0;
+        totalWeek += dm.weekKwh || 0;
+        totalMonth += dm.monthKwh || 0;
+        totalEnergy += dm.totalKwh || 0;
+        if ((dm.peakKw || 0) > overallPeak) overallPeak = dm.peakKw;
+      });
+
+      const fmtKwh = v => v >= 10000 ? (v / 1000).toFixed(1) + " MWh" : v >= 100 ? v.toFixed(0) + " kWh" : v.toFixed(1) + " kWh";
+
+      // Build the block
+      const block = document.createElement("div");
+      block.className = "fp-dashboard-block";
+      block.innerHTML = `
+        <div class="panel">
+          <div class="panel-title">${fp.name}</div>
+          <div class="fp-image-wrap" id="fp-wrap-${fp.id}">
+            <img src="${plan.image_path}" id="fp-img-${fp.id}"/>
+            ${pins.map((pin, idx) => {
+              const dm = deviceMetrics[pin.device_id] || {};
+              const label = pin.label || pin.device_id;
+              const kw = (dm.currentKw || 0).toFixed(1);
+              const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
+              const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
+              return `<div class="fp-dash-pin" data-idx="${idx}" style="left:${pin.x_pct}%;top:${pin.y_pct}%">
+                <div class="fp-pin-dot" style="background:${dotColor}"></div>
+                <div class="fp-pin-tag" data-pin-idx="${idx}">${label} (${kw} kW)</div>
+                <div class="fp-dash-tooltip">
+                  <div class="fp-tt-title">${label}</div>
+                  <div class="fp-tt-row"><span>Current</span> <strong>${kw} kW</strong></div>
+                  <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw || 0).toFixed(1)} kW</strong></div>
+                  <div class="fp-tt-row"><span>Avg</span> <strong>${(dm.avgKw || 0).toFixed(1)} kW</strong></div>
+                  <div class="fp-tt-row"><span>Last 7 days</span> <strong>${fmtKwh(dm.weekKwh || 0)}</strong></div>
+                  <div class="fp-tt-row"><span>Last 30 days</span> <strong>${fmtKwh(dm.monthKwh || 0)}</strong></div>
+                  <div class="fp-tt-row"><span>Total (period)</span> <strong>${fmtKwh(dm.totalKwh || 0)}</strong></div>
+                </div>
+              </div>`;
+            }).join("")}
+          </div>
+          <div class="fp-stat-cards">
+            <div class="fp-stat-card">
+              <div class="fp-sc-label">Live Load</div>
+              <div class="fp-sc-value">${totalCurrent.toFixed(1)} kW</div>
+              <div class="fp-sc-sub">${pins.length} device${pins.length !== 1 ? 's' : ''} monitored</div>
+            </div>
+            <div class="fp-stat-card">
+              <div class="fp-sc-label">Peak Demand</div>
+              <div class="fp-sc-value">${overallPeak.toFixed(1)} kW</div>
+              <div class="fp-sc-sub">Highest single device</div>
+            </div>
+            <div class="fp-stat-card">
+              <div class="fp-sc-label">Usage (Last 7 Days)</div>
+              <div class="fp-sc-value">${fmtKwh(totalWeek)}</div>
+              <div class="fp-sc-sub">All devices combined</div>
+            </div>
+            <div class="fp-stat-card">
+              <div class="fp-sc-label">Usage (Last 30 Days)</div>
+              <div class="fp-sc-value">${fmtKwh(totalMonth)}</div>
+              <div class="fp-sc-sub">All devices combined</div>
+            </div>
+            <div class="fp-stat-card">
+              <div class="fp-sc-label">Total (Selected Period)</div>
+              <div class="fp-sc-value">${fmtKwh(totalEnergy)}</div>
+              <div class="fp-sc-sub">Matches filter range</div>
+            </div>
+          </div>
         </div>`;
 
-      grid.appendChild(panelEl);
+      grid.appendChild(block);
 
-      // Wire hover tooltips
-      panelEl.querySelectorAll(".fp-dash-pin").forEach(pin => {
-        const tooltip = pin.querySelector(".fp-dash-tooltip");
-        pin.addEventListener("mouseenter", () => { tooltip.style.display = "block"; });
-        pin.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+      // ── Smart tooltip positioning (stays in frame) ──
+      const wrap = block.querySelector(`#fp-wrap-${fp.id}`);
+      block.querySelectorAll(".fp-dash-pin").forEach(pinEl => {
+        pinEl.addEventListener("mouseenter", () => {
+          const tooltip = pinEl.querySelector(".fp-dash-tooltip");
+          const wrapRect = wrap.getBoundingClientRect();
+          const dotRect = pinEl.querySelector(".fp-pin-dot").getBoundingClientRect();
+          // Reset to measure natural size
+          tooltip.style.left = "0";
+          tooltip.style.top = "0";
+          tooltip.style.right = "auto";
+          tooltip.style.bottom = "auto";
+          tooltip.style.transform = "none";
+          tooltip.style.display = "block";
+          const ttRect = tooltip.getBoundingClientRect();
+          const ttW = ttRect.width;
+          const ttH = ttRect.height;
+          const pinCX = dotRect.left + dotRect.width / 2 - wrapRect.left;
+          const pinCY = dotRect.top + dotRect.height / 2 - wrapRect.top;
+          // Horizontal: try center, clamp to edges
+          let left = pinCX - ttW / 2;
+          if (left < 4) left = 4;
+          if (left + ttW > wrapRect.width - 4) left = wrapRect.width - ttW - 4;
+          // Vertical: prefer above, fall below if no room
+          let top;
+          if (pinCY - ttH - 18 >= 0) {
+            top = pinCY - ttH - 18;
+          } else {
+            top = pinCY + 18;
+          }
+          if (top + ttH > wrapRect.height - 4) top = wrapRect.height - ttH - 4;
+          if (top < 4) top = 4;
+          tooltip.style.left = left + "px";
+          tooltip.style.top = top + "px";
+        });
       });
+
+      // ── Anti-overlap for always-visible labels ──
+      _resolveFloorPlanLabelOverlaps(block, fp.id);
     }
   } catch (err) {
     console.error("Failed to render floor plan dashboard:", err);
     section.classList.add("hidden");
   }
+}
+
+/**
+ * Shift label positions so they don't overlap each other.
+ * Labels start centered below the dot, then get nudged apart.
+ */
+function _resolveFloorPlanLabelOverlaps(block, planId) {
+  const wrap = block.querySelector(`#fp-wrap-${planId}`);
+  if (!wrap) return;
+  const wrapRect = wrap.getBoundingClientRect();
+  const tags = Array.from(block.querySelectorAll(".fp-pin-tag"));
+  if (!tags.length) return;
+
+  // Collect label rects in wrap-relative coords
+  const items = tags.map(tag => {
+    // Default: place centered below the dot
+    tag.style.left = "50%";
+    tag.style.top = "20px";
+    tag.style.transform = "translateX(-50%)";
+    const r = tag.getBoundingClientRect();
+    return {
+      el: tag,
+      x: r.left - wrapRect.left,
+      y: r.top - wrapRect.top,
+      w: r.width,
+      h: r.height,
+    };
+  });
+
+  // Simple iterative push-apart (up to 30 iterations)
+  for (let iter = 0; iter < 30; iter++) {
+    let moved = false;
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i], b = items[j];
+        const overlapX = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        if (overlapX > 0 && overlapY > 0) {
+          // Push apart vertically (smaller displacement)
+          const push = (overlapY / 2) + 2;
+          if (a.y < b.y) { a.y -= push; b.y += push; }
+          else { a.y += push; b.y -= push; }
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+
+  // Clamp into wrap bounds and apply final positions
+  items.forEach(it => {
+    if (it.y < 0) it.y = 0;
+    if (it.y + it.h > wrapRect.height) it.y = wrapRect.height - it.h;
+    if (it.x < 0) it.x = 0;
+    if (it.x + it.w > wrapRect.width) it.x = wrapRect.width - it.w;
+    // Convert back to absolute positioning inside wrap
+    it.el.style.position = "absolute";
+    it.el.style.left = it.x + "px";
+    it.el.style.top = it.y + "px";
+    it.el.style.transform = "none";
+    // Re-parent into wrap so coords are correct
+    wrap.appendChild(it.el);
+  });
 }
 
 function renderAnalytics() {
