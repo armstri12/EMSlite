@@ -14,6 +14,7 @@ async function renderDevicesTab() {
     ]);
     renderDeviceTable();
     renderDepartmentSection();
+    renderFloorPlanList();
   } catch (err) {
     console.error("Failed to load device config:", err);
   }
@@ -356,4 +357,244 @@ function showDeptModal(dept) {
     closeModal();
     renderDevicesTab();
   });
+}
+
+/* ═══════════════════════════════════════════════════════
+   FLOOR PLAN MANAGEMENT
+   ═══════════════════════════════════════════════════════ */
+
+async function renderFloorPlanList() {
+  const container = document.getElementById("floorplan-list");
+  if (!container) return;
+
+  const plans = await API.getFloorPlans();
+  if (!plans.length) {
+    container.innerHTML = '<div style="color:var(--muted);padding:1rem;text-align:center">No floor plans uploaded yet.</div>';
+  } else {
+    container.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:16px;padding:1rem 0">
+      ${plans.map(fp => `
+        <div class="fp-card" style="background:var(--bar-track);border-radius:0.75rem;padding:1rem;min-width:220px;border:2px solid var(--card-border);cursor:pointer" data-id="${fp.id}">
+          <div style="font-weight:600;color:var(--heading)">${fp.name}</div>
+          <div style="font-size:0.75rem;color:var(--muted);margin-top:4px">${fp.pin_count} device${fp.pin_count !== 1 ? 's' : ''} placed</div>
+          <div style="font-size:0.75rem;margin-top:4px;color:${fp.show_on_dashboard ? 'var(--positive-text)' : 'var(--muted)'}">
+            ${fp.show_on_dashboard ? 'Shown on Dashboard' : 'Not on Dashboard'}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="btn btn-primary btn-sm fp-edit-btn" data-id="${fp.id}">Edit Pins</button>
+            <button class="btn btn-ghost btn-sm fp-toggle-btn" data-id="${fp.id}" data-show="${fp.show_on_dashboard}">${fp.show_on_dashboard ? 'Hide from Dashboard' : 'Show on Dashboard'}</button>
+            <button class="btn btn-ghost btn-sm fp-del-btn" data-id="${fp.id}" style="color:var(--negative-text)">Delete</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>`;
+  }
+
+  // Upload button
+  document.getElementById("btn-add-floorplan").addEventListener("click", showFloorPlanUploadModal);
+
+  document.querySelectorAll(".fp-edit-btn").forEach(btn => {
+    btn.addEventListener("click", e => { e.stopPropagation(); openFloorPlanEditor(parseInt(btn.dataset.id)); });
+  });
+  document.querySelectorAll(".fp-toggle-btn").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.stopPropagation();
+      await API.updateFloorPlan(parseInt(btn.dataset.id), { show_on_dashboard: btn.dataset.show !== "true" });
+      renderFloorPlanList();
+    });
+  });
+  document.querySelectorAll(".fp-del-btn").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.stopPropagation();
+      if (confirm("Delete this floor plan and all its pins?")) {
+        await API.deleteFloorPlan(parseInt(btn.dataset.id));
+        renderFloorPlanList();
+      }
+    });
+  });
+}
+
+function showFloorPlanUploadModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "sidebar-overlay active";
+  overlay.style.zIndex = "400";
+
+  const modal = document.createElement("div");
+  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card-bg);z-index:401;border-radius:var(--card-radius);padding:2rem;min-width:400px;box-shadow:0 12px 48px rgba(0,0,0,0.2);";
+  modal.innerHTML = `
+    <h3 style="color:var(--heading);margin-bottom:1rem">Upload Floor Plan</h3>
+    <div style="display:flex;flex-direction:column;gap:1rem">
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Name</label>
+        <input type="text" class="filter-input" id="fp-name" placeholder="e.g. Main Building - Level 1" style="width:100%;margin-top:4px"/>
+      </div>
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Image</label>
+        <input type="file" id="fp-image" accept="image/*" style="margin-top:4px;color:var(--heading)"/>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="fp-show-dash" style="accent-color:var(--p-400)"/>
+        <label style="font-size:0.875rem;color:var(--heading)">Show on Dashboard</label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:0.5rem">
+        <button class="btn btn-ghost" id="fp-cancel">Cancel</button>
+        <button class="btn btn-primary" id="fp-upload">Upload</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+
+  function closeModal() { overlay.remove(); modal.remove(); }
+  overlay.addEventListener("click", closeModal);
+  document.getElementById("fp-cancel").addEventListener("click", closeModal);
+
+  document.getElementById("fp-upload").addEventListener("click", async () => {
+    const name = document.getElementById("fp-name").value.trim();
+    const file = document.getElementById("fp-image").files[0];
+    if (!name || !file) { alert("Please provide a name and image."); return; }
+    const fd = new FormData();
+    fd.append("name", name);
+    fd.append("image", file);
+    fd.append("show_on_dashboard", document.getElementById("fp-show-dash").checked);
+    await API.createFloorPlan(fd);
+    closeModal();
+    renderFloorPlanList();
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   FLOOR PLAN EDITOR (place/move/remove device pins)
+   ═══════════════════════════════════════════════════════ */
+
+async function openFloorPlanEditor(planId) {
+  const plan = await API.getFloorPlan(planId);
+  const editor = document.getElementById("floorplan-editor");
+  editor.classList.remove("hidden");
+
+  const allDevices = devicesData || await API.getDevices();
+  let pins = plan.pins || [];
+  let addingDevice = null; // device_id being placed
+
+  function render() {
+    const placedIds = new Set(pins.map(p => p.device_id));
+    const available = allDevices.filter(d => !placedIds.has(d.id));
+
+    editor.innerHTML = `
+      <div style="border:2px solid var(--card-border);border-radius:0.75rem;padding:1rem;margin-top:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 style="color:var(--heading);font-size:1rem;margin:0">${plan.name} — Pin Editor</h3>
+          <button class="btn btn-ghost btn-sm" id="fp-editor-close">Close Editor</button>
+        </div>
+        <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
+          <select class="filter-input" id="fp-device-select" style="min-width:200px">
+            <option value="">— Select device to place —</option>
+            ${available.map(d => `<option value="${d.id}">${d.display_name} (${d.id})</option>`).join("")}
+          </select>
+          <span id="fp-place-hint" style="font-size:0.8rem;color:var(--muted);display:none">Click on the floor plan to place the device</span>
+        </div>
+        <div id="fp-canvas-wrap" style="position:relative;display:inline-block;max-width:100%;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;cursor:${addingDevice ? 'crosshair' : 'default'}">
+          <img src="${plan.image_path}" style="display:block;max-width:100%;height:auto" id="fp-img"/>
+          ${pins.map(p => {
+            const dev = allDevices.find(d => d.id === p.device_id);
+            const label = p.label || (dev ? dev.display_name : p.device_id);
+            return `<div class="fp-pin" data-pin-id="${p.id}" style="position:absolute;left:${p.x_pct}%;top:${p.y_pct}%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:var(--p-400);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:pointer;z-index:2" title="${label}">
+              <div class="fp-pin-label" style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:0.65rem;white-space:nowrap;background:var(--card-bg);padding:1px 5px;border-radius:4px;color:var(--heading);box-shadow:0 1px 4px rgba(0,0,0,0.15);pointer-events:none">${label}</div>
+            </div>`;
+          }).join("")}
+        </div>
+        <div style="margin-top:1rem">
+          <div style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:6px">Placed Devices (${pins.length})</div>
+          ${pins.length ? pins.map(p => {
+            const dev = allDevices.find(d => d.id === p.device_id);
+            return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+              <span style="width:10px;height:10px;border-radius:50%;background:var(--p-400);flex-shrink:0"></span>
+              <span style="font-size:0.85rem;color:var(--heading);flex:1">${dev ? dev.display_name : p.device_id}</span>
+              <span style="font-size:0.7rem;color:var(--muted)">(${p.x_pct.toFixed(1)}%, ${p.y_pct.toFixed(1)}%)</span>
+              <button class="btn btn-ghost btn-sm fp-rm-pin" data-pin-id="${p.id}" style="padding:2px 6px;color:var(--negative-text);font-size:0.75rem">Remove</button>
+            </div>`;
+          }).join("") : '<div style="color:var(--muted);font-size:0.85rem">No devices placed yet.</div>'}
+        </div>
+      </div>`;
+
+    // Wire close
+    document.getElementById("fp-editor-close").addEventListener("click", () => {
+      editor.classList.add("hidden");
+      editor.innerHTML = "";
+    });
+
+    // Wire device select
+    const sel = document.getElementById("fp-device-select");
+    const hint = document.getElementById("fp-place-hint");
+    sel.addEventListener("change", () => {
+      addingDevice = sel.value || null;
+      const wrap = document.getElementById("fp-canvas-wrap");
+      wrap.style.cursor = addingDevice ? "crosshair" : "default";
+      hint.style.display = addingDevice ? "" : "none";
+    });
+
+    // Wire click on canvas to place pin
+    const wrap = document.getElementById("fp-canvas-wrap");
+    wrap.addEventListener("click", async (e) => {
+      if (!addingDevice) return;
+      const img = document.getElementById("fp-img");
+      const rect = img.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width * 100);
+      const y = ((e.clientY - rect.top) / rect.height * 100);
+      if (x < 0 || x > 100 || y < 0 || y > 100) return;
+      const newPin = await API.addFloorPlanPin(planId, {
+        device_id: addingDevice, x_pct: Math.round(x * 10) / 10, y_pct: Math.round(y * 10) / 10
+      });
+      pins.push(newPin);
+      addingDevice = null;
+      render();
+    });
+
+    // Wire remove pin buttons
+    document.querySelectorAll(".fp-rm-pin").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const pinId = parseInt(btn.dataset.pinId);
+        await API.deleteFloorPlanPin(planId, pinId);
+        pins = pins.filter(p => p.id !== pinId);
+        render();
+      });
+    });
+
+    // Wire dragging of existing pins
+    document.querySelectorAll(".fp-pin").forEach(pinEl => {
+      let dragging = false;
+      pinEl.addEventListener("mousedown", (e) => {
+        if (addingDevice) return;
+        e.preventDefault();
+        dragging = true;
+        const img = document.getElementById("fp-img");
+        const onMove = (ev) => {
+          if (!dragging) return;
+          const rect = img.getBoundingClientRect();
+          const x = Math.max(0, Math.min(100, (ev.clientX - rect.left) / rect.width * 100));
+          const y = Math.max(0, Math.min(100, (ev.clientY - rect.top) / rect.height * 100));
+          pinEl.style.left = x + "%";
+          pinEl.style.top = y + "%";
+        };
+        const onUp = async (ev) => {
+          if (!dragging) return;
+          dragging = false;
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          const rect = img.getBoundingClientRect();
+          const x = Math.max(0, Math.min(100, (ev.clientX - rect.left) / rect.width * 100));
+          const y = Math.max(0, Math.min(100, (ev.clientY - rect.top) / rect.height * 100));
+          const pinId = parseInt(pinEl.dataset.pinId);
+          const newX = Math.round(x * 10) / 10;
+          const newY = Math.round(y * 10) / 10;
+          await API.updateFloorPlanPin(planId, pinId, { x_pct: newX, y_pct: newY });
+          const pin = pins.find(p => p.id === pinId);
+          if (pin) { pin.x_pct = newX; pin.y_pct = newY; }
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      });
+    });
+  }
+
+  render();
 }

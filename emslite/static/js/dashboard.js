@@ -584,6 +584,77 @@ function renderOverview() {
   } else {
     document.getElementById("dept-section").classList.add("hidden");
   }
+
+  // Floor plan dashboard panels
+  renderFloorPlanDashboard(data);
+}
+
+async function renderFloorPlanDashboard(data) {
+  const section = document.getElementById("floorplan-dashboard-section");
+  const grid = document.getElementById("floorplan-dashboard-grid");
+  if (!section || !grid) return;
+
+  try {
+    const plans = await API.getFloorPlans();
+    const dashPlans = plans.filter(fp => fp.show_on_dashboard);
+    if (!dashPlans.length) { section.classList.add("hidden"); return; }
+
+    section.classList.remove("hidden");
+    grid.innerHTML = "";
+
+    for (const fp of dashPlans) {
+      const plan = await API.getFloorPlan(fp.id);
+      const pins = plan.pins || [];
+
+      // Compute latest metrics per device
+      const lastIdx = data.timestamps.length - 1;
+      const deviceMetrics = {};
+      pins.forEach(pin => {
+        const series = data.panelSeries[pin.device_id] || [];
+        const currentKw = lastIdx >= 0 ? (series[lastIdx] || 0) : 0;
+        const m = metrics(data.timestamps, series);
+        deviceMetrics[pin.device_id] = { currentKw, totalKwh: m.totalKwh, peakKw: m.peakKw, avgKw: m.avgKw };
+      });
+
+      const panelEl = document.createElement("div");
+      panelEl.className = "panel panel-12";
+      panelEl.innerHTML = `
+        <div class="panel-title">${fp.name}</div>
+        <div style="position:relative;display:inline-block;max-width:100%;border-radius:8px;overflow:hidden">
+          <img src="${plan.image_path}" style="display:block;max-width:100%;height:auto"/>
+          ${pins.map(pin => {
+            const dm = deviceMetrics[pin.device_id] || {};
+            const kw = (dm.currentKw || 0).toFixed(1);
+            const label = pin.label || pin.device_id;
+            // Color based on load: green < 50%, yellow < 80%, red >= 80%
+            const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
+            const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
+            return `<div class="fp-dash-pin" style="position:absolute;left:${pin.x_pct}%;top:${pin.y_pct}%;transform:translate(-50%,-50%);z-index:2">
+              <div style="width:14px;height:14px;border-radius:50%;background:${dotColor};border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:pointer"></div>
+              <div class="fp-dash-tooltip" style="display:none;position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:var(--card-bg);border:1px solid var(--card-border);border-radius:8px;padding:8px 12px;box-shadow:0 4px 16px rgba(0,0,0,0.2);white-space:nowrap;z-index:10;font-size:0.8rem">
+                <div style="font-weight:600;color:var(--heading);margin-bottom:4px">${label}</div>
+                <div style="color:var(--muted)">Current: <strong style="color:var(--heading)">${kw} kW</strong></div>
+                <div style="color:var(--muted)">Peak: <strong style="color:var(--heading)">${(dm.peakKw || 0).toFixed(1)} kW</strong></div>
+                <div style="color:var(--muted)">Total: <strong style="color:var(--heading)">${(dm.totalKwh || 0).toFixed(0)} kWh</strong></div>
+                <div style="color:var(--muted)">Avg: <strong style="color:var(--heading)">${(dm.avgKw || 0).toFixed(1)} kW</strong></div>
+              </div>
+            </div>`;
+          }).join("")}
+        </div>`;
+
+      grid.appendChild(panelEl);
+
+      // Wire hover tooltips
+      panelEl.querySelectorAll(".fp-dash-pin").forEach(pin => {
+        const tooltip = pin.querySelector(".fp-dash-tooltip");
+        pin.addEventListener("mouseenter", () => { tooltip.style.display = "block"; });
+        pin.addEventListener("mouseleave", () => { tooltip.style.display = "none"; });
+      });
+    }
+  } catch (err) {
+    console.error("Failed to render floor plan dashboard:", err);
+    section.classList.add("hidden");
+  }
 }
 
 function renderAnalytics() {
