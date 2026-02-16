@@ -1,1 +1,12 @@
 __pycache__/
+*.pyc
+*.pyo
+emslite.db
+drops/processed/
+drops/failed/
+data/*.csv
+visualizations/
+*.egg-info/
+dist/
+build/
+.env

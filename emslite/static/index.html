@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>EMSlite Energy Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+<link rel="stylesheet" href="/css/dashboard.css"/>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#0B1E2E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+    </div>
+    <span class="sidebar-wordmark">EMSlite</span>
+  </div>
+  <nav class="sidebar-nav">
+    <a class="nav-item active" data-tab="overview">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    <a class="nav-item" data-tab="analytics">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span class="nav-label">Analytics</span>
+    </a>
+    <a class="nav-item" data-tab="comparison">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      <span class="nav-label">Comparison</span>
+    </a>
+    <a class="nav-item" data-tab="data">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      <span class="nav-label">Data Table</span>
+    </a>
+    <a class="nav-item" data-tab="devices">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      <span class="nav-label">Devices</span>
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <a class="nav-item" style="cursor:default;opacity:0.5">
+      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="nav-label">Logout</span>
+    </a>
+  </div>
+</aside>
+<div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="topbar-left">
+    <button class="hamburger" id="hamburger">
+      <svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <span class="breadcrumb">Energy Dashboard</span>
+  </div>
+  <div class="topbar-right">
+    <button class="topbar-btn" id="theme-toggle">
+      <svg viewBox="0 0 24 24" id="theme-icon"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      <span id="theme-label">Dark</span>
+    </button>
+    <button class="topbar-icon-btn" title="Notifications">
+      <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+      <span class="notif-dot"></span>
+    </button>
+    <div class="avatar">EM</div>
+  </div>
+</header>
+
+<!-- MAIN CONTENT -->
+<main class="main">
+  <div class="main-container">
+
+    <!-- OVERVIEW TAB -->
+    <div class="tab-content active" id="tab-overview">
+      <div class="filter-bar" id="ov-filter-bar"></div>
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi-card animate">
+          <div class="kpi-header">
+            <div>
+              <div class="kpi-title">Total Energy Consumption</div>
+              <div class="kpi-value" id="kpi-energy">0 kWh</div>
+              <div class="kpi-badge positive" id="kpi-energy-badge">
+                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+                <span id="kpi-energy-pct">0%</span>
+              </div>
+              <div class="kpi-subtitle">Compared Last Period</div>
+            </div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+          </div>
+          <div class="kpi-sparkline" id="spark-energy"></div>
+        </div>
+        <div class="kpi-card animate">
+          <div class="kpi-header">
+            <div>
+              <div class="kpi-title">Estimated Cost</div>
+              <div class="kpi-value" id="kpi-cost">$0</div>
+              <div class="kpi-badge positive" id="kpi-cost-badge">
+                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+                <span id="kpi-cost-pct">0%</span>
+              </div>
+              <div class="kpi-subtitle">Compared Last Period</div>
+            </div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            </div>
+          </div>
+          <div class="kpi-sparkline" id="spark-cost"></div>
+        </div>
+        <div class="kpi-card animate">
+          <div class="kpi-header">
+            <div>
+              <div class="kpi-title">Peak Demand</div>
+              <div class="kpi-value" id="kpi-peak">0 kW</div>
+              <div class="kpi-badge positive" id="kpi-peak-badge">
+                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+                <span id="kpi-peak-pct">0%</span>
+              </div>
+              <div class="kpi-subtitle">Compared Last Period</div>
+            </div>
+            <div class="kpi-icon">
+              <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+          </div>
+          <div class="kpi-sparkline" id="spark-peak"></div>
+        </div>
+      </div>
+
+      <div class="charts-grid">
+        <div class="panel panel-5">
+          <div class="panel-title">Energy Use</div>
+          <div class="chart-area" id="chart-energy-bars"></div>
+        </div>
+        <div class="panel panel-3">
+          <div class="panel-title">Energy Utilisation</div>
+          <div class="chart-area" id="chart-donut" style="min-height:280px"></div>
+          <div class="donut-legend" id="donut-legend"></div>
+        </div>
+        <div class="panel panel-4">
+          <div class="panel-title">Top Panels by Consumption</div>
+          <div class="hbar-list" id="hbar-panels"></div>
+        </div>
+        <div class="panel panel-12">
+          <div class="panel-title">Facility Load Profile</div>
+          <div class="chart-area" id="chart-load"></div>
+        </div>
+      </div>
+
+      <div id="meter-section" class="hidden">
+        <div class="charts-grid">
+          <div class="panel panel-12" id="meter-cards-panel">
+            <div class="panel-title">Utility Meters</div>
+            <div class="hbar-list" id="meter-bars"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ANALYTICS TAB -->
+    <div class="tab-content" id="tab-analytics">
+      <div class="filter-bar" id="an-filter-bar"></div>
+      <div class="charts-grid">
+        <div class="panel panel-6">
+          <div class="panel-title">Time-of-Day Heatmap</div>
+          <div class="chart-area" id="chart-heatmap"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Average Hourly Profile</div>
+          <div class="chart-area" id="chart-hourly"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Weekday Distribution</div>
+          <div class="chart-area" id="chart-weekday"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Daily Energy Consumption</div>
+          <div class="chart-area" id="chart-daily-energy"></div>
+        </div>
+        <div class="panel panel-12" id="group-chart-panel" style="display:none">
+          <div class="panel-title">Group Loads</div>
+          <div class="chart-area" id="chart-groups"></div>
+        </div>
+        <div class="panel panel-12">
+          <div class="panel-title">Panel Trends</div>
+          <div class="chart-area" id="chart-panels"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPARISON TAB -->
+    <div class="tab-content" id="tab-comparison">
+      <div class="filter-bar" id="cp-filter-bar"></div>
+      <div class="savings-banner positive" id="sav-banner">
+        <h3 id="sav-title">Energy Savings Impact</h3>
+        <div class="savings-grid">
+          <div class="sav-item"><div class="sav-label">Energy Savings</div><div class="sav-value" id="sav-energy">0 kWh</div></div>
+          <div class="sav-item"><div class="sav-label">Cost Savings</div><div class="sav-value" id="sav-cost">$0</div></div>
+          <div class="sav-item"><div class="sav-label">Peak Reduction</div><div class="sav-value" id="sav-peak">0 kW</div></div>
+          <div class="sav-item"><div class="sav-label">Load Factor Change</div><div class="sav-value" id="sav-lf">0%</div></div>
+        </div>
+      </div>
+      <div class="comp-grid" id="comp-grid">
+        <div class="comp-card" id="cc-energy"><div class="comp-card-label">Total Energy</div>
+          <div class="comp-row"><span class="comp-period">Period 1</span><span class="comp-val" id="cc-e1">0</span></div>
+          <div class="comp-row"><span class="comp-period">Period 2</span><span class="comp-val" id="cc-e2">0</span></div>
+          <div class="comp-delta"><span class="delta-label">Change</span><span class="delta-val" id="cc-ed">0</span></div></div>
+        <div class="comp-card" id="cc-cost"><div class="comp-card-label">Total Cost</div>
+          <div class="comp-row"><span class="comp-period">Period 1</span><span class="comp-val" id="cc-c1">$0</span></div>
+          <div class="comp-row"><span class="comp-period">Period 2</span><span class="comp-val" id="cc-c2">$0</span></div>
+          <div class="comp-delta"><span class="delta-label">Change</span><span class="delta-val" id="cc-cd">$0</span></div></div>
+        <div class="comp-card" id="cc-avg"><div class="comp-card-label">Average Load</div>
+          <div class="comp-row"><span class="comp-period">Period 1</span><span class="comp-val" id="cc-a1">0</span></div>
+          <div class="comp-row"><span class="comp-period">Period 2</span><span class="comp-val" id="cc-a2">0</span></div>
+          <div class="comp-delta"><span class="delta-label">Change</span><span class="delta-val" id="cc-ad">0</span></div></div>
+        <div class="comp-card" id="cc-peak"><div class="comp-card-label">Peak Load</div>
+          <div class="comp-row"><span class="comp-period">Period 1</span><span class="comp-val" id="cc-p1">0</span></div>
+          <div class="comp-row"><span class="comp-period">Period 2</span><span class="comp-val" id="cc-p2">0</span></div>
+          <div class="comp-delta"><span class="delta-label">Change</span><span class="delta-val" id="cc-pd">0</span></div></div>
+        <div class="comp-card" id="cc-lf"><div class="comp-card-label">Load Factor</div>
+          <div class="comp-row"><span class="comp-period">Period 1</span><span class="comp-val" id="cc-l1">0%</span></div>
+          <div class="comp-row"><span class="comp-period">Period 2</span><span class="comp-val" id="cc-l2">0%</span></div>
+          <div class="comp-delta"><span class="delta-label">Change</span><span class="delta-val" id="cc-ld">0</span></div></div>
+        <div class="comp-card" id="cc-daily"><div class="comp-card-label">Daily Energy (Avg)</div>
+          <div class="comp-row"><span class="comp-period">Period 1</span><span class="comp-val" id="cc-d1">0</span></div>
+          <div class="comp-row"><span class="comp-period">Period 2</span><span class="comp-val" id="cc-d2">0</span></div>
+          <div class="comp-delta"><span class="delta-label">Change</span><span class="delta-val" id="cc-dd">0</span></div></div>
+      </div>
+      <div class="charts-grid">
+        <div class="panel panel-12"><div class="panel-title">Load Profile Overlay</div><div class="chart-area" id="chart-comp-load"></div></div>
+        <div class="panel panel-6"><div class="panel-title">Hourly Comparison</div><div class="chart-area" id="chart-comp-hourly"></div></div>
+        <div class="panel panel-6"><div class="panel-title">Weekday Comparison</div><div class="chart-area" id="chart-comp-weekday"></div></div>
+      </div>
+    </div>
+
+    <!-- DATA TABLE TAB -->
+    <div class="tab-content" id="tab-data">
+      <div class="filter-bar" id="dt-filter-bar"></div>
+      <div class="table-controls">
+        <input type="text" class="table-search" id="table-search" placeholder="Search timestamps, values..."/>
+        <button class="btn btn-ghost btn-sm" id="export-csv">Export CSV</button>
+      </div>
+      <div class="data-table-wrap">
+        <table class="data-table" id="data-table">
+          <thead id="table-head"></thead>
+          <tbody id="table-body"></tbody>
+        </table>
+        <div class="table-footer">
+          <span id="table-info">0 rows</span>
+          <div class="pagination" id="pagination"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEVICES TAB -->
+    <div class="tab-content" id="tab-devices">
+      <div id="department-section"></div>
+      <div class="panel">
+        <div class="panel-title">Device Configuration</div>
+        <div id="device-table-container"></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer class="footer">
+  EMSlite Energy Dashboard
+</footer>
+
+<!-- Scripts -->
+<script src="/js/api.js"></script>
+<script src="/js/config.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>
