@@ -983,143 +983,118 @@ body {
 .sidebar-overlay.active { display: block; }
 
 /* ═══════════════════════════════════════════════════════
-   FLOOR PLAN DASHBOARD
+   EXECUTIVE DASHBOARD LAYOUT
    ═══════════════════════════════════════════════════════ */
-.fp-dashboard-block {
-  margin-bottom: var(--card-gap, 1.5rem);
-}
-
-/* Side-by-side: image left, cards right */
-.fp-layout {
+#exec-dashboard {
   display: flex;
   gap: 1.25rem;
-  align-items: flex-start;
+  align-items: stretch;
 }
-.fp-layout-map {
+#exec-floor-col {
   flex: 1 1 0;
   min-width: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: var(--card-pad);
+  box-shadow: var(--shadow-card);
 }
-.fp-layout-sidebar {
-  flex: 0 0 280px;
+#exec-stats-col {
+  flex: 0 0 310px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
-@media (max-width: 900px) {
-  .fp-layout { flex-direction: column; }
-  .fp-layout-sidebar { flex: none; flex-direction: row; flex-wrap: wrap; }
-}
-
-/* Image container — must be position:relative for absolute children */
-.fp-image-wrap {
-  position: relative;
-  display: block;
-  width: 100%;
-  border-radius: 8px;
-}
-.fp-image-wrap img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 8px;
-}
-
-/* Pin container: positioned absolutely inside image-wrap using % coords */
-.fp-dash-pin {
-  position: absolute;
-  z-index: 2;
-  /* left/top set in JS as %; transform centers the dot on that point */
-  transform: translate(-50%, -50%);
-}
-.fp-pin-dot {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  cursor: pointer;
-  transition: transform 0.15s ease;
-}
-.fp-dash-pin:hover .fp-pin-dot {
-  transform: scale(1.4);
-}
-
-/* Always-visible labels — positioned by JS relative to the pin dot */
-.fp-pin-tag {
-  position: absolute;
-  font-size: 0.65rem;
-  font-weight: 600;
-  white-space: nowrap;
-  background: rgba(var(--card-bg-rgb, 255,255,255), 0.92);
-  background: var(--card-bg);
-  color: var(--heading);
-  padding: 1px 5px;
-  border-radius: 3px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
-  pointer-events: none;
-  line-height: 1.4;
-  border: 1px solid var(--card-border);
-  /* default: below-right of dot — JS overrides if needed */
-  left: 12px;
-  top: -3px;
-}
-
-/* Tooltip — hidden by default, JS toggles .fp-tt-visible */
-.fp-dash-tooltip {
-  display: none;
-  position: absolute;
+#exec-load-strip {
+  margin-top: 1rem;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 10px;
-  padding: 10px 14px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.25);
-  white-space: nowrap;
-  z-index: 100;
-  font-size: 0.8rem;
-  pointer-events: none;
+  border-radius: var(--card-radius);
+  padding: 0.6rem var(--card-pad);
+  box-shadow: var(--shadow-card);
 }
-.fp-dash-tooltip.fp-tt-visible {
-  display: block;
-}
-.fp-tt-title {
-  font-weight: 700;
-  color: var(--heading);
-  margin-bottom: 5px;
-  font-size: 0.85rem;
-}
-.fp-tt-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  color: var(--muted);
-  line-height: 1.6;
-}
-.fp-tt-row strong {
-  color: var(--heading);
-}
-
-/* Stat cards — stacked in the sidebar */
-.fp-stat-card {
-  background: var(--bar-track);
-  border: 1px solid var(--card-border);
-  border-radius: 0.75rem;
-  padding: 0.6rem 0.85rem;
-}
-.fp-stat-card .fp-sc-label {
+#exec-load-strip .exec-strip-title {
   font-size: 0.65rem;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  margin-bottom: 2px;
+  display: flex;
+  justify-content: space-between;
 }
-.fp-stat-card .fp-sc-value {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--heading);
-  margin-top: 1px;
+#exec-load-chart { height: 55px; }
+
+@media (max-width: 1100px) {
+  #exec-dashboard { flex-direction: column; }
+  #exec-stats-col { flex: none; flex-direction: row; flex-wrap: wrap; gap: 10px; }
+  #exec-stats-col > * { flex: 1 1 150px; }
 }
-.fp-stat-card .fp-sc-sub {
-  font-size: 0.68rem;
-  color: var(--muted);
-  margin-top: 1px;
+
+/* Live load gauge */
+.exec-gauge {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 0.65rem 0.85rem;
+  box-shadow: var(--shadow-card);
 }
+.exec-gauge-title { font-size: 0.6rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.exec-gauge-value { font-size: 1.4rem; font-weight: 800; color: var(--heading); margin: 2px 0 5px; }
+.exec-gauge-bar { height: 8px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
+.exec-gauge-fill { height: 100%; border-radius: 9999px; transition: width 0.6s; }
+.exec-gauge-sub { font-size: 0.65rem; color: var(--muted); margin-top: 3px; }
+
+/* Compact KPI cards (2x2 grid) */
+.exec-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.exec-kpi {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  box-shadow: var(--shadow-card);
+}
+.exec-kpi-label { font-size: 0.58rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.exec-kpi-val { font-size: 0.95rem; font-weight: 700; color: var(--heading); margin-top: 1px; }
+.exec-kpi-sub { font-size: 0.58rem; color: var(--muted); }
+
+/* Section wrapper card */
+.exec-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  box-shadow: var(--shadow-card);
+}
+.exec-section-label { font-size: 0.58rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+
+/* Department compact list */
+.exec-dept-row { display: flex; align-items: center; gap: 5px; padding: 2px 0; }
+.exec-dept-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.exec-dept-name { font-size: 0.75rem; color: var(--heading); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exec-dept-bar-wrap { width: 45px; height: 5px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; flex-shrink: 0; }
+.exec-dept-bar-fill { height: 100%; border-radius: 9999px; }
+.exec-dept-pct { font-size: 0.68rem; color: var(--muted); width: 30px; text-align: right; flex-shrink: 0; }
+.exec-dept-val { font-size: 0.68rem; font-weight: 600; color: var(--heading); width: 50px; text-align: right; flex-shrink: 0; }
+
+/* Top consumers compact list */
+.exec-top-row { display: flex; align-items: center; gap: 5px; padding: 2px 0; }
+.exec-top-name { font-size: 0.72rem; color: var(--heading); width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.exec-top-bar-wrap { flex: 1; height: 5px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
+.exec-top-bar-fill { height: 100%; border-radius: 9999px; background: var(--s-800); }
+.exec-top-val { font-size: 0.68rem; font-weight: 600; color: var(--muted); width: 48px; text-align: right; flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════
+   FLOOR PLAN PINS + TOOLTIPS
+   ═══════════════════════════════════════════════════════ */
+.fp-image-wrap { position: relative; display: block; width: 100%; border-radius: 8px; }
+.fp-image-wrap img { display: block; width: 100%; height: auto; border-radius: 8px; }
+.fp-dash-pin { position: absolute; z-index: 2; transform: translate(-50%, -50%); }
+.fp-pin-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.3); cursor: pointer; transition: transform 0.15s ease; }
+.fp-dash-pin:hover .fp-pin-dot { transform: scale(1.4); }
+.fp-pin-tag { position: absolute; font-size: 0.6rem; font-weight: 600; white-space: nowrap; background: var(--card-bg); color: var(--heading); padding: 1px 4px; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.18); pointer-events: none; line-height: 1.4; border: 1px solid var(--card-border); left: 12px; top: -3px; }
+.fp-dash-tooltip { display: none; position: absolute; background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 14px; box-shadow: 0 8px 28px rgba(0,0,0,0.25); white-space: nowrap; z-index: 100; font-size: 0.78rem; pointer-events: none; }
+.fp-dash-tooltip.fp-tt-visible { display: block; }
+.fp-tt-title { font-weight: 700; color: var(--heading); margin-bottom: 4px; font-size: 0.82rem; }
+.fp-tt-row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); line-height: 1.5; }
+.fp-tt-row strong { color: var(--heading); }
