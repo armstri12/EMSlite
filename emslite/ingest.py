@@ -185,6 +185,36 @@ def start_watcher(
     return observer
 
 
+def sync_devices_from_master(master_path: str | Path) -> int:
+    """Read the master CSV headers and ensure a Device record exists for each column.
+
+    This handles the case where a user places the master CSV directly into data/
+    without going through the file-drop ingestion pipeline.
+    """
+    import pandas as pd
+
+    master = Path(master_path).resolve()
+    if not master.exists():
+        return 0
+
+    try:
+        cols = pd.read_csv(master, nrows=0).columns.tolist()
+    except Exception as e:
+        logger.warning("Could not read master CSV headers: %s", e)
+        return 0
+
+    count = 0
+    for col in cols:
+        if col.strip().lower() == "timestamp":
+            continue
+        _ensure_device(col)
+        count += 1
+
+    if count:
+        logger.info("Synced %d devices from master CSV columns", count)
+    return count
+
+
 def ingest_existing(
     drops_dir: str | Path,
     master_path: str | Path,

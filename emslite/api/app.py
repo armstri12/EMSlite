@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import load_config
 from ..database import init_db
-from ..ingest import ingest_existing, start_watcher
+from ..ingest import ingest_existing, start_watcher, sync_devices_from_master
 from .routes_config import router as config_router
 from .routes_data import router as data_router
 from .routes_departments import router as departments_router
@@ -53,6 +53,9 @@ async def lifespan(app: FastAPI):
 
     master_path = data_dir / _app_config.get("master_filename", "RawPanelUsageHistory.csv")
     glob_pattern = _app_config.get("glob_pattern", "Meter*_SystemCurrent.csv")
+
+    # Sync devices from existing master CSV (handles direct CSV placement)
+    sync_devices_from_master(master_path)
 
     # Process any files already in the drops folder
     existing_count = ingest_existing(drops_dir, master_path, glob_pattern)
