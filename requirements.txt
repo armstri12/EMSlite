@@ -1,0 +1,6 @@
+fastapi>=0.110,<1
+uvicorn[standard]>=0.29,<1
+pandas>=2.1
+sqlalchemy>=2.0
+watchdog>=4.0
+python-multipart>=0.0.9
