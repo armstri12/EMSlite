@@ -988,30 +988,48 @@ body {
 .fp-dashboard-block {
   margin-bottom: var(--card-gap, 1.5rem);
 }
-.fp-dashboard-block .panel-title {
-  margin-bottom: 1rem;
+
+/* Side-by-side: image left, cards right */
+.fp-layout {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+.fp-layout-map {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.fp-layout-sidebar {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+@media (max-width: 900px) {
+  .fp-layout { flex-direction: column; }
+  .fp-layout-sidebar { flex: none; flex-direction: row; flex-wrap: wrap; }
 }
 
-/* Image container */
+/* Image container — must be position:relative for absolute children */
 .fp-image-wrap {
   position: relative;
-  display: inline-block;
-  max-width: 100%;
+  display: block;
+  width: 100%;
   border-radius: 8px;
-  overflow: visible;
 }
 .fp-image-wrap img {
   display: block;
-  max-width: 100%;
+  width: 100%;
   height: auto;
   border-radius: 8px;
 }
 
-/* Pin + label group */
+/* Pin container: positioned absolutely inside image-wrap using % coords */
 .fp-dash-pin {
   position: absolute;
-  transform: translate(-50%, -50%);
   z-index: 2;
+  /* left/top set in JS as %; transform centers the dot on that point */
+  transform: translate(-50%, -50%);
 }
 .fp-pin-dot {
   width: 14px;
@@ -1023,26 +1041,30 @@ body {
   transition: transform 0.15s ease;
 }
 .fp-dash-pin:hover .fp-pin-dot {
-  transform: scale(1.35);
+  transform: scale(1.4);
 }
 
-/* Always-visible labels */
+/* Always-visible labels — positioned by JS relative to the pin dot */
 .fp-pin-tag {
   position: absolute;
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 600;
   white-space: nowrap;
+  background: rgba(var(--card-bg-rgb, 255,255,255), 0.92);
   background: var(--card-bg);
   color: var(--heading);
-  padding: 1px 6px;
-  border-radius: 4px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  padding: 1px 5px;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
   pointer-events: none;
-  line-height: 1.3;
+  line-height: 1.4;
   border: 1px solid var(--card-border);
+  /* default: below-right of dot — JS overrides if needed */
+  left: 12px;
+  top: -3px;
 }
 
-/* Tooltip */
+/* Tooltip — hidden by default, JS toggles .fp-tt-visible */
 .fp-dash-tooltip {
   display: none;
   position: absolute;
@@ -1050,13 +1072,13 @@ body {
   border: 1px solid var(--card-border);
   border-radius: 10px;
   padding: 10px 14px;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.22);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.25);
   white-space: nowrap;
-  z-index: 20;
+  z-index: 100;
   font-size: 0.8rem;
   pointer-events: none;
 }
-.fp-dash-pin:hover .fp-dash-tooltip {
+.fp-dash-tooltip.fp-tt-visible {
   display: block;
 }
 .fp-tt-title {
@@ -1076,36 +1098,28 @@ body {
   color: var(--heading);
 }
 
-/* Stat cards row */
-.fp-stat-cards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 1rem;
-}
+/* Stat cards — stacked in the sidebar */
 .fp-stat-card {
   background: var(--bar-track);
   border: 1px solid var(--card-border);
   border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
-  min-width: 155px;
-  flex: 1 1 155px;
+  padding: 0.6rem 0.85rem;
 }
 .fp-stat-card .fp-sc-label {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 .fp-stat-card .fp-sc-value {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--heading);
-  margin-top: 2px;
+  margin-top: 1px;
 }
 .fp-stat-card .fp-sc-sub {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--muted);
   margin-top: 1px;
 }
