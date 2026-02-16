@@ -80,110 +80,11 @@
 
     <!-- OVERVIEW TAB -->
     <div class="tab-content active" id="tab-overview">
-      <div class="filter-bar" id="ov-filter-bar"></div>
-      <div id="floorplan-dashboard-section" class="hidden">
-        <div id="floorplan-dashboard-grid"></div>
+      <div id="exec-dashboard">
+        <div id="exec-floor-col"></div>
+        <div id="exec-stats-col"></div>
       </div>
-      <div class="kpi-grid" id="kpi-grid">
-        <div class="kpi-card animate">
-          <div class="kpi-header">
-            <div>
-              <div class="kpi-title">Total Energy Consumption</div>
-              <div class="kpi-value" id="kpi-energy">0 kWh</div>
-              <div class="kpi-badge positive" id="kpi-energy-badge">
-                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
-                <span id="kpi-energy-pct">0%</span>
-              </div>
-              <div class="kpi-subtitle">Compared Last Period</div>
-            </div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            </div>
-          </div>
-          <div class="kpi-sparkline" id="spark-energy"></div>
-        </div>
-        <div class="kpi-card animate">
-          <div class="kpi-header">
-            <div>
-              <div class="kpi-title">Estimated Cost</div>
-              <div class="kpi-value" id="kpi-cost">$0</div>
-              <div class="kpi-badge positive" id="kpi-cost-badge">
-                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
-                <span id="kpi-cost-pct">0%</span>
-              </div>
-              <div class="kpi-subtitle">Compared Last Period</div>
-            </div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-            </div>
-          </div>
-          <div class="kpi-sparkline" id="spark-cost"></div>
-        </div>
-        <div class="kpi-card animate">
-          <div class="kpi-header">
-            <div>
-              <div class="kpi-title">Peak Demand</div>
-              <div class="kpi-value" id="kpi-peak">0 kW</div>
-              <div class="kpi-badge positive" id="kpi-peak-badge">
-                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
-                <span id="kpi-peak-pct">0%</span>
-              </div>
-              <div class="kpi-subtitle">Compared Last Period</div>
-            </div>
-            <div class="kpi-icon">
-              <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            </div>
-          </div>
-          <div class="kpi-sparkline" id="spark-peak"></div>
-        </div>
-      </div>
-
-      <div class="charts-grid">
-        <div class="panel panel-5">
-          <div class="panel-title">Energy Use</div>
-          <div class="chart-area" id="chart-energy-bars"></div>
-        </div>
-        <div class="panel panel-3">
-          <div class="panel-title">Energy Utilisation</div>
-          <div class="chart-area" id="chart-donut" style="min-height:280px"></div>
-          <div class="donut-legend" id="donut-legend"></div>
-        </div>
-        <div class="panel panel-4">
-          <div class="panel-title">Top Panels by Consumption</div>
-          <div class="hbar-list" id="hbar-panels"></div>
-        </div>
-        <div class="panel panel-12">
-          <div class="panel-title">Facility Load Profile</div>
-          <div class="chart-area" id="chart-load"></div>
-        </div>
-      </div>
-
-      <div id="dept-section" class="hidden">
-        <div class="charts-grid">
-          <div class="panel panel-5">
-            <div class="panel-title">Energy by Department</div>
-            <div class="chart-area" id="chart-dept-bars"></div>
-          </div>
-          <div class="panel panel-3">
-            <div class="panel-title">Department Share</div>
-            <div class="chart-area" id="chart-dept-donut" style="min-height:280px"></div>
-            <div class="donut-legend" id="dept-donut-legend"></div>
-          </div>
-          <div class="panel panel-4">
-            <div class="panel-title">Department Breakdown</div>
-            <div class="hbar-list" id="hbar-depts"></div>
-          </div>
-        </div>
-      </div>
-
-      <div id="meter-section" class="hidden">
-        <div class="charts-grid">
-          <div class="panel panel-12" id="meter-cards-panel">
-            <div class="panel-title">Utility Meters</div>
-            <div class="hbar-list" id="meter-bars"></div>
-          </div>
-        </div>
-      </div>
+      <div id="exec-load-strip"></div>
     </div>
 
     <!-- ANALYTICS TAB -->

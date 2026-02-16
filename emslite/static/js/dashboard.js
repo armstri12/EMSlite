@@ -63,7 +63,7 @@ async function initDashboard() {
     setupThemeToggle();
     setupSidebar();
     setupTabNavigation();
-    buildFilterBar("ov-filter-bar", "overview",   "daterange");
+    // Overview has no filter bar — it auto-displays latest data
     buildFilterBar("an-filter-bar", "analytics",  "daterange");
     buildFilterBar("cp-filter-bar", "comparison", "comparison");
     buildFilterBar("dt-filter-bar", "data",       "daterange");
@@ -444,320 +444,259 @@ function weekendShapes(ts) {
    TAB RENDERERS
    ═══════════════════════════════════════════════════════ */
 
-function renderOverview() {
-  const data = filterForTab("overview");
-  const st = tabState.overview;
-  const t=T(), m=metrics(data.timestamps,data.totalKw), cost=m.totalKwh*PRICE;
-  const mid=Math.floor(data.timestamps.length/2);
-  const m1=metrics(data.timestamps.slice(0,mid),data.totalKw.slice(0,mid));
-  const m2=metrics(data.timestamps.slice(mid),data.totalKw.slice(mid));
+async function renderOverview() {
+  const t = T();
+  // Use ALL data — no filters on the executive dashboard
+  const ts = D.timestamps || [];
+  const totalKw = D.total_kw || [];
+  const panelSeries = D.panel_series || {};
+  const lastIdx = ts.length - 1;
 
-  function setBadge(id, v1, v2, invert) {
-    const pct=v1?((v2-v1)/v1*100):0;
-    const el=document.getElementById(id+"-badge");
-    const pctEl=document.getElementById(id+"-pct");
-    if (!el || !pctEl) return;
-    const isUp=pct>0, isBad=invert?isUp:!isUp;
-    el.className="kpi-badge "+(isBad?"negative":"positive");
-    el.querySelector("svg").innerHTML=isUp
-      ?'<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>'
-      :'<polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>';
-    pctEl.textContent=(isUp?"+":"")+pct.toFixed(1)+"%";
+  // Global facility metrics
+  const m = metrics(ts, totalKw);
+  const currentKw = lastIdx >= 0 ? (totalKw[lastIdx] || 0) : 0;
+  const lf = m.peakKw > 0 ? currentKw / m.peakKw * 100 : 0;
+  const now = ts.length ? new Date(ts[lastIdx]) : new Date();
+
+  // Rolling windows: today, 7 days, 30 days
+  const todayStart = new Date(now); todayStart.setHours(0,0,0,0);
+  const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+  const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
+  let todayKwh = 0, weekKwh = 0, monthKwh = 0;
+  for (let i = 1; i < ts.length; i++) {
+    const ti = new Date(ts[i]);
+    const h = Math.max(0, (ti - new Date(ts[i-1])) / 3600000);
+    const v = totalKw[i] ?? 0;
+    if (ti >= todayStart) todayKwh += v * h;
+    if (ti >= weekAgo) weekKwh += v * h;
+    if (ti >= monthAgo) monthKwh += v * h;
   }
+  const todayCost = todayKwh * PRICE;
 
-  document.getElementById("kpi-energy").textContent=m.totalKwh.toFixed(0)+" kWh";
-  document.getElementById("kpi-cost").textContent="$"+cost.toFixed(0);
-  document.getElementById("kpi-peak").textContent=m.peakKw.toFixed(1)+" kW";
-  setBadge("kpi-energy",m1.totalKwh,m2.totalKwh,true);
-  setBadge("kpi-cost",m1.totalKwh*PRICE,m2.totalKwh*PRICE,true);
-  setBadge("kpi-peak",m1.peakKw,m2.peakKw,true);
+  const fmtKwh = v => v >= 10000 ? (v/1000).toFixed(1) + " MWh" : v >= 100 ? v.toFixed(0) + " kWh" : v.toFixed(1) + " kWh";
+  const fmtKw = v => v >= 1000 ? (v/1000).toFixed(1) + " MW" : v.toFixed(1) + " kW";
 
-  const de=dailyEnergy(data.timestamps,data.totalKw);
-  document.getElementById("spark-energy").innerHTML=sparkSVG(de.values,"#8BD435");
-  document.getElementById("spark-cost").innerHTML=sparkSVG(de.values.map(v=>v*PRICE),"#8BD435");
-  const byDay={};
-  data.timestamps.forEach((ts,i)=>{ const dk=new Date(ts).toISOString().slice(0,10); if(!byDay[dk])byDay[dk]=[]; byDay[dk].push(data.totalKw[i]??0); });
-  const dayPeaks=Object.keys(byDay).sort().map(dk=>Math.max(...byDay[dk]));
-  document.getElementById("spark-peak").innerHTML=sparkSVG(dayPeaks,"#8BD435");
+  // Gauge color
+  const gaugeColor = lf >= 80 ? '#EF4444' : lf >= 50 ? '#F97316' : '#8BD435';
 
-  Plotly.newPlot("chart-energy-bars",[{
-    x:de.dates, y:de.values, type:"bar",
-    marker:{ color:de.values.map((_,i)=>{ const frac=de.values.length>1?i/(de.values.length-1):0;
-      return `rgb(${Math.round(11+(139-11)*frac)},${Math.round(30+(212-30)*frac)},${Math.round(46+(53-46)*frac)})`;
-    }) }
-  }],pLayout({
-    xaxis:xA({title:{text:"Date",font:{size:12}},type:"category"}),
-    yaxis:yA({title:{text:"kWh",font:{size:12}}}), bargap:0.2
-  }),pCfg);
+  // Department breakdown (compact)
+  const deptRows = DEPARTMENTS.map(dept => {
+    const panels = DEPT_DEVICE_MAP[dept.id] || [];
+    let kw = 0;
+    panels.forEach(p => { kw += lastIdx >= 0 ? ((panelSeries[p] || [])[lastIdx] || 0) : 0; });
+    return { name: dept.display_name, color: dept.color || t.accent, kw, count: panels.length };
+  }).filter(d => d.count > 0).sort((a,b) => b.kw - a.kw);
+  const deptTotal = deptRows.reduce((s,d) => s + d.kw, 0) || 1;
+  const deptMax = deptRows.length ? deptRows[0].kw : 1;
 
-  const lf=m.peakKw>0?m.avgKw/m.peakKw*100:0, offPeak=100-lf;
-  Plotly.newPlot("chart-donut",[{
-    values:[lf,offPeak], labels:["Active Load","Reserve Capacity"],
-    type:"pie", hole:0.65, marker:{ colors:[t.donutA, t.donutB] },
-    textinfo:"none", hovertemplate:"%{label}: %{value:.1f}%<extra></extra>"
-  }],pLayout({ margin:{t:10,b:10,l:10,r:10}, showlegend:false, height:280,
-    annotations:[{ text:lf.toFixed(0)+"%", font:{size:28,color:t.ink,family:"Inter"}, showarrow:false }]
-  }),pCfg);
-  document.getElementById("donut-legend").innerHTML=`
-    <div class="donut-legend-item"><div class="donut-legend-dot" style="background:${t.donutA}"></div>Active Load - ${lf.toFixed(1)}%</div>
-    <div class="donut-legend-item"><div class="donut-legend-dot" style="background:${t.donutB}"></div>Reserve Capacity - ${offPeak.toFixed(1)}%</div>`;
+  // Top consumers by CURRENT kW (not cumulative)
+  const topConsumers = ALL_PANELS.map(p => {
+    const kw = lastIdx >= 0 ? ((panelSeries[p] || [])[lastIdx] || 0) : 0;
+    return { name: p, kw };
+  }).sort((a,b) => b.kw - a.kw).slice(0, 5);
+  const topMax = topConsumers.length ? topConsumers[0].kw : 1;
 
-  const active = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
-  const panelEnergies = active.map(p => {
-    const series=data.panelSeries[p]||[];
-    return { name:p, kwh:metrics(data.timestamps,series).totalKwh };
-  }).sort((a,b)=>b.kwh-a.kwh).slice(0,8);
-  const maxKwh=panelEnergies.length?panelEnergies[0].kwh:1;
-  document.getElementById("hbar-panels").innerHTML=panelEnergies.map(pe=>`
-    <div class="hbar-row">
-      <div class="hbar-label">${pe.name}</div>
-      <div class="hbar-track"><div class="hbar-fill" style="width:${(pe.kwh/maxKwh*100).toFixed(1)}%"></div></div>
-      <div class="hbar-value">${pe.kwh>=1000?(pe.kwh/1000).toFixed(1)+"k":pe.kwh.toFixed(0)} kWh</div>
-    </div>`).join("");
+  // ── Build stats sidebar HTML ──
+  const statsHtml = `
+    <div class="exec-gauge">
+      <div class="exec-gauge-title">Live Facility Load</div>
+      <div class="exec-gauge-value">${fmtKw(currentKw)}</div>
+      <div class="exec-gauge-bar"><div class="exec-gauge-fill" style="width:${Math.min(lf,100).toFixed(0)}%;background:${gaugeColor}"></div></div>
+      <div class="exec-gauge-sub">${lf.toFixed(0)}% of peak (${fmtKw(m.peakKw)})</div>
+    </div>
+    <div class="exec-kpi-grid">
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Today</div>
+        <div class="exec-kpi-val">${fmtKwh(todayKwh)}</div>
+      </div>
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Est. Cost Today</div>
+        <div class="exec-kpi-val">$${todayCost >= 1000 ? (todayCost/1000).toFixed(1)+'k' : todayCost.toFixed(0)}</div>
+      </div>
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Last 7 Days</div>
+        <div class="exec-kpi-val">${fmtKwh(weekKwh)}</div>
+      </div>
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Last 30 Days</div>
+        <div class="exec-kpi-val">${fmtKwh(monthKwh)}</div>
+      </div>
+    </div>
+    ${deptRows.length ? `<div class="exec-card">
+      <div class="exec-section-label">Departments (Live)</div>
+      ${deptRows.map(d => `<div class="exec-dept-row">
+        <div class="exec-dept-dot" style="background:${d.color}"></div>
+        <div class="exec-dept-name">${d.name}</div>
+        <div class="exec-dept-bar-wrap"><div class="exec-dept-bar-fill" style="width:${(d.kw/deptMax*100).toFixed(0)}%;background:${d.color}"></div></div>
+        <div class="exec-dept-pct">${(d.kw/deptTotal*100).toFixed(0)}%</div>
+        <div class="exec-dept-val">${fmtKw(d.kw)}</div>
+      </div>`).join("")}
+    </div>` : ""}
+    ${topConsumers.length ? `<div class="exec-card">
+      <div class="exec-section-label">Top Consumers (Live)</div>
+      ${topConsumers.map(c => `<div class="exec-top-row">
+        <div class="exec-top-name">${c.name}</div>
+        <div class="exec-top-bar-wrap"><div class="exec-top-bar-fill" style="width:${(c.kw/(topMax||1)*100).toFixed(0)}%"></div></div>
+        <div class="exec-top-val">${fmtKw(c.kw)}</div>
+      </div>`).join("")}
+    </div>` : ""}`;
 
-  const rolling=rollingMean(data.timestamps,data.totalKw,D.rolling_hours);
-  Plotly.newPlot("chart-load",[{
-    x:data.timestamps, y:rolling, mode:"lines",
-    line:{color:t.accent,width:2.5,shape:"spline"},
-    fill:"tozeroy", fillcolor:"rgba(139,212,53,0.1)",
-    hovertemplate:"%{x}<br>%{y:.1f} kW<extra></extra>"
-  }],pLayout({
-    xaxis:xA({title:{text:"Time",font:{size:12}},type:"date"}),
-    yaxis:yA({title:{text:"kW",font:{size:12}}})
-  }),pCfg);
+  document.getElementById("exec-stats-col").innerHTML = statsHtml;
 
-  if((D.utility_meters||[]).length) {
-    document.getElementById("meter-section").classList.remove("hidden");
-    const meterEnergies=(D.utility_meters||[]).map(mt=>{
-      const s=data.meterSeries[mt.name]||[];
-      return {name:mt.name, kwh:metrics(data.timestamps,s).totalKwh};
-    });
-    const mMax=meterEnergies.length?Math.max(...meterEnergies.map(m=>m.kwh)):1;
-    document.getElementById("meter-bars").innerHTML=meterEnergies.map(me=>`
-      <div class="hbar-row">
-        <div class="hbar-label">${me.name}</div>
-        <div class="hbar-track"><div class="hbar-fill" style="width:${(me.kwh/(mMax||1)*100).toFixed(1)}%"></div></div>
-        <div class="hbar-value">${me.kwh>=1000?(me.kwh/1000).toFixed(1)+"k":me.kwh.toFixed(0)} kWh</div>
-      </div>`).join("");
-  }
+  // ── Floor plan hero (left column) ──
+  await _renderExecFloorPlan(panelSeries, ts, now, fmtKwh, fmtKw, t);
 
-  // Department breakdown
-  if (DEPARTMENTS.length) {
-    document.getElementById("dept-section").classList.remove("hidden");
-    const deptEnergies = DEPARTMENTS.map(dept => {
-      const panels = (DEPT_DEVICE_MAP[dept.id] || []).filter(p => active.includes(p));
-      let kwh = 0;
-      panels.forEach(p => { kwh += metrics(data.timestamps, data.panelSeries[p] || []).totalKwh; });
-      return { name: dept.display_name, color: dept.color || t.accent, kwh, count: panels.length };
-    }).filter(d => d.count > 0).sort((a, b) => b.kwh - a.kwh);
-
-    if (deptEnergies.length) {
-      // Bar chart
-      Plotly.newPlot("chart-dept-bars", [{
-        x: deptEnergies.map(d => d.name), y: deptEnergies.map(d => d.kwh), type: "bar",
-        marker: { color: deptEnergies.map(d => d.color) }
-      }], pLayout({
-        xaxis: xA({ title: { text: "Department", font: { size: 12 } } }),
-        yaxis: yA({ title: { text: "kWh", font: { size: 12 } } }), bargap: 0.2
-      }), pCfg);
-
-      // Donut chart
-      const totalDeptKwh = deptEnergies.reduce((s, d) => s + d.kwh, 0);
-      Plotly.newPlot("chart-dept-donut", [{
-        values: deptEnergies.map(d => d.kwh), labels: deptEnergies.map(d => d.name),
-        type: "pie", hole: 0.65, marker: { colors: deptEnergies.map(d => d.color) },
-        textinfo: "none", hovertemplate: "%{label}: %{value:.0f} kWh (%{percent})<extra></extra>"
-      }], pLayout({ margin: { t: 10, b: 10, l: 10, r: 10 }, showlegend: false, height: 280 }), pCfg);
-      document.getElementById("dept-donut-legend").innerHTML = deptEnergies.map(d =>
-        `<div class="donut-legend-item"><div class="donut-legend-dot" style="background:${d.color}"></div>${d.name} - ${totalDeptKwh ? (d.kwh / totalDeptKwh * 100).toFixed(1) : 0}%</div>`
-      ).join("");
-
-      // Horizontal bars
-      const dMax = deptEnergies[0].kwh || 1;
-      document.getElementById("hbar-depts").innerHTML = deptEnergies.map(d => `
-        <div class="hbar-row">
-          <div class="hbar-label">${d.name}</div>
-          <div class="hbar-track"><div class="hbar-fill" style="width:${(d.kwh / dMax * 100).toFixed(1)}%;background:${d.color}"></div></div>
-          <div class="hbar-value">${d.kwh >= 1000 ? (d.kwh / 1000).toFixed(1) + "k" : d.kwh.toFixed(0)} kWh</div>
-        </div>`).join("");
-    }
-  } else {
-    document.getElementById("dept-section").classList.add("hidden");
-  }
-
-  // Floor plan dashboard panels
-  renderFloorPlanDashboard(data);
+  // ── 24h load strip at the bottom ──
+  _renderLoadStrip(ts, totalKw, t, m);
 }
 
-async function renderFloorPlanDashboard(data) {
-  const section = document.getElementById("floorplan-dashboard-section");
-  const grid = document.getElementById("floorplan-dashboard-grid");
-  if (!section || !grid) return;
+async function _renderExecFloorPlan(panelSeries, ts, now, fmtKwh, fmtKw, t) {
+  const col = document.getElementById("exec-floor-col");
+  let plans = [];
+  try { plans = await API.getFloorPlans(); } catch(e) {}
+  const dashPlans = plans.filter(fp => fp.show_on_dashboard);
 
-  try {
-    const plans = await API.getFloorPlans();
-    const dashPlans = plans.filter(fp => fp.show_on_dashboard);
-    if (!dashPlans.length) { section.classList.add("hidden"); return; }
+  if (!dashPlans.length) {
+    // Fallback: show load profile chart instead of floor plan
+    col.innerHTML = '<div class="panel-title">Facility Load Profile</div><div id="exec-fallback-load" style="height:100%;min-height:300px"></div>';
+    const rolling = rollingMean(ts, D.total_kw || [], D.rolling_hours);
+    setTimeout(() => {
+      Plotly.newPlot("exec-fallback-load", [{
+        x: ts, y: rolling, mode: "lines",
+        line: { color: t.accent, width: 2.5, shape: "spline" },
+        fill: "tozeroy", fillcolor: "rgba(139,212,53,0.1)",
+        hovertemplate: "%{x}<br>%{y:.1f} kW<extra></extra>"
+      }], pLayout({
+        xaxis: xA({ type: "date" }), yaxis: yA({}),
+        margin: { t: 8, l: 45, r: 15, b: 35 }
+      }), pCfg);
+    }, 0);
+    return;
+  }
 
-    section.classList.remove("hidden");
-    grid.innerHTML = "";
+  // Render the first dashboard floor plan as hero
+  const fp = dashPlans[0];
+  const plan = await API.getFloorPlan(fp.id);
+  const pins = plan.pins || [];
+  const lastIdx = ts.length - 1;
 
-    for (const fp of dashPlans) {
-      const plan = await API.getFloorPlan(fp.id);
-      const pins = plan.pins || [];
+  // Compute per-device metrics
+  const deviceMetrics = {};
+  pins.forEach(pin => {
+    const series = panelSeries[pin.device_id] || [];
+    const currentKw = lastIdx >= 0 ? (series[lastIdx] || 0) : 0;
+    const m = metrics(ts, series);
+    const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
+    let weekKwh = 0, monthKwh = 0;
+    for (let i = 1; i < ts.length; i++) {
+      const ti = new Date(ts[i]);
+      const v = series[i] ?? 0;
+      const h = Math.max(0, (ti - new Date(ts[i-1])) / 3600000);
+      if (ti >= weekAgo) weekKwh += v * h;
+      if (ti >= monthAgo) monthKwh += v * h;
+    }
+    deviceMetrics[pin.device_id] = { currentKw, peakKw: m.peakKw, avgKw: m.avgKw, weekKwh, monthKwh, totalKwh: m.totalKwh };
+  });
 
-      // Compute metrics per device
-      const lastIdx = data.timestamps.length - 1;
-      const deviceMetrics = {};
-      const now = data.timestamps.length ? new Date(data.timestamps[lastIdx]) : new Date();
-      pins.forEach(pin => {
-        const series = data.panelSeries[pin.device_id] || [];
-        const currentKw = lastIdx >= 0 ? (series[lastIdx] || 0) : 0;
-        const m = metrics(data.timestamps, series);
-        const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
-        const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
-        let weekKwh = 0, monthKwh = 0;
-        for (let i = 1; i < data.timestamps.length; i++) {
-          const t = new Date(data.timestamps[i]);
-          const v = series[i] ?? 0;
-          const h = Math.max(0, (t - new Date(data.timestamps[i - 1])) / 3600000);
-          if (t >= weekAgo) weekKwh += v * h;
-          if (t >= monthAgo) monthKwh += v * h;
-        }
-        deviceMetrics[pin.device_id] = { currentKw, totalKwh: m.totalKwh, peakKw: m.peakKw, avgKw: m.avgKw, weekKwh, monthKwh };
-      });
-
-      // Aggregate stats
-      let totalCurrent = 0, totalWeek = 0, totalMonth = 0, totalEnergy = 0, overallPeak = 0;
-      pins.forEach(p => {
-        const dm = deviceMetrics[p.device_id] || {};
-        totalCurrent += dm.currentKw || 0;
-        totalWeek += dm.weekKwh || 0;
-        totalMonth += dm.monthKwh || 0;
-        totalEnergy += dm.totalKwh || 0;
-        if ((dm.peakKw || 0) > overallPeak) overallPeak = dm.peakKw;
-      });
-      const fmtKwh = v => v >= 10000 ? (v / 1000).toFixed(1) + " MWh" : v >= 100 ? v.toFixed(0) + " kWh" : v.toFixed(1) + " kWh";
-
-      const block = document.createElement("div");
-      block.className = "fp-dashboard-block panel";
-      block.innerHTML = `
-        <div class="panel-title">${fp.name}</div>
-        <div class="fp-layout">
-          <div class="fp-layout-map">
-            <div class="fp-image-wrap" id="fp-wrap-${fp.id}">
-              <img src="${plan.image_path}" id="fp-img-${fp.id}"/>
-              ${pins.map((pin, idx) => {
-                const dm = deviceMetrics[pin.device_id] || {};
-                const label = pin.label || pin.device_id;
-                const kw = (dm.currentKw || 0).toFixed(1);
-                const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
-                const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
-                return `<div class="fp-dash-pin" data-idx="${idx}" style="left:${pin.x_pct}%;top:${pin.y_pct}%">
-                  <div class="fp-pin-dot" style="background:${dotColor}"></div>
-                  <div class="fp-pin-tag">${label}: ${kw} kW</div>
-                  <div class="fp-dash-tooltip">
-                    <div class="fp-tt-title">${label}</div>
-                    <div class="fp-tt-row"><span>Current</span> <strong>${kw} kW</strong></div>
-                    <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw || 0).toFixed(1)} kW</strong></div>
-                    <div class="fp-tt-row"><span>Avg</span> <strong>${(dm.avgKw || 0).toFixed(1)} kW</strong></div>
-                    <div class="fp-tt-row"><span>Last 7 days</span> <strong>${fmtKwh(dm.weekKwh || 0)}</strong></div>
-                    <div class="fp-tt-row"><span>Last 30 days</span> <strong>${fmtKwh(dm.monthKwh || 0)}</strong></div>
-                    <div class="fp-tt-row"><span>Total (period)</span> <strong>${fmtKwh(dm.totalKwh || 0)}</strong></div>
-                  </div>
-                </div>`;
-              }).join("")}
-            </div>
-          </div>
-          <div class="fp-layout-sidebar">
-            <div class="fp-stat-card">
-              <div class="fp-sc-label">Live Load</div>
-              <div class="fp-sc-value">${totalCurrent.toFixed(1)} kW</div>
-              <div class="fp-sc-sub">${pins.length} device${pins.length !== 1 ? 's' : ''} monitored</div>
-            </div>
-            <div class="fp-stat-card">
-              <div class="fp-sc-label">Peak Demand</div>
-              <div class="fp-sc-value">${overallPeak.toFixed(1)} kW</div>
-              <div class="fp-sc-sub">Highest single device</div>
-            </div>
-            <div class="fp-stat-card">
-              <div class="fp-sc-label">Usage (Last 7 Days)</div>
-              <div class="fp-sc-value">${fmtKwh(totalWeek)}</div>
-              <div class="fp-sc-sub">All devices combined</div>
-            </div>
-            <div class="fp-stat-card">
-              <div class="fp-sc-label">Usage (Last 30 Days)</div>
-              <div class="fp-sc-value">${fmtKwh(totalMonth)}</div>
-              <div class="fp-sc-sub">All devices combined</div>
-            </div>
-            <div class="fp-stat-card">
-              <div class="fp-sc-label">Total (Selected Period)</div>
-              <div class="fp-sc-value">${fmtKwh(totalEnergy)}</div>
-              <div class="fp-sc-sub">Matches filter range</div>
-            </div>
+  col.innerHTML = `
+    <div class="panel-title" style="margin-bottom:0.5rem">${fp.name}</div>
+    <div class="fp-image-wrap" id="fp-wrap-hero">
+      <img src="${plan.image_path}" id="fp-img-hero"/>
+      ${pins.map((pin, idx) => {
+        const dm = deviceMetrics[pin.device_id] || {};
+        const label = pin.label || pin.device_id;
+        const kw = (dm.currentKw || 0).toFixed(1);
+        const ratio = dm.peakKw > 0 ? dm.currentKw / dm.peakKw : 0;
+        const dotColor = ratio >= 0.8 ? '#EF4444' : ratio >= 0.5 ? '#F97316' : '#8BD435';
+        return `<div class="fp-dash-pin" data-idx="${idx}" style="left:${pin.x_pct}%;top:${pin.y_pct}%">
+          <div class="fp-pin-dot" style="background:${dotColor}"></div>
+          <div class="fp-pin-tag">${label}: ${kw} kW</div>
+          <div class="fp-dash-tooltip">
+            <div class="fp-tt-title">${label}</div>
+            <div class="fp-tt-row"><span>Current</span> <strong>${kw} kW</strong></div>
+            <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw||0).toFixed(1)} kW</strong></div>
+            <div class="fp-tt-row"><span>Avg</span> <strong>${(dm.avgKw||0).toFixed(1)} kW</strong></div>
+            <div class="fp-tt-row"><span>Last 7 days</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>
+            <div class="fp-tt-row"><span>Last 30 days</span> <strong>${fmtKwh(dm.monthKwh||0)}</strong></div>
           </div>
         </div>`;
+      }).join("")}
+    </div>`;
 
-      grid.appendChild(block);
+  const wrap = document.getElementById("fp-wrap-hero");
 
-      const wrap = block.querySelector(`#fp-wrap-${fp.id}`);
+  // ── Tooltip: JS show/hide with smart positioning ──
+  wrap.querySelectorAll(".fp-dash-pin").forEach(pinEl => {
+    const tooltip = pinEl.querySelector(".fp-dash-tooltip");
 
-      // ── Tooltip: JS show/hide + smart positioning ──
-      block.querySelectorAll(".fp-dash-pin").forEach(pinEl => {
-        const tooltip = pinEl.querySelector(".fp-dash-tooltip");
+    pinEl.addEventListener("mouseenter", () => {
+      const wrapRect = wrap.getBoundingClientRect();
+      const dotRect = pinEl.querySelector(".fp-pin-dot").getBoundingClientRect();
 
-        pinEl.addEventListener("mouseenter", () => {
-          // Position tooltip relative to the wrap container (not the pin)
-          // so we can clamp it to stay fully visible.
-          const wrapRect = wrap.getBoundingClientRect();
-          const dotRect = pinEl.querySelector(".fp-pin-dot").getBoundingClientRect();
+      // Move tooltip to wrap for positioning in wrap coords
+      tooltip.style.left = "0px";
+      tooltip.style.top = "0px";
+      wrap.appendChild(tooltip);
+      tooltip.classList.add("fp-tt-visible");
 
-          // Move tooltip to wrap so it's positioned in wrap coords
-          tooltip.style.left = "0px";
-          tooltip.style.top = "0px";
-          wrap.appendChild(tooltip);
-          tooltip.classList.add("fp-tt-visible");
+      const ttW = tooltip.offsetWidth;
+      const ttH = tooltip.offsetHeight;
+      const pinCX = dotRect.left + dotRect.width / 2 - wrapRect.left;
+      const pinCY = dotRect.top + dotRect.height / 2 - wrapRect.top;
 
-          const ttW = tooltip.offsetWidth;
-          const ttH = tooltip.offsetHeight;
-          const pinCX = dotRect.left + dotRect.width / 2 - wrapRect.left;
-          const pinCY = dotRect.top + dotRect.height / 2 - wrapRect.top;
+      let left = pinCX - ttW / 2;
+      left = Math.max(4, Math.min(left, wrapRect.width - ttW - 4));
 
-          // Horizontal: center on pin, clamp to edges
-          let left = pinCX - ttW / 2;
-          left = Math.max(4, Math.min(left, wrapRect.width - ttW - 4));
+      let top = pinCY - ttH - 16;
+      if (top < 4) top = pinCY + 16;
+      top = Math.max(4, Math.min(top, wrapRect.height - ttH - 4));
 
-          // Vertical: prefer above pin; fall below if no room
-          let top = pinCY - ttH - 16;
-          if (top < 4) top = pinCY + 16;
-          top = Math.max(4, Math.min(top, wrapRect.height - ttH - 4));
+      tooltip.style.left = left + "px";
+      tooltip.style.top = top + "px";
+    });
 
-          tooltip.style.left = left + "px";
-          tooltip.style.top = top + "px";
-        });
+    pinEl.addEventListener("mouseleave", () => {
+      tooltip.classList.remove("fp-tt-visible");
+      pinEl.appendChild(tooltip);
+    });
+  });
 
-        pinEl.addEventListener("mouseleave", () => {
-          tooltip.classList.remove("fp-tt-visible");
-          // Return tooltip to pin so DOM stays tidy
-          pinEl.appendChild(tooltip);
-        });
-      });
+  // ── Resolve label overlaps after image loads ──
+  const img = document.getElementById("fp-img-hero");
+  const doLabels = () => _fpResolveLabels(wrap);
+  if (img.complete) doLabels(); else img.addEventListener("load", doLabels);
+}
 
-      // ── Resolve label overlaps after image loads ──
-      const img = block.querySelector(`#fp-img-${fp.id}`);
-      const doLabels = () => _fpResolveLabels(wrap);
-      if (img.complete) doLabels(); else img.addEventListener("load", doLabels);
-    }
-  } catch (err) {
-    console.error("Failed to render floor plan dashboard:", err);
-    section.classList.add("hidden");
-  }
+function _renderLoadStrip(ts, totalKw, t, m) {
+  const strip = document.getElementById("exec-load-strip");
+  if (!strip) return;
+  strip.innerHTML = `
+    <div class="exec-strip-title">
+      <span>Facility Load Profile</span>
+      <span>Peak: ${m.peakKw.toFixed(1)} kW &nbsp; Avg: ${m.avgKw.toFixed(1)} kW</span>
+    </div>
+    <div id="exec-load-chart"></div>`;
+
+  const rolling = rollingMean(ts, totalKw, D.rolling_hours);
+  setTimeout(() => {
+    Plotly.newPlot("exec-load-chart", [{
+      x: ts, y: rolling, mode: "lines",
+      line: { color: t.accent, width: 2, shape: "spline" },
+      fill: "tozeroy", fillcolor: "rgba(139,212,53,0.1)",
+      hovertemplate: "%{x}<br>%{y:.1f} kW<extra></extra>"
+    }], pLayout({
+      margin: { t: 0, l: 35, r: 8, b: 18 },
+      xaxis: xA({ type: "date", showticklabels: true, tickfont: { size: 9 } }),
+      yaxis: yA({ showticklabels: true, tickfont: { size: 9 } }),
+      height: 55,
+      hovermode: "x unified"
+    }), pCfg);
+  }, 0);
 }
 
 /**
- * Keep labels next to their pins and push them apart when they overlap.
- * Labels stay as children of .fp-dash-pin — we only adjust the CSS
- * left/top offsets so they don't pile on each other.
+ * Resolve label positions: keep next to pins, push apart if overlapping.
  */
 function _fpResolveLabels(wrap) {
   const wrapW = wrap.offsetWidth;
@@ -767,42 +706,32 @@ function _fpResolveLabels(wrap) {
   const pinEls = Array.from(wrap.querySelectorAll(".fp-dash-pin"));
   if (!pinEls.length) return;
 
-  // Build a list of label rects in wrap-relative px coords
   const labels = pinEls.map(pin => {
     const tag = pin.querySelector(".fp-pin-tag");
     if (!tag) return null;
-    // Pin center in px (from the % left/top on the pin element)
     const px = parseFloat(pin.style.left) / 100 * wrapW;
     const py = parseFloat(pin.style.top) / 100 * wrapH;
-    // Reset to default offset (right of dot)
     tag.style.left = "12px";
     tag.style.top = "-3px";
     tag.style.transform = "none";
     const tw = tag.offsetWidth;
     const th = tag.offsetHeight;
-    // Absolute position of tag's top-left in wrap coords
-    // Pin is translate(-50%,-50%) so center is at (px, py).
-    // Dot is 14px. Tag default: left:12px, top:-3px from pin's top-left.
-    // Pin top-left = (px - 7, py - 7), so tag = (px - 7 + 12, py - 7 - 3) = (px + 5, py - 10)
     let x = px + 5;
     let y = py - 10;
-    // If label would go off right edge, flip to left side
     if (x + tw > wrapW - 4) { x = px - tw - 5; }
-    return { el: tag, pin, x, y, w: tw, h: th, anchorX: px, anchorY: py };
+    return { el: tag, x, y, w: tw, h: th, anchorX: px, anchorY: py };
   }).filter(Boolean);
 
-  // Iterative push-apart: nudge overlapping labels vertically
   for (let iter = 0; iter < 40; iter++) {
     let moved = false;
     for (let i = 0; i < labels.length; i++) {
       for (let j = i + 1; j < labels.length; j++) {
         const a = labels[i], b = labels[j];
-        const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-        const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        const ox = Math.min(a.x+a.w, b.x+b.w) - Math.max(a.x, b.x);
+        const oy = Math.min(a.y+a.h, b.y+b.h) - Math.max(a.y, b.y);
         if (ox > 0 && oy > 0) {
           const push = (oy / 2) + 2;
-          if (a.y <= b.y) { a.y -= push; b.y += push; }
-          else { a.y += push; b.y -= push; }
+          if (a.y <= b.y) { a.y -= push; b.y += push; } else { a.y += push; b.y -= push; }
           moved = true;
         }
       }
@@ -810,12 +739,9 @@ function _fpResolveLabels(wrap) {
     if (!moved) break;
   }
 
-  // Clamp and apply as offsets relative to the pin's top-left
   labels.forEach(lb => {
     lb.y = Math.max(0, Math.min(lb.y, wrapH - lb.h));
     lb.x = Math.max(0, Math.min(lb.x, wrapW - lb.w));
-    // Convert wrap-absolute back to pin-relative offset
-    // Pin top-left in wrap coords = (anchorX - 7, anchorY - 7)
     const offX = lb.x - (lb.anchorX - 7);
     const offY = lb.y - (lb.anchorY - 7);
     lb.el.style.left = offX + "px";
