@@ -476,6 +476,74 @@ async function openFloorPlanEditor(planId) {
   let drawingDevice = null;  // device_id being drawn
   let drawingPts = [];       // in-progress polygon vertices [{x, y}]
 
+  const zoneColors = ["#8BD435","#398EB9","#F97316","#EF4444","#38BDF8","#6DBF1A","#1D5B83","#9333EA"];
+
+  // ── Update just the SVG overlay (no full DOM rebuild) ──
+  function updateSvg() {
+    const svg = document.getElementById("fp-svg");
+    if (!svg) return;
+    svg.innerHTML = "";
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+
+    // Draw saved zones
+    zones.forEach((z, idx) => {
+      const pts = z.points || [];
+      if (pts.length < 3) return;
+      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+      poly.setAttribute("fill", zoneColors[idx % zoneColors.length]);
+      poly.setAttribute("fill-opacity", "0.25");
+      poly.setAttribute("stroke", zoneColors[idx % zoneColors.length]);
+      poly.setAttribute("stroke-width", "0.4");
+      poly.setAttribute("stroke-opacity", "0.8");
+      svg.appendChild(poly);
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      const dev = allDevices.find(d => d.id === z.device_id);
+      const label = z.label || (dev ? dev.display_name : z.device_id);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", cx); text.setAttribute("y", cy);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      text.setAttribute("font-size", "2.5"); text.setAttribute("font-weight", "700");
+      text.setAttribute("fill", zoneColors[idx % zoneColors.length]);
+      text.textContent = label;
+      svg.appendChild(text);
+    });
+
+    // Draw in-progress polygon
+    if (drawingPts.length > 0) {
+      if (drawingPts.length >= 2) {
+        const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        polyline.setAttribute("points", drawingPts.map(p => `${p.x},${p.y}`).join(" "));
+        polyline.setAttribute("fill", "none");
+        polyline.setAttribute("stroke", "#F97316");
+        polyline.setAttribute("stroke-width", "0.4");
+        polyline.setAttribute("stroke-dasharray", "1,0.5");
+        svg.appendChild(polyline);
+      }
+      drawingPts.forEach(p => {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", p.x); circle.setAttribute("cy", p.y);
+        circle.setAttribute("r", "0.7"); circle.setAttribute("fill", "#F97316");
+        svg.appendChild(circle);
+      });
+    }
+  }
+
+  // ── Update the drawing toolbar (hint, buttons) without full rebuild ──
+  function updateToolbar() {
+    const hint = document.getElementById("fp-draw-hint");
+    const finishBtn = document.getElementById("fp-finish-draw");
+    const cancelBtn = document.getElementById("fp-cancel-draw");
+    const ptCount = document.getElementById("fp-pt-count");
+    if (hint) hint.style.display = drawingDevice ? "" : "none";
+    if (finishBtn) finishBtn.style.display = (drawingDevice && drawingPts.length >= 3) ? "" : "none";
+    if (cancelBtn) cancelBtn.style.display = drawingDevice ? "" : "none";
+    if (ptCount) ptCount.textContent = drawingPts.length ? `(${drawingPts.length} pts)` : "";
+  }
+
   function render() {
     const placedIds = new Set(zones.map(z => z.device_id));
     const available = allDevices.filter(d => !placedIds.has(d.id));
@@ -489,12 +557,13 @@ async function openFloorPlanEditor(planId) {
         <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;align-items:center;flex-wrap:wrap">
           <select class="filter-input" id="fp-device-select" style="min-width:200px">
             <option value="">— Select device to map —</option>
-            ${available.map(d => `<option value="${d.id}">${d.display_name} (${d.id})</option>`).join("")}
+            ${available.map(d => `<option value="${d.id}"${d.id === drawingDevice ? " selected" : ""}>${d.display_name} (${d.id})</option>`).join("")}
           </select>
-          <span id="fp-draw-hint" style="font-size:0.78rem;color:var(--muted);display:none">
-            Click to add vertices. Double-click to finish the zone.
+          <span id="fp-draw-hint" style="font-size:0.78rem;color:var(--muted);display:${drawingDevice ? 'inline' : 'none'}">
+            Click to add vertices. <span id="fp-pt-count">${drawingPts.length ? `(${drawingPts.length} pts)` : ""}</span>
           </span>
-          ${drawingDevice ? `<button class="btn btn-ghost btn-sm" id="fp-cancel-draw" style="color:var(--negative-text)">Cancel</button>` : ""}
+          <button class="btn btn-primary btn-sm" id="fp-finish-draw" style="display:${drawingDevice && drawingPts.length >= 3 ? 'inline-block' : 'none'}">Finish Zone</button>
+          <button class="btn btn-ghost btn-sm" id="fp-cancel-draw" style="display:${drawingDevice ? 'inline-block' : 'none'};color:var(--negative-text)">Cancel</button>
         </div>
         <div id="fp-canvas-wrap" style="position:relative;display:inline-block;max-width:100%;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;cursor:${drawingDevice ? 'crosshair' : 'default'}">
           <img src="${plan.image_path}" style="display:block;max-width:100%;height:auto" id="fp-img"/>
@@ -515,62 +584,8 @@ async function openFloorPlanEditor(planId) {
         </div>
       </div>`;
 
-    // Draw existing zones on the SVG
-    const svg = document.getElementById("fp-svg");
-    const zoneColors = ["#8BD435","#398EB9","#F97316","#EF4444","#38BDF8","#6DBF1A","#1D5B83","#9333EA"];
-    zones.forEach((z, idx) => {
-      const pts = z.points || [];
-      if (pts.length < 3) return;
-      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-      poly.setAttribute("points", pts.map(p => `${p.x}%,${p.y}%`).join(" "));
-      // SVG percentage units don't work in points attr — we'll use viewBox trick
-      // Actually, we need to convert from % to SVG coords. Use viewBox 0 0 100 100.
-      poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
-      poly.setAttribute("fill", zoneColors[idx % zoneColors.length]);
-      poly.setAttribute("fill-opacity", "0.25");
-      poly.setAttribute("stroke", zoneColors[idx % zoneColors.length]);
-      poly.setAttribute("stroke-width", "0.4");
-      poly.setAttribute("stroke-opacity", "0.8");
-      svg.appendChild(poly);
-      // Label at centroid
-      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
-      const dev = allDevices.find(d => d.id === z.device_id);
-      const label = z.label || (dev ? dev.display_name : z.device_id);
-      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("x", cx);
-      text.setAttribute("y", cy);
-      text.setAttribute("text-anchor", "middle");
-      text.setAttribute("dominant-baseline", "central");
-      text.setAttribute("font-size", "2.5");
-      text.setAttribute("font-weight", "700");
-      text.setAttribute("fill", zoneColors[idx % zoneColors.length]);
-      text.textContent = label;
-      svg.appendChild(text);
-    });
-    svg.setAttribute("viewBox", "0 0 100 100");
-    svg.setAttribute("preserveAspectRatio", "none");
-
-    // Draw in-progress polygon
-    if (drawingPts.length > 0) {
-      if (drawingPts.length >= 2) {
-        const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-        polyline.setAttribute("points", drawingPts.map(p => `${p.x},${p.y}`).join(" "));
-        polyline.setAttribute("fill", "none");
-        polyline.setAttribute("stroke", "#F97316");
-        polyline.setAttribute("stroke-width", "0.4");
-        polyline.setAttribute("stroke-dasharray", "1,0.5");
-        svg.appendChild(polyline);
-      }
-      drawingPts.forEach(p => {
-        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("cx", p.x);
-        circle.setAttribute("cy", p.y);
-        circle.setAttribute("r", "0.7");
-        circle.setAttribute("fill", "#F97316");
-        svg.appendChild(circle);
-      });
-    }
+    // Draw SVG
+    updateSvg();
 
     // Wire close
     document.getElementById("fp-editor-close").addEventListener("click", () => {
@@ -579,42 +594,14 @@ async function openFloorPlanEditor(planId) {
     });
 
     // Wire cancel draw
-    const cancelBtn = document.getElementById("fp-cancel-draw");
-    if (cancelBtn) {
-      cancelBtn.addEventListener("click", () => {
-        drawingDevice = null;
-        drawingPts = [];
-        render();
-      });
-    }
-
-    // Wire device select
-    const sel = document.getElementById("fp-device-select");
-    const hint = document.getElementById("fp-draw-hint");
-    sel.addEventListener("change", () => {
-      drawingDevice = sel.value || null;
+    document.getElementById("fp-cancel-draw").addEventListener("click", () => {
+      drawingDevice = null;
       drawingPts = [];
-      const wrap = document.getElementById("fp-canvas-wrap");
-      wrap.style.cursor = drawingDevice ? "crosshair" : "default";
-      hint.style.display = drawingDevice ? "" : "none";
-    });
-
-    // Wire click on canvas to add polygon vertex
-    const wrap = document.getElementById("fp-canvas-wrap");
-    wrap.addEventListener("click", (e) => {
-      if (!drawingDevice) return;
-      const img = document.getElementById("fp-img");
-      const rect = img.getBoundingClientRect();
-      const x = Math.round((e.clientX - rect.left) / rect.width * 1000) / 10;
-      const y = Math.round((e.clientY - rect.top) / rect.height * 1000) / 10;
-      if (x < 0 || x > 100 || y < 0 || y > 100) return;
-      drawingPts.push({ x, y });
       render();
     });
 
-    // Wire double-click to finish polygon
-    wrap.addEventListener("dblclick", async (e) => {
-      e.preventDefault();
+    // Wire finish draw
+    document.getElementById("fp-finish-draw").addEventListener("click", async () => {
       if (!drawingDevice || drawingPts.length < 3) return;
       const newZone = await API.addFloorPlanZone(planId, {
         device_id: drawingDevice,
@@ -624,6 +611,31 @@ async function openFloorPlanEditor(planId) {
       drawingDevice = null;
       drawingPts = [];
       render();
+    });
+
+    // Wire device select
+    const sel = document.getElementById("fp-device-select");
+    sel.addEventListener("change", () => {
+      drawingDevice = sel.value || null;
+      drawingPts = [];
+      const wrap = document.getElementById("fp-canvas-wrap");
+      wrap.style.cursor = drawingDevice ? "crosshair" : "default";
+      updateToolbar();
+      updateSvg();
+    });
+
+    // Wire click on canvas to add polygon vertex (NO full render — just update SVG)
+    const wrap = document.getElementById("fp-canvas-wrap");
+    wrap.addEventListener("click", (e) => {
+      if (!drawingDevice) return;
+      const img = document.getElementById("fp-img");
+      const rect = img.getBoundingClientRect();
+      const x = Math.round((e.clientX - rect.left) / rect.width * 1000) / 10;
+      const y = Math.round((e.clientY - rect.top) / rect.height * 1000) / 10;
+      if (x < 0 || x > 100 || y < 0 || y > 100) return;
+      drawingPts.push({ x, y });
+      updateSvg();
+      updateToolbar();
     });
 
     // Wire remove zone buttons
