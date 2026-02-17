@@ -1023,7 +1023,7 @@ body {
   display: flex;
   justify-content: space-between;
 }
-#exec-load-chart { height: 55px; }
+#exec-load-chart { height: 70px; }
 
 @media (max-width: 1100px) {
   #exec-dashboard { flex-direction: column; }
@@ -1032,18 +1032,23 @@ body {
 }
 
 /* Live load gauge */
-.exec-gauge {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--card-radius);
-  padding: 0.65rem 0.85rem;
-  box-shadow: var(--shadow-card);
+/* Headline card (This Week summary) */
+.exec-headline {
+  padding: 0.75rem 0.85rem;
 }
-.exec-gauge-title { font-size: 0.6rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.exec-gauge-value { font-size: 1.4rem; font-weight: 800; color: var(--heading); margin: 2px 0 5px; }
-.exec-gauge-bar { height: 8px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
-.exec-gauge-fill { height: 100%; border-radius: 9999px; transition: width 0.6s; }
-.exec-gauge-sub { font-size: 0.65rem; color: var(--muted); margin-top: 3px; }
+.exec-headline-val { font-size: 1.4rem; font-weight: 800; color: var(--heading); margin: 2px 0 3px; }
+.exec-headline-sub { font-size: 0.7rem; color: var(--muted); }
+.exec-headline-cost { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+
+/* Trend indicators */
+.trend-up { color: #EF4444; font-weight: 700; }
+.trend-down { color: #8BD435; font-weight: 700; }
+.trend-flat { color: var(--muted); font-weight: 600; }
+
+/* Department trend row (WoW changes) */
+.exec-dept-trend-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--card-border); flex-wrap: wrap; }
+.exec-dept-trend { display: inline-flex; align-items: center; gap: 3px; font-size: 0.62rem; }
+.exec-dept-trend-label { font-size: 0.58rem; color: var(--muted); margin-left: auto; }
 
 /* Compact KPI cards (2x2 grid) */
 .exec-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

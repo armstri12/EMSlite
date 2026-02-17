@@ -86,11 +86,22 @@ def get_data(
         if col in df.columns:
             total_kw_series += amps_to_kw(df[col].fillna(0), line_voltage, power_factor).fillna(0)
 
+    # Build group (combo_columns) series — these are pre-computed kW columns
+    combo_cols = cfg.get("combo_columns", {})
+    group_series = {}
+    group_names = []
+    for col_name in combo_cols:
+        if col_name in df.columns:
+            group_names.append(col_name)
+            group_series[col_name] = df[col_name].fillna(0).round(3).tolist()
+
     return {
         "timestamps": timestamps,
         "total_kw": total_kw_series.round(3).tolist(),
         "panel_series": panel_series,
         "panel_names": all_panels,
+        "group_series": group_series,
+        "group_names": group_names,
         "rolling_hours": rolling_hours,
         "price_per_kwh": price_per_kwh,
     }
