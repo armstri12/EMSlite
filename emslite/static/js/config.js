@@ -472,49 +472,105 @@ async function openFloorPlanEditor(planId) {
   editor.classList.remove("hidden");
 
   const allDevices = devicesData || await API.getDevices();
-  let pins = plan.pins || [];
-  let addingDevice = null; // device_id being placed
+  let zones = plan.zones || [];
+  let drawingDevice = null;  // device_id being drawn
+  let drawingPts = [];       // in-progress polygon vertices [{x, y}]
 
   function render() {
-    const placedIds = new Set(pins.map(p => p.device_id));
+    const placedIds = new Set(zones.map(z => z.device_id));
     const available = allDevices.filter(d => !placedIds.has(d.id));
 
     editor.innerHTML = `
       <div style="border:2px solid var(--card-border);border-radius:0.75rem;padding:1rem;margin-top:1rem">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-          <h3 style="color:var(--heading);font-size:1rem;margin:0">${plan.name} — Pin Editor</h3>
+          <h3 style="color:var(--heading);font-size:1rem;margin:0">${plan.name} — Zone Editor</h3>
           <button class="btn btn-ghost btn-sm" id="fp-editor-close">Close Editor</button>
         </div>
-        <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;align-items:center;flex-wrap:wrap">
           <select class="filter-input" id="fp-device-select" style="min-width:200px">
-            <option value="">— Select device to place —</option>
+            <option value="">— Select device to map —</option>
             ${available.map(d => `<option value="${d.id}">${d.display_name} (${d.id})</option>`).join("")}
           </select>
-          <span id="fp-place-hint" style="font-size:0.8rem;color:var(--muted);display:none">Click on the floor plan to place the device</span>
+          <span id="fp-draw-hint" style="font-size:0.78rem;color:var(--muted);display:none">
+            Click to add vertices. Double-click to finish the zone.
+          </span>
+          ${drawingDevice ? `<button class="btn btn-ghost btn-sm" id="fp-cancel-draw" style="color:var(--negative-text)">Cancel</button>` : ""}
         </div>
-        <div id="fp-canvas-wrap" style="position:relative;display:inline-block;max-width:100%;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;cursor:${addingDevice ? 'crosshair' : 'default'}">
+        <div id="fp-canvas-wrap" style="position:relative;display:inline-block;max-width:100%;border:1px solid var(--card-border);border-radius:8px;overflow:hidden;cursor:${drawingDevice ? 'crosshair' : 'default'}">
           <img src="${plan.image_path}" style="display:block;max-width:100%;height:auto" id="fp-img"/>
-          ${pins.map(p => {
-            const dev = allDevices.find(d => d.id === p.device_id);
-            const label = p.label || (dev ? dev.display_name : p.device_id);
-            return `<div class="fp-pin" data-pin-id="${p.id}" style="position:absolute;left:${p.x_pct}%;top:${p.y_pct}%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:var(--p-400);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);cursor:pointer;z-index:2" title="${label}">
-              <div class="fp-pin-label" style="position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:0.65rem;white-space:nowrap;background:var(--card-bg);padding:1px 5px;border-radius:4px;color:var(--heading);box-shadow:0 1px 4px rgba(0,0,0,0.15);pointer-events:none">${label}</div>
-            </div>`;
-          }).join("")}
+          <svg id="fp-svg" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none"></svg>
         </div>
         <div style="margin-top:1rem">
-          <div style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:6px">Placed Devices (${pins.length})</div>
-          ${pins.length ? pins.map(p => {
-            const dev = allDevices.find(d => d.id === p.device_id);
+          <div style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:6px">Defined Zones (${zones.length})</div>
+          ${zones.length ? zones.map(z => {
+            const dev = allDevices.find(d => d.id === z.device_id);
+            const pts = z.points || [];
             return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
-              <span style="width:10px;height:10px;border-radius:50%;background:var(--p-400);flex-shrink:0"></span>
-              <span style="font-size:0.85rem;color:var(--heading);flex:1">${dev ? dev.display_name : p.device_id}</span>
-              <span style="font-size:0.7rem;color:var(--muted)">(${p.x_pct.toFixed(1)}%, ${p.y_pct.toFixed(1)}%)</span>
-              <button class="btn btn-ghost btn-sm fp-rm-pin" data-pin-id="${p.id}" style="padding:2px 6px;color:var(--negative-text);font-size:0.75rem">Remove</button>
+              <span style="width:10px;height:10px;border-radius:3px;background:var(--p-400);flex-shrink:0"></span>
+              <span style="font-size:0.85rem;color:var(--heading);flex:1">${z.label || (dev ? dev.display_name : z.device_id)}</span>
+              <span style="font-size:0.7rem;color:var(--muted)">${pts.length} pts</span>
+              <button class="btn btn-ghost btn-sm fp-rm-zone" data-zone-id="${z.id}" style="padding:2px 6px;color:var(--negative-text);font-size:0.75rem">Remove</button>
             </div>`;
-          }).join("") : '<div style="color:var(--muted);font-size:0.85rem">No devices placed yet.</div>'}
+          }).join("") : '<div style="color:var(--muted);font-size:0.85rem">No zones defined yet. Select a device and draw its coverage area.</div>'}
         </div>
       </div>`;
+
+    // Draw existing zones on the SVG
+    const svg = document.getElementById("fp-svg");
+    const zoneColors = ["#8BD435","#398EB9","#F97316","#EF4444","#38BDF8","#6DBF1A","#1D5B83","#9333EA"];
+    zones.forEach((z, idx) => {
+      const pts = z.points || [];
+      if (pts.length < 3) return;
+      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      poly.setAttribute("points", pts.map(p => `${p.x}%,${p.y}%`).join(" "));
+      // SVG percentage units don't work in points attr — we'll use viewBox trick
+      // Actually, we need to convert from % to SVG coords. Use viewBox 0 0 100 100.
+      poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+      poly.setAttribute("fill", zoneColors[idx % zoneColors.length]);
+      poly.setAttribute("fill-opacity", "0.25");
+      poly.setAttribute("stroke", zoneColors[idx % zoneColors.length]);
+      poly.setAttribute("stroke-width", "0.4");
+      poly.setAttribute("stroke-opacity", "0.8");
+      svg.appendChild(poly);
+      // Label at centroid
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      const dev = allDevices.find(d => d.id === z.device_id);
+      const label = z.label || (dev ? dev.display_name : z.device_id);
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", cx);
+      text.setAttribute("y", cy);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("dominant-baseline", "central");
+      text.setAttribute("font-size", "2.5");
+      text.setAttribute("font-weight", "700");
+      text.setAttribute("fill", zoneColors[idx % zoneColors.length]);
+      text.textContent = label;
+      svg.appendChild(text);
+    });
+    svg.setAttribute("viewBox", "0 0 100 100");
+    svg.setAttribute("preserveAspectRatio", "none");
+
+    // Draw in-progress polygon
+    if (drawingPts.length > 0) {
+      if (drawingPts.length >= 2) {
+        const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+        polyline.setAttribute("points", drawingPts.map(p => `${p.x},${p.y}`).join(" "));
+        polyline.setAttribute("fill", "none");
+        polyline.setAttribute("stroke", "#F97316");
+        polyline.setAttribute("stroke-width", "0.4");
+        polyline.setAttribute("stroke-dasharray", "1,0.5");
+        svg.appendChild(polyline);
+      }
+      drawingPts.forEach(p => {
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", p.x);
+        circle.setAttribute("cy", p.y);
+        circle.setAttribute("r", "0.7");
+        circle.setAttribute("fill", "#F97316");
+        svg.appendChild(circle);
+      });
+    }
 
     // Wire close
     document.getElementById("fp-editor-close").addEventListener("click", () => {
@@ -522,76 +578,61 @@ async function openFloorPlanEditor(planId) {
       editor.innerHTML = "";
     });
 
+    // Wire cancel draw
+    const cancelBtn = document.getElementById("fp-cancel-draw");
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", () => {
+        drawingDevice = null;
+        drawingPts = [];
+        render();
+      });
+    }
+
     // Wire device select
     const sel = document.getElementById("fp-device-select");
-    const hint = document.getElementById("fp-place-hint");
+    const hint = document.getElementById("fp-draw-hint");
     sel.addEventListener("change", () => {
-      addingDevice = sel.value || null;
+      drawingDevice = sel.value || null;
+      drawingPts = [];
       const wrap = document.getElementById("fp-canvas-wrap");
-      wrap.style.cursor = addingDevice ? "crosshair" : "default";
-      hint.style.display = addingDevice ? "" : "none";
+      wrap.style.cursor = drawingDevice ? "crosshair" : "default";
+      hint.style.display = drawingDevice ? "" : "none";
     });
 
-    // Wire click on canvas to place pin
+    // Wire click on canvas to add polygon vertex
     const wrap = document.getElementById("fp-canvas-wrap");
-    wrap.addEventListener("click", async (e) => {
-      if (!addingDevice) return;
+    wrap.addEventListener("click", (e) => {
+      if (!drawingDevice) return;
       const img = document.getElementById("fp-img");
       const rect = img.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width * 100);
-      const y = ((e.clientY - rect.top) / rect.height * 100);
+      const x = Math.round((e.clientX - rect.left) / rect.width * 1000) / 10;
+      const y = Math.round((e.clientY - rect.top) / rect.height * 1000) / 10;
       if (x < 0 || x > 100 || y < 0 || y > 100) return;
-      const newPin = await API.addFloorPlanPin(planId, {
-        device_id: addingDevice, x_pct: Math.round(x * 10) / 10, y_pct: Math.round(y * 10) / 10
-      });
-      pins.push(newPin);
-      addingDevice = null;
+      drawingPts.push({ x, y });
       render();
     });
 
-    // Wire remove pin buttons
-    document.querySelectorAll(".fp-rm-pin").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const pinId = parseInt(btn.dataset.pinId);
-        await API.deleteFloorPlanPin(planId, pinId);
-        pins = pins.filter(p => p.id !== pinId);
-        render();
+    // Wire double-click to finish polygon
+    wrap.addEventListener("dblclick", async (e) => {
+      e.preventDefault();
+      if (!drawingDevice || drawingPts.length < 3) return;
+      const newZone = await API.addFloorPlanZone(planId, {
+        device_id: drawingDevice,
+        points: drawingPts,
       });
+      zones.push(newZone);
+      drawingDevice = null;
+      drawingPts = [];
+      render();
     });
 
-    // Wire dragging of existing pins
-    document.querySelectorAll(".fp-pin").forEach(pinEl => {
-      let dragging = false;
-      pinEl.addEventListener("mousedown", (e) => {
-        if (addingDevice) return;
-        e.preventDefault();
-        dragging = true;
-        const img = document.getElementById("fp-img");
-        const onMove = (ev) => {
-          if (!dragging) return;
-          const rect = img.getBoundingClientRect();
-          const x = Math.max(0, Math.min(100, (ev.clientX - rect.left) / rect.width * 100));
-          const y = Math.max(0, Math.min(100, (ev.clientY - rect.top) / rect.height * 100));
-          pinEl.style.left = x + "%";
-          pinEl.style.top = y + "%";
-        };
-        const onUp = async (ev) => {
-          if (!dragging) return;
-          dragging = false;
-          document.removeEventListener("mousemove", onMove);
-          document.removeEventListener("mouseup", onUp);
-          const rect = img.getBoundingClientRect();
-          const x = Math.max(0, Math.min(100, (ev.clientX - rect.left) / rect.width * 100));
-          const y = Math.max(0, Math.min(100, (ev.clientY - rect.top) / rect.height * 100));
-          const pinId = parseInt(pinEl.dataset.pinId);
-          const newX = Math.round(x * 10) / 10;
-          const newY = Math.round(y * 10) / 10;
-          await API.updateFloorPlanPin(planId, pinId, { x_pct: newX, y_pct: newY });
-          const pin = pins.find(p => p.id === pinId);
-          if (pin) { pin.x_pct = newX; pin.y_pct = newY; }
-        };
-        document.addEventListener("mousemove", onMove);
-        document.addEventListener("mouseup", onUp);
+    // Wire remove zone buttons
+    document.querySelectorAll(".fp-rm-zone").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const zoneId = parseInt(btn.dataset.zoneId);
+        await API.deleteFloorPlanZone(planId, zoneId);
+        zones = zones.filter(z => z.id !== zoneId);
+        render();
       });
     });
   }

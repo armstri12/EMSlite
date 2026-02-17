@@ -127,6 +127,9 @@ class FloorPlan(Base):
     pins: Mapped[list[FloorPlanPin]] = relationship(
         back_populates="floor_plan", cascade="all, delete-orphan"
     )
+    zones: Mapped[list[FloorPlanZone]] = relationship(
+        back_populates="floor_plan", cascade="all, delete-orphan"
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -135,6 +138,7 @@ class FloorPlan(Base):
             "image_path": self.image_path,
             "show_on_dashboard": self.show_on_dashboard,
             "pin_count": len(self.pins) if self.pins else 0,
+            "zone_count": len(self.zones) if self.zones else 0,
         }
 
 
@@ -160,6 +164,33 @@ class FloorPlanPin(Base):
             "x_pct": self.x_pct,
             "y_pct": self.y_pct,
             "label": self.label,
+        }
+
+
+class FloorPlanZone(Base):
+    """A polygon zone on a floor plan, linked to a device/panel."""
+
+    __tablename__ = "floor_plan_zones"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    floor_plan_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("floor_plans.id", ondelete="CASCADE"), nullable=False
+    )
+    device_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    label: Mapped[str | None] = mapped_column(String(128), default=None)
+    points: Mapped[str] = mapped_column(Text, nullable=False)  # JSON: [{x: float, y: float}, ...]
+
+    floor_plan: Mapped[FloorPlan] = relationship(back_populates="zones")
+
+    def to_dict(self) -> dict:
+        import json as _json
+
+        return {
+            "id": self.id,
+            "floor_plan_id": self.floor_plan_id,
+            "device_id": self.device_id,
+            "label": self.label,
+            "points": _json.loads(self.points) if self.points else [],
         }
 
 

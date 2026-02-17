@@ -1,7 +1,8 @@
-"""Floor plan API endpoints — upload images, manage device pins."""
+"""Floor plan API endpoints — upload images, manage device pins and zones."""
 
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -10,7 +11,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ..database import get_session
-from ..models import FloorPlan, FloorPlanPin
+from ..models import FloorPlan, FloorPlanPin, FloorPlanZone
 
 router = APIRouter(prefix="/floorplans", tags=["floorplans"])
 
@@ -43,6 +44,7 @@ def get_floorplan(plan_id: int):
             raise HTTPException(404, "Floor plan not found")
         data = fp.to_dict()
         data["pins"] = [p.to_dict() for p in fp.pins]
+        data["zones"] = [z.to_dict() for z in fp.zones]
         return data
     finally:
         session.close()
@@ -200,6 +202,76 @@ def delete_pin(plan_id: int, pin_id: int):
         if not pin:
             raise HTTPException(404, "Pin not found")
         session.delete(pin)
+        session.commit()
+        return {"ok": True}
+    finally:
+        session.close()
+
+
+# ── Zone management (polygon areas) ───────────────────────
+
+class ZoneCreate(BaseModel):
+    device_id: str
+    points: list[dict]  # [{x: float, y: float}, ...]
+    label: str | None = None
+
+
+class ZoneUpdate(BaseModel):
+    points: list[dict] | None = None
+    label: str | None = None
+
+
+@router.post("/{plan_id}/zones")
+def add_zone(plan_id: int, body: ZoneCreate):
+    session = get_session()
+    try:
+        fp = session.query(FloorPlan).get(plan_id)
+        if not fp:
+            raise HTTPException(404, "Floor plan not found")
+        zone = FloorPlanZone(
+            floor_plan_id=plan_id,
+            device_id=body.device_id,
+            points=json.dumps(body.points),
+            label=body.label,
+        )
+        session.add(zone)
+        session.commit()
+        session.refresh(zone)
+        return zone.to_dict()
+    finally:
+        session.close()
+
+
+@router.put("/{plan_id}/zones/{zone_id}")
+def update_zone(plan_id: int, zone_id: int, body: ZoneUpdate):
+    session = get_session()
+    try:
+        zone = session.query(FloorPlanZone).filter(
+            FloorPlanZone.id == zone_id, FloorPlanZone.floor_plan_id == plan_id
+        ).first()
+        if not zone:
+            raise HTTPException(404, "Zone not found")
+        if body.points is not None:
+            zone.points = json.dumps(body.points)
+        if body.label is not None:
+            zone.label = body.label
+        session.commit()
+        session.refresh(zone)
+        return zone.to_dict()
+    finally:
+        session.close()
+
+
+@router.delete("/{plan_id}/zones/{zone_id}")
+def delete_zone(plan_id: int, zone_id: int):
+    session = get_session()
+    try:
+        zone = session.query(FloorPlanZone).filter(
+            FloorPlanZone.id == zone_id, FloorPlanZone.floor_plan_id == plan_id
+        ).first()
+        if not zone:
+            raise HTTPException(404, "Zone not found")
+        session.delete(zone)
         session.commit()
         return {"ok": True}
     finally:
