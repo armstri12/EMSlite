@@ -17,6 +17,7 @@ let isDark = false;
 let activeTab = "overview";
 let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
 let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
+let ALL_DEVICES = [];       // [{id, display_name, ...}]
 
 /* ─── Theme Palettes ─── */
 const lightC = {
@@ -47,13 +48,14 @@ async function initDashboard() {
     DATE_MIN = data.timestamps.length ? new Date(data.timestamps[0]).toISOString().slice(0,10) : "";
     DATE_MAX = data.timestamps.length ? new Date(data.timestamps[data.timestamps.length-1]).toISOString().slice(0,10) : "";
 
-    // Build department state
+    // Build department & device state
     DEPARTMENTS = departments || [];
+    ALL_DEVICES = devices || [];
     DEPT_DEVICE_MAP = {};
     for (const dept of DEPARTMENTS) {
       DEPT_DEVICE_MAP[dept.id] = [];
     }
-    for (const dev of (devices || [])) {
+    for (const dev of ALL_DEVICES) {
       if (dev.department_id && DEPT_DEVICE_MAP[dev.department_id]) {
         DEPT_DEVICE_MAP[dev.department_id].push(dev.id);
       }
@@ -457,6 +459,10 @@ async function renderOverview() {
   const fmtDollars = v => v >= 10000 ? "$" + (v/1000).toFixed(1) + "k" : v >= 1 ? "$" + v.toFixed(0) : "$" + v.toFixed(2);
   const fmtPct = (a, b) => { if (!b) return "—"; const d = ((a - b) / b * 100); return (d >= 0 ? "+" : "") + d.toFixed(0) + "%"; };
   const trendClass = (a, b) => a > b ? "trend-up" : a < b ? "trend-down" : "trend-flat";
+  // Short date formatter: "Feb 10" or "Feb 10 – Feb 16"
+  const fmtDate = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const fmtRange = (a, b) => fmtDate(a) + " – " + fmtDate(b);
+  const fmtMonth = d => d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   // ── Compute kWh over a date window ──
   function windowKwh(series, from, to) {
@@ -591,14 +597,15 @@ async function renderOverview() {
   // ── Top consumers by kWh this week (not live kW) ──
   const topConsumers = ALL_PANELS.map(p => {
     const kwh = windowKwh(panelSeries[p] || [], thisWeekStart, now);
-    return { name: p, kwh };
+    const dev = ALL_DEVICES.find(d => d.id === p);
+    return { name: dev ? dev.display_name : p, kwh };
   }).sort((a, b) => b.kwh - a.kwh).slice(0, 5);
   const topMax = topConsumers.length ? topConsumers[0].kwh : 1;
 
   // ── Build stats sidebar HTML ──
   const statsHtml = `
     <div class="exec-card exec-headline">
-      <div class="exec-section-label">This Week</div>
+      <div class="exec-section-label">This Week <span class="exec-date-range">${fmtRange(thisWeekStart, now)}</span></div>
       <div class="exec-headline-val">${fmtKwh(thisWeekKwh)}</div>
       <div class="exec-headline-sub">
         <span class="${trendClass(thisWeekKwh, lastWeekKwh)}">${fmtPct(thisWeekKwh, lastWeekKwh)}</span> vs last week (${fmtKwh(lastWeekKwh)})
@@ -610,21 +617,25 @@ async function renderOverview() {
         <div class="exec-kpi-label">Last 7 Weekdays</div>
         <div class="exec-kpi-val">${fmtKwh(weekdaysKwh)}</div>
         <div class="exec-kpi-sub">${fmtDollars(weekdaysKwh * PRICE)}</div>
+        <div class="exec-kpi-dates">${fmtRange(weekdaysStart, now)}</div>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-label">Last Weekend</div>
         <div class="exec-kpi-val">${fmtKwh(lastWeekendKwh)}</div>
         <div class="exec-kpi-sub"><span class="${trendClass(lastWeekendKwh, prevWeekendKwh)}">${fmtPct(lastWeekendKwh, prevWeekendKwh)}</span> vs prior</div>
+        <div class="exec-kpi-dates">${fmtRange(lastSat, lastSunEnd)}</div>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-label">Month to Date</div>
         <div class="exec-kpi-val">${fmtKwh(mtdKwh)}</div>
         <div class="exec-kpi-sub">${fmtDollars(mtdKwh * PRICE)}</div>
+        <div class="exec-kpi-dates">${fmtRange(mtdStart, now)}</div>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-label">Prior Month</div>
         <div class="exec-kpi-val">${fmtKwh(prevMonthKwh)}</div>
         <div class="exec-kpi-sub"><span class="${trendClass(mtdKwh, prevMonthKwh)}">${fmtPct(mtdKwh, prevMonthKwh)}</span> MTD pace</div>
+        <div class="exec-kpi-dates">${fmtMonth(prevMonthStart)}</div>
       </div>
     </div>
     <div class="exec-kpi-grid" style="margin-top:8px">
@@ -632,15 +643,17 @@ async function renderOverview() {
         <div class="exec-kpi-label">Peak (This Week)</div>
         <div class="exec-kpi-val">${thisWeekPeak >= 1000 ? (thisWeekPeak/1000).toFixed(1) + " MW" : thisWeekPeak.toFixed(0) + " kW"}</div>
         <div class="exec-kpi-sub"><span class="${trendClass(thisWeekPeak, lastWeekPeak)}">${fmtPct(thisWeekPeak, lastWeekPeak)}</span> vs last week</div>
+        <div class="exec-kpi-dates">${fmtRange(thisWeekStart, now)}</div>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-label">Avg Load (This Week)</div>
         <div class="exec-kpi-val">${thisWeekAvg >= 1000 ? (thisWeekAvg/1000).toFixed(1) + " MW" : thisWeekAvg.toFixed(0) + " kW"}</div>
         <div class="exec-kpi-sub"><span class="${trendClass(thisWeekAvg, lastWeekAvg)}">${fmtPct(thisWeekAvg, lastWeekAvg)}</span> vs last week</div>
+        <div class="exec-kpi-dates">${fmtRange(thisWeekStart, now)}</div>
       </div>
     </div>
     ${deptRows.length ? `<div class="exec-card">
-      <div class="exec-section-label">Departments (This Week)</div>
+      <div class="exec-section-label">Departments <span class="exec-date-range">${fmtRange(thisWeekStart, now)}</span></div>
       ${deptRows.map(d => `<div class="exec-dept-row">
         <div class="exec-dept-dot" style="background:${d.color}"></div>
         <div class="exec-dept-name">${d.name}</div>
@@ -657,7 +670,7 @@ async function renderOverview() {
       </div>` : ""}
     </div>` : ""}
     ${topConsumers.length ? `<div class="exec-card">
-      <div class="exec-section-label">Top Consumers (This Week)</div>
+      <div class="exec-section-label">Top Consumers <span class="exec-date-range">${fmtRange(thisWeekStart, now)}</span></div>
       ${topConsumers.map(c => `<div class="exec-top-row">
         <div class="exec-top-name">${c.name}</div>
         <div class="exec-top-bar-wrap"><div class="exec-top-bar-fill" style="width:${(c.kwh/(topMax||1)*100).toFixed(0)}%"></div></div>
@@ -762,13 +775,23 @@ async function _renderExecFloorPlan(panelSeries, ts, now, fmtKwh, t) {
       ${zones.map((zone, idx) => {
         const pts = zone.points || [];
         if (pts.length < 3) return "";
-        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
-        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        // Compute visual center constrained inside polygon bounding box
+        const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+        const minX = Math.min(...xs), maxX = Math.max(...xs);
+        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
         const dm = deviceMetrics[zone.device_id] || {};
-        const label = zone.label || zone.device_id;
-        return `<div class="fp-zone-label" data-zone-idx="${idx}" style="left:${cx}%;top:${cy}%">
-          <div class="fp-zone-label-text">${label}</div>
-          <div class="fp-zone-label-val">${fmtKwh(dm.weekKwh||0)}/wk</div>
+        const dev = ALL_DEVICES.find(d => d.id === zone.device_id);
+        const label = zone.label || (dev ? dev.display_name : zone.device_id);
+        // Scale label font based on zone size
+        const zoneW = maxX - minX, zoneH = maxY - minY;
+        const zoneSz = Math.min(zoneW, zoneH);
+        const fontSize = zoneSz < 8 ? 0.45 : zoneSz < 15 ? 0.55 : 0.62;
+        const valSize = fontSize * 0.85;
+        return `<div class="fp-zone-label" data-zone-idx="${idx}" style="left:${cx}%;top:${cy}%;max-width:${zoneW * 0.9}%">
+          <div class="fp-zone-label-text" style="font-size:${fontSize}rem">${label}</div>
+          <div class="fp-zone-label-val" style="font-size:${valSize}rem">${fmtKwh(dm.weekKwh||0)}/wk</div>
           <div class="fp-dash-tooltip">
             <div class="fp-tt-title">${label}</div>
             <div class="fp-tt-row"><span>Last 7 Days</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>

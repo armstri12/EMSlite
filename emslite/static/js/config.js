@@ -625,15 +625,31 @@ async function openFloorPlanEditor(planId) {
     });
 
     // Wire click on canvas to add polygon vertex (NO full render — just update SVG)
+    // Snap to nearest 45° angle relative to previous point
+    function snapTo45(prev, rawX, rawY) {
+      if (!prev) return { x: rawX, y: rawY };
+      const dx = rawX - prev.x;
+      const dy = rawY - prev.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 0.5) return { x: rawX, y: rawY };
+      const angle = Math.atan2(dy, dx);
+      const snap = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+      return {
+        x: Math.round((prev.x + dist * Math.cos(snap)) * 10) / 10,
+        y: Math.round((prev.y + dist * Math.sin(snap)) * 10) / 10,
+      };
+    }
     const wrap = document.getElementById("fp-canvas-wrap");
     wrap.addEventListener("click", (e) => {
       if (!drawingDevice) return;
       const img = document.getElementById("fp-img");
       const rect = img.getBoundingClientRect();
-      const x = Math.round((e.clientX - rect.left) / rect.width * 1000) / 10;
-      const y = Math.round((e.clientY - rect.top) / rect.height * 1000) / 10;
-      if (x < 0 || x > 100 || y < 0 || y > 100) return;
-      drawingPts.push({ x, y });
+      const rawX = Math.round((e.clientX - rect.left) / rect.width * 1000) / 10;
+      const rawY = Math.round((e.clientY - rect.top) / rect.height * 1000) / 10;
+      if (rawX < 0 || rawX > 100 || rawY < 0 || rawY > 100) return;
+      const prev = drawingPts.length ? drawingPts[drawingPts.length - 1] : null;
+      const { x, y } = snapTo45(prev, rawX, rawY);
+      drawingPts.push({ x: Math.max(0, Math.min(100, x)), y: Math.max(0, Math.min(100, y)) });
       updateSvg();
       updateToolbar();
     });
