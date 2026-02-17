@@ -479,14 +479,27 @@ async function renderOverview() {
   // Gauge color
   const gaugeColor = lf >= 80 ? '#EF4444' : lf >= 50 ? '#F97316' : '#8BD435';
 
-  // Department breakdown (compact)
+  // Department breakdown (compact) — includes unassigned devices
+  const assignedPanels = new Set();
+  Object.values(DEPT_DEVICE_MAP).forEach(arr => arr.forEach(p => assignedPanels.add(p)));
+
   const deptRows = DEPARTMENTS.map(dept => {
     const panels = DEPT_DEVICE_MAP[dept.id] || [];
     let kw = 0;
     panels.forEach(p => { kw += lastIdx >= 0 ? ((panelSeries[p] || [])[lastIdx] || 0) : 0; });
     return { name: dept.display_name, color: dept.color || t.accent, kw, count: panels.length };
-  }).filter(d => d.count > 0).sort((a,b) => b.kw - a.kw);
-  const deptTotal = deptRows.reduce((s,d) => s + d.kw, 0) || 1;
+  }).filter(d => d.count > 0);
+
+  // Add "Unassigned" row for panels not in any department
+  const unassigned = ALL_PANELS.filter(p => !assignedPanels.has(p));
+  if (unassigned.length) {
+    let uKw = 0;
+    unassigned.forEach(p => { uKw += lastIdx >= 0 ? ((panelSeries[p] || [])[lastIdx] || 0) : 0; });
+    deptRows.push({ name: "Unassigned", color: "#9BA5B0", kw: uKw, count: unassigned.length });
+  }
+
+  deptRows.sort((a,b) => b.kw - a.kw);
+  const deptTotal = currentKw || deptRows.reduce((s,d) => s + d.kw, 0) || 1;
   const deptMax = deptRows.length ? deptRows[0].kw : 1;
 
   // Top consumers by CURRENT kW (not cumulative)
