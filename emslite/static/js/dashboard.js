@@ -543,16 +543,47 @@ async function renderOverview() {
   const thisWeekAvg = windowAvgKw(totalKw, thisWeekStart, now);
   const lastWeekAvg = windowAvgKw(totalKw, lastWeekStart, lastWeekEnd);
 
-  // ── Department breakdown using group_series (combo_columns) ──
-  // Colors for groups — cycle through a pleasing palette
+  // ── Department breakdown ──
+  // Primary source: group_series (combo_columns like Production_kW, Facilities_kW)
+  // Fallback: DEPT_DEVICE_MAP from DB departments + device assignments
   const deptColors = ["#8BD435", "#398EB9", "#F97316", "#EF4444", "#38BDF8", "#6DBF1A", "#1D5B83", "#9333EA"];
-  const deptRows = groupNames.map((name, idx) => {
-    const series = groupSeries[name] || [];
-    const kwh = windowKwh(series, thisWeekStart, now);
-    const prevKwh = windowKwh(series, lastWeekStart, lastWeekEnd);
-    const label = name.replace(/_kW$/i, "").replace(/_/g, " ");
-    return { name: label, rawName: name, color: deptColors[idx % deptColors.length], kwh, prevKwh };
-  }).filter(d => d.kwh > 0 || d.prevKwh > 0);
+  let deptRows = [];
+  if (groupNames.length) {
+    deptRows = groupNames.map((name, idx) => {
+      const series = groupSeries[name] || [];
+      const kwh = windowKwh(series, thisWeekStart, now);
+      const prevKwh = windowKwh(series, lastWeekStart, lastWeekEnd);
+      const label = name.replace(/_kW$/i, "").replace(/_/g, " ");
+      return { name: label, rawName: name, color: deptColors[idx % deptColors.length], kwh, prevKwh };
+    }).filter(d => d.kwh > 0 || d.prevKwh > 0);
+  } else if (DEPARTMENTS.length) {
+    // Fallback: use DB departments with device-level panel data
+    deptRows = DEPARTMENTS.map((dept, idx) => {
+      const panels = DEPT_DEVICE_MAP[dept.id] || [];
+      let kwh = 0, prevKwh = 0;
+      panels.forEach(p => {
+        const s = panelSeries[p] || [];
+        kwh += windowKwh(s, thisWeekStart, now);
+        prevKwh += windowKwh(s, lastWeekStart, lastWeekEnd);
+      });
+      return { name: dept.display_name, rawName: dept.id, color: dept.color || deptColors[idx % deptColors.length], kwh, prevKwh };
+    }).filter(d => d.kwh > 0 || d.prevKwh > 0);
+    // Add unassigned
+    const assignedPanels = new Set();
+    Object.values(DEPT_DEVICE_MAP).forEach(arr => arr.forEach(p => assignedPanels.add(p)));
+    const unassigned = ALL_PANELS.filter(p => !assignedPanels.has(p));
+    if (unassigned.length) {
+      let kwh = 0, prevKwh = 0;
+      unassigned.forEach(p => {
+        const s = panelSeries[p] || [];
+        kwh += windowKwh(s, thisWeekStart, now);
+        prevKwh += windowKwh(s, lastWeekStart, lastWeekEnd);
+      });
+      if (kwh > 0 || prevKwh > 0) {
+        deptRows.push({ name: "Unassigned", rawName: "unassigned", color: "#9BA5B0", kwh, prevKwh });
+      }
+    }
+  }
   deptRows.sort((a, b) => b.kwh - a.kwh);
   const deptTotal = deptRows.reduce((s, d) => s + d.kwh, 0) || 1;
   const deptMax = deptRows.length ? deptRows[0].kwh : 1;
@@ -649,7 +680,7 @@ async function _renderExecFloorPlan(panelSeries, ts, now, fmtKwh, t) {
   try { plans = await API.getFloorPlans(); } catch(e) {}
   const dashPlans = plans.filter(fp => fp.show_on_dashboard);
 
-  // Time boundaries for pin metrics
+  // Time boundaries
   const weekAgo = new Date(now); weekAgo.setDate(weekAgo.getDate() - 7);
   const monthAgo = new Date(now); monthAgo.setMonth(monthAgo.getMonth() - 1);
 
@@ -672,12 +703,13 @@ async function _renderExecFloorPlan(panelSeries, ts, now, fmtKwh, t) {
 
   const fp = dashPlans[0];
   const plan = await API.getFloorPlan(fp.id);
-  const pins = plan.pins || [];
+  const zones = plan.zones || [];
 
-  // Compute per-device period metrics (kWh-based, not live)
+  // Compute per-device metrics for heatmap intensity
   const deviceMetrics = {};
-  pins.forEach(pin => {
-    const series = panelSeries[pin.device_id] || [];
+  const allWeekKwh = [];
+  zones.forEach(zone => {
+    const series = panelSeries[zone.device_id] || [];
     let weekKwh = 0, monthKwh = 0, avgKw = 0, peakKw = 0, cnt = 0;
     for (let i = 1; i < ts.length; i++) {
       const ti = new Date(ts[i]);
@@ -689,72 +721,115 @@ async function _renderExecFloorPlan(panelSeries, ts, now, fmtKwh, t) {
       avgKw += v; cnt++;
     }
     avgKw = cnt ? avgKw / cnt : 0;
-    deviceMetrics[pin.device_id] = { peakKw, avgKw, weekKwh, monthKwh };
+    deviceMetrics[zone.device_id] = { peakKw, avgKw, weekKwh, monthKwh };
+    allWeekKwh.push(weekKwh);
   });
+  const maxKwh = Math.max(...allWeekKwh, 1);
+
+  // Heatmap color scale: blue (low) → green → yellow → orange → red (high)
+  function heatColor(ratio) {
+    const r = Math.min(1, Math.max(0, ratio));
+    // 5-stop gradient: #2196F3 → #4CAF50 → #FFC107 → #FF9800 → #F44336
+    const stops = [
+      [0, 33, 150, 243],    // blue
+      [0.25, 76, 175, 80],  // green
+      [0.5, 255, 193, 7],   // yellow
+      [0.75, 255, 152, 0],  // orange
+      [1, 244, 67, 54],     // red
+    ];
+    let lo = stops[0], hi = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (r >= stops[i][0] && r <= stops[i+1][0]) { lo = stops[i]; hi = stops[i+1]; break; }
+    }
+    const f = lo[0] === hi[0] ? 0 : (r - lo[0]) / (hi[0] - lo[0]);
+    const R = Math.round(lo[1] + f * (hi[1] - lo[1]));
+    const G = Math.round(lo[2] + f * (hi[2] - lo[2]));
+    const B = Math.round(lo[3] + f * (hi[3] - lo[3]));
+    return `rgb(${R},${G},${B})`;
+  }
 
   col.innerHTML = `
-    <div class="panel-title" style="margin-bottom:0.5rem">${fp.name}</div>
+    <div class="panel-title" style="margin-bottom:0.5rem">${fp.name}
+      <span class="fp-heatmap-legend">
+        <span class="fp-legend-low">Low</span>
+        <span class="fp-legend-bar"></span>
+        <span class="fp-legend-high">High</span>
+      </span>
+    </div>
     <div class="fp-image-wrap" id="fp-wrap-hero">
       <img src="${plan.image_path}" id="fp-img-hero"/>
-      ${pins.map((pin, idx) => {
-        const dm = deviceMetrics[pin.device_id] || {};
-        const label = pin.label || pin.device_id;
-        return `<div class="fp-dash-pin" data-idx="${idx}" style="left:${pin.x_pct}%;top:${pin.y_pct}%">
-          <div class="fp-pin-dot" style="background:${t.accent}"></div>
-          <div class="fp-pin-tag">${label}: ${fmtKwh(dm.weekKwh||0)}/wk</div>
+      <svg class="fp-heatmap-svg" id="fp-heatmap-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+      ${zones.map((zone, idx) => {
+        const pts = zone.points || [];
+        if (pts.length < 3) return "";
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        const dm = deviceMetrics[zone.device_id] || {};
+        const label = zone.label || zone.device_id;
+        return `<div class="fp-zone-label" data-zone-idx="${idx}" style="left:${cx}%;top:${cy}%">
+          <div class="fp-zone-label-text">${label}</div>
+          <div class="fp-zone-label-val">${fmtKwh(dm.weekKwh||0)}/wk</div>
           <div class="fp-dash-tooltip">
             <div class="fp-tt-title">${label}</div>
             <div class="fp-tt-row"><span>Last 7 Days</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>
             <div class="fp-tt-row"><span>Last 30 Days</span> <strong>${fmtKwh(dm.monthKwh||0)}</strong></div>
-            <div class="fp-tt-row"><span>Avg Load</span> <strong>${dm.avgKw.toFixed(1)} kW</strong></div>
-            <div class="fp-tt-row"><span>Peak</span> <strong>${dm.peakKw.toFixed(1)} kW</strong></div>
+            <div class="fp-tt-row"><span>Avg Load</span> <strong>${(dm.avgKw||0).toFixed(1)} kW</strong></div>
+            <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw||0).toFixed(1)} kW</strong></div>
           </div>
         </div>`;
       }).join("")}
     </div>`;
 
+  // Draw heatmap polygons on SVG
+  const svg = document.getElementById("fp-heatmap-svg");
+  zones.forEach((zone, idx) => {
+    const pts = zone.points || [];
+    if (pts.length < 3) return;
+    const dm = deviceMetrics[zone.device_id] || {};
+    const ratio = maxKwh > 0 ? (dm.weekKwh || 0) / maxKwh : 0;
+    const color = heatColor(ratio);
+
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+    poly.setAttribute("fill", color);
+    poly.setAttribute("fill-opacity", "0.4");
+    poly.setAttribute("stroke", color);
+    poly.setAttribute("stroke-width", "0.3");
+    poly.setAttribute("stroke-opacity", "0.9");
+    poly.dataset.zoneIdx = idx;
+    poly.style.cursor = "pointer";
+    poly.style.pointerEvents = "all";
+    svg.appendChild(poly);
+  });
+
+  // Wire zone hover tooltips
   const wrap = document.getElementById("fp-wrap-hero");
-
-  // ── Tooltip: JS show/hide with smart positioning ──
-  wrap.querySelectorAll(".fp-dash-pin").forEach(pinEl => {
-    const tooltip = pinEl.querySelector(".fp-dash-tooltip");
-
-    pinEl.addEventListener("mouseenter", () => {
+  wrap.querySelectorAll(".fp-zone-label").forEach(labelEl => {
+    const tooltip = labelEl.querySelector(".fp-dash-tooltip");
+    labelEl.addEventListener("mouseenter", () => {
       const wrapRect = wrap.getBoundingClientRect();
-      const dotRect = pinEl.querySelector(".fp-pin-dot").getBoundingClientRect();
-
-      // Move tooltip to wrap for positioning in wrap coords
+      const elRect = labelEl.getBoundingClientRect();
       tooltip.style.left = "0px";
       tooltip.style.top = "0px";
       wrap.appendChild(tooltip);
       tooltip.classList.add("fp-tt-visible");
-
       const ttW = tooltip.offsetWidth;
       const ttH = tooltip.offsetHeight;
-      const pinCX = dotRect.left + dotRect.width / 2 - wrapRect.left;
-      const pinCY = dotRect.top + dotRect.height / 2 - wrapRect.top;
-
-      let left = pinCX - ttW / 2;
+      const cx = elRect.left + elRect.width / 2 - wrapRect.left;
+      const cy = elRect.top - wrapRect.top;
+      let left = cx - ttW / 2;
       left = Math.max(4, Math.min(left, wrapRect.width - ttW - 4));
-
-      let top = pinCY - ttH - 16;
-      if (top < 4) top = pinCY + 16;
+      let top = cy - ttH - 8;
+      if (top < 4) top = cy + elRect.height + 8;
       top = Math.max(4, Math.min(top, wrapRect.height - ttH - 4));
-
       tooltip.style.left = left + "px";
       tooltip.style.top = top + "px";
     });
-
-    pinEl.addEventListener("mouseleave", () => {
+    labelEl.addEventListener("mouseleave", () => {
       tooltip.classList.remove("fp-tt-visible");
-      pinEl.appendChild(tooltip);
+      labelEl.appendChild(tooltip);
     });
   });
-
-  // ── Resolve label overlaps after image loads ──
-  const img = document.getElementById("fp-img-hero");
-  const doLabels = () => _fpResolveLabels(wrap);
-  if (img.complete) doLabels(); else img.addEventListener("load", doLabels);
 }
 
 function _renderLoadStrip(ts, totalKw, t, groupSeries, groupNames, deptColors, weekStart) {
@@ -810,60 +885,6 @@ function _renderLoadStrip(ts, totalKw, t, groupSeries, groupNames, deptColors, w
       legend: { orientation: "h", y: -0.35, font: { size: 9 } }
     }), pCfg);
   }, 0);
-}
-
-/**
- * Resolve label positions: keep next to pins, push apart if overlapping.
- */
-function _fpResolveLabels(wrap) {
-  const wrapW = wrap.offsetWidth;
-  const wrapH = wrap.offsetHeight;
-  if (!wrapW || !wrapH) return;
-
-  const pinEls = Array.from(wrap.querySelectorAll(".fp-dash-pin"));
-  if (!pinEls.length) return;
-
-  const labels = pinEls.map(pin => {
-    const tag = pin.querySelector(".fp-pin-tag");
-    if (!tag) return null;
-    const px = parseFloat(pin.style.left) / 100 * wrapW;
-    const py = parseFloat(pin.style.top) / 100 * wrapH;
-    tag.style.left = "12px";
-    tag.style.top = "-3px";
-    tag.style.transform = "none";
-    const tw = tag.offsetWidth;
-    const th = tag.offsetHeight;
-    let x = px + 5;
-    let y = py - 10;
-    if (x + tw > wrapW - 4) { x = px - tw - 5; }
-    return { el: tag, x, y, w: tw, h: th, anchorX: px, anchorY: py };
-  }).filter(Boolean);
-
-  for (let iter = 0; iter < 40; iter++) {
-    let moved = false;
-    for (let i = 0; i < labels.length; i++) {
-      for (let j = i + 1; j < labels.length; j++) {
-        const a = labels[i], b = labels[j];
-        const ox = Math.min(a.x+a.w, b.x+b.w) - Math.max(a.x, b.x);
-        const oy = Math.min(a.y+a.h, b.y+b.h) - Math.max(a.y, b.y);
-        if (ox > 0 && oy > 0) {
-          const push = (oy / 2) + 2;
-          if (a.y <= b.y) { a.y -= push; b.y += push; } else { a.y += push; b.y -= push; }
-          moved = true;
-        }
-      }
-    }
-    if (!moved) break;
-  }
-
-  labels.forEach(lb => {
-    lb.y = Math.max(0, Math.min(lb.y, wrapH - lb.h));
-    lb.x = Math.max(0, Math.min(lb.x, wrapW - lb.w));
-    const offX = lb.x - (lb.anchorX - 7);
-    const offY = lb.y - (lb.anchorY - 7);
-    lb.el.style.left = offX + "px";
-    lb.el.style.top = offY + "px";
-  });
 }
 
 function renderAnalytics() {

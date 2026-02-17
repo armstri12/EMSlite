@@ -135,6 +135,29 @@ const API = {
     return res.json();
   },
 
+  async addFloorPlanZone(planId, data) {
+    const res = await fetch("/api/floorplans/" + planId + "/zones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async updateFloorPlanZone(planId, zoneId, data) {
+    const res = await fetch("/api/floorplans/" + planId + "/zones/" + zoneId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteFloorPlanZone(planId, zoneId) {
+    const res = await fetch("/api/floorplans/" + planId + "/zones/" + zoneId, { method: "DELETE" });
+    return res.json();
+  },
+
   async getConfig() {
     const res = await fetch("/api/config");
     return res.json();
