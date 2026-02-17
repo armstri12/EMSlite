@@ -1000,10 +1000,10 @@ body {
   box-shadow: var(--shadow-card);
 }
 #exec-stats-col {
-  flex: 0 0 310px;
+  flex: 0 0 340px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 #exec-load-strip {
   margin-top: 1rem;
@@ -1031,14 +1031,17 @@ body {
   #exec-stats-col > * { flex: 1 1 150px; }
 }
 
-/* Live load gauge */
 /* Headline card (This Week summary) */
 .exec-headline {
-  padding: 0.75rem 0.85rem;
+  padding: 1rem 1.1rem;
+  background: linear-gradient(135deg, var(--card-bg), var(--bar-track));
+  border: 1px solid var(--card-border);
+  border-radius: 0.85rem;
+  box-shadow: var(--shadow-card);
 }
-.exec-headline-val { font-size: 1.4rem; font-weight: 800; color: var(--heading); margin: 2px 0 3px; }
-.exec-headline-sub { font-size: 0.7rem; color: var(--muted); }
-.exec-headline-cost { font-size: 0.65rem; color: var(--muted); margin-top: 2px; }
+.exec-headline-val { font-size: 1.6rem; font-weight: 800; color: var(--heading); margin: 4px 0 5px; }
+.exec-headline-sub { font-size: 0.72rem; color: var(--muted); }
+.exec-headline-cost { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
 
 /* Trend indicators */
 .trend-up { color: #EF4444; font-weight: 700; }
@@ -1051,45 +1054,47 @@ body {
 .exec-dept-trend-label { font-size: 0.58rem; color: var(--muted); margin-left: auto; }
 
 /* Compact KPI cards (2x2 grid) */
-.exec-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.exec-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .exec-kpi {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 0.75rem;
-  padding: 0.5rem 0.65rem;
+  border-radius: 0.85rem;
+  padding: 0.7rem 0.85rem;
   box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s, transform 0.2s;
 }
-.exec-kpi-label { font-size: 0.58rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
-.exec-kpi-val { font-size: 0.95rem; font-weight: 700; color: var(--heading); margin-top: 1px; }
-.exec-kpi-sub { font-size: 0.58rem; color: var(--muted); }
-.exec-kpi-dates { font-size: 0.5rem; color: var(--muted); opacity: 0.7; margin-top: 1px; }
+.exec-kpi:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.exec-kpi-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.exec-kpi-val { font-size: 1.05rem; font-weight: 800; color: var(--heading); margin-top: 3px; }
+.exec-kpi-sub { font-size: 0.62rem; color: var(--muted); margin-top: 2px; }
+.exec-kpi-dates { font-size: 0.52rem; color: var(--muted); opacity: 0.65; margin-top: 2px; }
 
 /* Section wrapper card */
 .exec-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 0.75rem;
-  padding: 0.5rem 0.65rem;
+  border-radius: 0.85rem;
+  padding: 0.7rem 0.85rem;
   box-shadow: var(--shadow-card);
 }
-.exec-section-label { font-size: 0.58rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; display: flex; align-items: baseline; gap: 6px; }
-.exec-date-range { font-size: 0.5rem; font-weight: 500; color: var(--muted); opacity: 0.7; text-transform: none; letter-spacing: 0; }
+.exec-section-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; display: flex; align-items: baseline; gap: 6px; }
+.exec-date-range { font-size: 0.52rem; font-weight: 500; color: var(--muted); opacity: 0.65; text-transform: none; letter-spacing: 0; }
 
 /* Department compact list */
-.exec-dept-row { display: flex; align-items: center; gap: 5px; padding: 2px 0; }
-.exec-dept-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.exec-dept-name { font-size: 0.75rem; color: var(--heading); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.exec-dept-bar-wrap { width: 45px; height: 5px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; flex-shrink: 0; }
+.exec-dept-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.exec-dept-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.exec-dept-name { font-size: 0.78rem; font-weight: 500; color: var(--heading); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exec-dept-bar-wrap { width: 50px; height: 6px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; flex-shrink: 0; }
 .exec-dept-bar-fill { height: 100%; border-radius: 9999px; }
-.exec-dept-pct { font-size: 0.68rem; color: var(--muted); width: 30px; text-align: right; flex-shrink: 0; }
-.exec-dept-val { font-size: 0.68rem; font-weight: 600; color: var(--heading); width: 62px; text-align: right; flex-shrink: 0; }
+.exec-dept-pct { font-size: 0.72rem; color: var(--muted); width: 30px; text-align: right; flex-shrink: 0; }
+.exec-dept-val { font-size: 0.72rem; font-weight: 600; color: var(--heading); width: 65px; text-align: right; flex-shrink: 0; }
 
 /* Top consumers compact list */
-.exec-top-row { display: flex; align-items: center; gap: 5px; padding: 2px 0; }
-.exec-top-name { font-size: 0.72rem; color: var(--heading); width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
-.exec-top-bar-wrap { flex: 1; height: 5px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
+.exec-top-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.exec-top-name { font-size: 0.75rem; font-weight: 500; color: var(--heading); width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.exec-top-bar-wrap { flex: 1; height: 6px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
 .exec-top-bar-fill { height: 100%; border-radius: 9999px; background: var(--s-800); }
-.exec-top-val { font-size: 0.68rem; font-weight: 600; color: var(--muted); width: 62px; text-align: right; flex-shrink: 0; }
+.exec-top-val { font-size: 0.72rem; font-weight: 600; color: var(--muted); width: 65px; text-align: right; flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════════════
    FLOOR PLAN PINS + TOOLTIPS
@@ -1107,6 +1112,10 @@ body {
 .fp-heatmap-legend { display: inline-flex; align-items: center; gap: 4px; margin-left: 12px; font-size: 0.6rem; font-weight: 600; color: var(--muted); vertical-align: middle; }
 .fp-legend-bar { width: 60px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #2196F3, #4CAF50, #FFC107, #FF9800, #F44336); }
 .fp-legend-low, .fp-legend-high { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Zone alert icon (week-over-week increase >= 5%) */
+.fp-zone-alert { color: #EF4444; font-size: 0.55rem; margin-right: 2px; display: inline-block; vertical-align: middle; animation: alertPulse 2s ease-in-out infinite; }
+@keyframes alertPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* Zone labels (positioned at polygon center, constrained to zone bounds) */
 .fp-zone-label { position: absolute; z-index: 2; transform: translate(-50%, -50%); text-align: center; cursor: pointer; overflow: hidden; pointer-events: auto; }
