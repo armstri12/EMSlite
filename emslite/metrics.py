@@ -14,6 +14,7 @@ def compute_kpi(
     line_voltage: float = 480.0,
     power_factor: float = 1.0,
     price_per_kwh: float = 0.25,
+    carbon_kg_per_kwh: float = 0.4,
     panel_cols: list[str] | None = None,
 ) -> dict[str, Any]:
     """Compute high-level KPI metrics from a wide-format dataframe.
@@ -46,6 +47,8 @@ def compute_kpi(
     return {
         "total_kwh": round(total_kwh, 2),
         "total_cost": round(total_kwh * price_per_kwh, 2),
+        "total_carbon_kg": round(total_kwh * carbon_kg_per_kwh, 2),
+        "total_carbon_tonnes": round(total_kwh * carbon_kg_per_kwh / 1000.0, 3),
         "peak_kw": round(peak_kw, 2),
         "avg_kw": round(avg_kw, 2),
         "load_factor": round(load_factor, 1),
@@ -92,6 +95,7 @@ def compute_department_breakdown(
     line_voltage: float = 480.0,
     power_factor: float = 1.0,
     price_per_kwh: float = 0.25,
+    carbon_kg_per_kwh: float = 0.4,
 ) -> list[dict[str, Any]]:
     """Compute energy/cost metrics grouped by department."""
     ts = df["Timestamp"]
@@ -105,6 +109,8 @@ def compute_department_breakdown(
                 "department": dept_name,
                 "total_kwh": 0,
                 "total_cost": 0,
+                "total_carbon_kg": 0,
+                "total_carbon_tonnes": 0,
                 "peak_kw": 0,
                 "device_count": 0,
             })
@@ -121,6 +127,8 @@ def compute_department_breakdown(
             "department": dept_name,
             "total_kwh": round(total_kwh, 2),
             "total_cost": round(total_kwh * price_per_kwh, 2),
+            "total_carbon_kg": round(total_kwh * carbon_kg_per_kwh, 2),
+            "total_carbon_tonnes": round(total_kwh * carbon_kg_per_kwh / 1000.0, 3),
             "peak_kw": round(float(total_kw.max()), 2),
             "device_count": len(valid_panels),
         })
@@ -133,6 +141,8 @@ def _empty_kpi() -> dict[str, Any]:
     return {
         "total_kwh": 0,
         "total_cost": 0,
+        "total_carbon_kg": 0,
+        "total_carbon_tonnes": 0,
         "peak_kw": 0,
         "avg_kw": 0,
         "load_factor": 0,

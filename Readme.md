@@ -12,6 +12,7 @@ Open `visualize_meter_data.py` and adjust the `CONFIG` block to set:
 - `output_dir`: folder where the HTML plots should be written.
 - `line_voltage` / `power_factor`: conversion constants for amps → kW.
 - `price_per_kwh`: cost rate used for dashboard cost estimates.
+- `carbon_kg_per_kwh`: emissions factor used by the Executive dashboard (default `0.4` kg CO₂e/kWh).
 - `utility_meters`: list of named meters with panels attributed to each.
 - `top_n_meters` / `rolling_window`: plot tuning (use lowercase units like `1h`).
 - `outputs`: filenames for each plot.

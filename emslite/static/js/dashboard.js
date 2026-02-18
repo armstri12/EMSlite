@@ -14,7 +14,7 @@ let ALL_PANELS = [];
 let DATE_MIN = "";
 let DATE_MAX = "";
 let isDark = false;
-let activeTab = "overview";
+let activeTab = "executive";
 let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
 let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
 let ALL_DEVICES = [];       // [{id, display_name, ...}]
@@ -70,7 +70,7 @@ async function initDashboard() {
     buildFilterBar("cp-filter-bar", "comparison", "comparison");
     buildFilterBar("dt-filter-bar", "data",       "daterange");
     setupTableControls();
-    renderOverview();
+    renderCurrentTab();
   } catch (err) {
     console.error("Failed to load dashboard data:", err);
     document.querySelector(".main-container").innerHTML =
@@ -715,6 +715,141 @@ async function renderOverview() {
   await _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, now, fmtKwh, fmtDollars, fmtPct, trendClass, t, windowKwh, windowAvgKw, windowPeakKw, lastWeekStart, lastWeekEnd, lastSat, lastSunEnd, prevSat, prevSunEnd);
 }
 
+async function renderExecutive() {
+  const ts = D.timestamps || [];
+  const totalKw = D.total_kw || [];
+  const now = ts.length ? new Date(ts[ts.length - 1]) : new Date();
+  const carbonKgPerKwh = D.carbon_kg_per_kwh || 0.4;
+
+  const fmtKwh = v => v >= 10000 ? (v / 1000).toFixed(1) + " MWh" : v.toFixed(0) + " kWh";
+  const fmtDollars = v => v >= 10000 ? "$" + (v / 1000).toFixed(1) + "k" : "$" + v.toFixed(0);
+  const fmtPct = (a, b) => { if (!b) return "\u2014"; const d = ((a - b) / b * 100); return (d >= 0 ? "+" : "") + d.toFixed(1) + "%"; };
+  const trendClass = (a, b) => a > b ? "trend-up" : a < b ? "trend-down" : "trend-flat";
+  const fmtMonth = d => d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  const fmtTonnes = v => v >= 100 ? v.toFixed(0) + " tCO\u2082e" : v.toFixed(1) + " tCO\u2082e";
+  const fmtKw = v => v >= 1000 ? (v / 1000).toFixed(2) + " MW" : v.toFixed(0) + " kW";
+
+  function windowKwh(series, from, to) {
+    let kwh = 0;
+    for (let i = 1; i < ts.length; i++) {
+      const ti = new Date(ts[i]);
+      if (ti < from || ti > to) continue;
+      const h = Math.max(0, (ti - new Date(ts[i - 1])) / 3600000);
+      kwh += (series[i] ?? 0) * h;
+    }
+    return kwh;
+  }
+  function windowAvgKw(series, from, to) {
+    let sum = 0, cnt = 0;
+    for (let i = 0; i < ts.length; i++) {
+      const ti = new Date(ts[i]);
+      if (ti < from || ti > to) continue;
+      sum += series[i] ?? 0;
+      cnt++;
+    }
+    return cnt ? sum / cnt : 0;
+  }
+  function windowPeakKw(series, from, to) {
+    let peak = 0;
+    for (let i = 0; i < ts.length; i++) {
+      const ti = new Date(ts[i]);
+      if (ti < from || ti > to) continue;
+      peak = Math.max(peak, series[i] ?? 0);
+    }
+    return peak;
+  }
+
+  const mtdStart = new Date(now); mtdStart.setUTCDate(1); mtdStart.setUTCHours(0, 0, 0, 0);
+  const prevMonthEnd = new Date(mtdStart); prevMonthEnd.setUTCMilliseconds(-1);
+  const prevMonthStart = new Date(prevMonthEnd); prevMonthStart.setUTCDate(1); prevMonthStart.setUTCHours(0, 0, 0, 0);
+
+  const mtdKwh = windowKwh(totalKw, mtdStart, now);
+  const prevMonthKwh = windowKwh(totalKw, prevMonthStart, prevMonthEnd);
+  const mtdCost = mtdKwh * PRICE;
+  const prevMonthCost = prevMonthKwh * PRICE;
+  const mtdCarbonTonnes = (mtdKwh * carbonKgPerKwh) / 1000;
+  const prevMonthCarbonTonnes = (prevMonthKwh * carbonKgPerKwh) / 1000;
+  const mtdPeak = windowPeakKw(totalKw, mtdStart, now);
+  const prevPeak = windowPeakKw(totalKw, prevMonthStart, prevMonthEnd);
+  const mtdAvg = windowAvgKw(totalKw, mtdStart, now);
+  const prevAvg = windowAvgKw(totalKw, prevMonthStart, prevMonthEnd);
+  const mtdLf = mtdPeak > 0 ? (mtdAvg / mtdPeak * 100) : 0;
+  const prevLf = prevPeak > 0 ? (prevAvg / prevPeak * 100) : 0;
+
+  const topCardsHtml = `
+    <div class="exec-cards-grid cols-4">
+      <div class="exec-card exec-headline">
+        <div class="exec-section-label">Executive Snapshot <span class="exec-date-range">${fmtMonth(mtdStart)}</span></div>
+        <div class="exec-headline-cost">${fmtDollars(mtdCost)}</div>
+        <div class="exec-headline-val">${fmtKwh(mtdKwh)}</div>
+        <div class="exec-headline-sub"><span class="${trendClass(mtdCost, prevMonthCost)}">${fmtPct(mtdCost, prevMonthCost)}</span> vs ${fmtMonth(prevMonthStart)} cost</div>
+      </div>
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Carbon Impact (MTD)</div>
+        <div class="exec-kpi-cost">${fmtTonnes(mtdCarbonTonnes)}</div>
+        <div class="exec-kpi-sub"><span class="${trendClass(mtdCarbonTonnes, prevMonthCarbonTonnes)}">${fmtPct(mtdCarbonTonnes, prevMonthCarbonTonnes)}</span> vs ${fmtMonth(prevMonthStart)}</div>
+        <div class="exec-kpi-dates">${carbonKgPerKwh.toFixed(3)} kg CO\u2082e / kWh</div>
+      </div>
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Peak Demand (MTD)</div>
+        <div class="exec-kpi-cost">${fmtKw(mtdPeak)}</div>
+        <div class="exec-kpi-sub"><span class="${trendClass(mtdPeak, prevPeak)}">${fmtPct(mtdPeak, prevPeak)}</span> vs ${fmtMonth(prevMonthStart)}</div>
+      </div>
+      <div class="exec-kpi">
+        <div class="exec-kpi-label">Load Factor (MTD)</div>
+        <div class="exec-kpi-cost">${mtdLf.toFixed(1)}%</div>
+        <div class="exec-kpi-sub"><span class="${trendClass(mtdLf, prevLf)}">${fmtPct(mtdLf, prevLf)}</span> vs ${fmtMonth(prevMonthStart)}</div>
+      </div>
+    </div>`;
+
+  document.getElementById("execv-cards-top").innerHTML = topCardsHtml;
+  document.getElementById("execv-cards-bottom").innerHTML = `
+    <div class="exec-cards-grid cols-3">
+      <div class="exec-card">
+        <div class="exec-section-label">Storyline</div>
+        <div style="color:var(--heading);font-size:0.85rem;line-height:1.5">
+          Month-to-date spend is <strong>${fmtDollars(mtdCost)}</strong>, with carbon impact at <strong>${fmtTonnes(mtdCarbonTonnes)}</strong>.
+          Peak demand is ${fmtKw(mtdPeak)}, and utilization quality (load factor) is ${mtdLf.toFixed(1)}%.
+        </div>
+      </div>
+      <div class="exec-card">
+        <div class="exec-section-label">Carbon Assumption</div>
+        <div style="color:var(--heading);font-size:1.3rem;font-weight:700">${carbonKgPerKwh.toFixed(3)} kg CO\u2082e / kWh</div>
+        <div style="color:var(--muted);font-size:0.75rem;margin-top:6px">Editable in <code>visualization_config.json</code> via <code>carbon_kg_per_kwh</code>.</div>
+      </div>
+      <div class="exec-card">
+        <div class="exec-section-label">Estimated Savings Opportunity</div>
+        <div style="color:var(--heading);font-size:1.3rem;font-weight:700">${fmtDollars(Math.max(0, prevMonthCost - mtdCost))}</div>
+        <div style="color:var(--muted);font-size:0.75rem;margin-top:6px">Gap vs prior month total spend (directional).</div>
+      </div>
+    </div>`;
+
+  const monthly = {};
+  for (let i = 1; i < ts.length; i++) {
+    const t = new Date(ts[i]);
+    const prev = new Date(ts[i - 1]);
+    const key = t.toISOString().slice(0, 7);
+    const h = Math.max(0, (t - prev) / 3600000);
+    const kwh = (totalKw[i] ?? 0) * h;
+    if (!monthly[key]) monthly[key] = { kwh: 0 };
+    monthly[key].kwh += kwh;
+  }
+  const months = Object.keys(monthly).sort();
+  const costVals = months.map(m => monthly[m].kwh * PRICE);
+  const carbonVals = months.map(m => monthly[m].kwh * carbonKgPerKwh / 1000);
+
+  Plotly.newPlot("chart-execv-monthly", [
+    { x: months, y: costVals, type: "bar", name: "Cost ($)", marker: { color: "#C41230" }, yaxis: "y1" },
+    { x: months, y: carbonVals, type: "scatter", mode: "lines+markers", name: "Carbon (tCO\u2082e)", line: { color: "#2D3842", width: 2 }, yaxis: "y2" },
+  ], pLayout({
+    xaxis: xA({ type: "category" }),
+    yaxis: yA({ title: "Cost ($)" }),
+    yaxis2: Object.assign({}, yA({ title: "Carbon (tCO\u2082e)", overlaying: "y", side: "right" })),
+    margin: { t: 12, l: 55, r: 55, b: 45 },
+    legend: { orientation: "h", x: 0, y: 1.15 },
+  }), pCfg);
+}
+
 async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, now, fmtKwh, fmtDollars, fmtPct, trendClass, t, windowKwh, windowAvgKw, windowPeakKw, lastWeekStart, lastWeekEnd, lastSat, lastSunEnd, prevSat, prevSunEnd) {
   const col = document.getElementById("exec-floor-col");
   let plans = [];
@@ -1206,7 +1341,8 @@ function renderTableRows() {
    TAB DISPATCH
    ═══════════════════════════════════════════════════════ */
 function renderTab(tabKey) {
-  if      (tabKey === "overview")   renderOverview();
+  if      (tabKey === "executive")  renderExecutive();
+  else if (tabKey === "overview")   renderOverview();
   else if (tabKey === "analytics")  renderAnalytics();
   else if (tabKey === "comparison") renderComparison();
   else if (tabKey === "data")       renderDataTable();

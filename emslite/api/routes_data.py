@@ -44,6 +44,7 @@ def get_data(
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
+    carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     rolling_hours = parse_window_to_hours(cfg.get("rolling_window", "1h"))
 
     # Date filtering
@@ -104,6 +105,7 @@ def get_data(
         "group_names": group_names,
         "rolling_hours": rolling_hours,
         "price_per_kwh": price_per_kwh,
+        "carbon_kg_per_kwh": carbon_kg_per_kwh,
     }
 
 
@@ -123,6 +125,7 @@ def get_metrics(
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
+    carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
 
     # Date filtering
     if start:
@@ -140,12 +143,19 @@ def get_metrics(
         if dept_panels is not None:
             all_panels = [p for p in all_panels if p in dept_panels]
 
-    kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, all_panels)
+    kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, carbon_kg_per_kwh, all_panels)
     rankings = compute_panel_rankings(df, line_voltage, power_factor, all_panels, top_n=10)
 
     # Department breakdown
     dept_map = _get_all_department_panels()
-    dept_breakdown = compute_department_breakdown(df, dept_map, line_voltage, power_factor, price_per_kwh)
+    dept_breakdown = compute_department_breakdown(
+        df,
+        dept_map,
+        line_voltage,
+        power_factor,
+        price_per_kwh,
+        carbon_kg_per_kwh,
+    )
 
     # Enrich rankings with display names
     device_names = _get_device_display_names()
@@ -156,6 +166,7 @@ def get_metrics(
         "kpi": kpi,
         "rankings": rankings,
         "departments": dept_breakdown,
+        "carbon_kg_per_kwh": carbon_kg_per_kwh,
     }
 
 
