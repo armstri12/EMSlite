@@ -183,6 +183,7 @@ const API = {
     if (params.windowHours) q.set("window_hours", String(params.windowHours));
     if (params.latestOnly) q.set("latest_only", "true");
     const res = await fetch("/api/alerts?" + q.toString());
+    if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.status}`);
     return res.json();
   },
 
@@ -192,6 +193,7 @@ const API = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ keys }),
     });
+    if (!res.ok) throw new Error(`Failed to acknowledge alerts: ${res.status}`);
     return res.json();
   },
 
