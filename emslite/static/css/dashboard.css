@@ -1147,6 +1147,15 @@ body {
 .fp-legend-bar { width: 60px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, #2196F3, #4CAF50, #FFC107, #FF9800, #F44336); }
 .fp-legend-low, .fp-legend-high { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.03em; }
 
+/* Floor plan tab bar */
+.fp-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--card-border); margin-bottom: 0.75rem; overflow-x: auto; scrollbar-width: none; }
+.fp-tabs::-webkit-scrollbar { display: none; }
+.fp-tab { padding: 8px 20px; font-size: 0.8rem; font-weight: 600; color: var(--muted); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; margin-bottom: -2px; transition: all 0.2s; white-space: nowrap; font-family: inherit; }
+.fp-tab:hover { color: var(--heading); }
+.fp-tab.active { color: var(--p-400); border-bottom-color: var(--p-400); }
+.fp-tab-pane { }
+.fp-tab-pane.hidden { display: none; }
+
 /* Zone alert icons (week-over-week trend >= 5%) */
 .fp-zone-alert { color: #EF4444; font-size: 0.55rem; margin-right: 2px; display: inline-block; vertical-align: middle; animation: alertPulse 2s ease-in-out infinite; }
 .fp-zone-alert-down { color: #16A34A; font-size: 0.55rem; margin-right: 2px; display: inline-block; vertical-align: middle; }
