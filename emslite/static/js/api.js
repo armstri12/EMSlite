@@ -176,4 +176,23 @@ const API = {
     const res = await fetch("/api/ingest-log?limit=" + limit);
     return res.json();
   },
+
+  async getAlerts(includeAcknowledged = false) {
+    const res = await fetch("/api/alerts?include_acknowledged=" + (includeAcknowledged ? "true" : "false"));
+    return res.json();
+  },
+
+  async acknowledgeAlerts(keys) {
+    const res = await fetch("/api/alerts/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys }),
+    });
+    return res.json();
+  },
+
+  async getDataHealth() {
+    const res = await fetch("/api/data-health");
+    return res.json();
+  },
 };
