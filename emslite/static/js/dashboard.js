@@ -19,18 +19,18 @@ let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
 let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
 let ALL_DEVICES = [];       // [{id, display_name, ...}]
 
-/* ─── Theme Palettes ─── */
+/* ─── Theme Palettes — Edwards brand ─── */
 const lightC = {
   ink:"#3A424D", muted:"#9BA5B0", card:"#ffffff", bg:"#F8FAFB",
-  grid:"rgba(0,0,0,0.06)", accent:"#8BD435", accentDark:"#0B1E2E",
-  gradFrom:"#0B1E2E", gradTo:"#8BD435", donutA:"#8BD435", donutB:"#132D42",
-  series:["#8BD435","#0B1E2E","#398EB9","#F97316","#EF4444","#38BDF8","#6DBF1A","#1D5B83"]
+  grid:"rgba(0,0,0,0.06)", accent:"#C41230", accentDark:"#2D3842",
+  gradFrom:"#2D3842", gradTo:"#C41230", donutA:"#C41230", donutB:"#2D3842",
+  series:["#C41230","#2D3842","#398EB9","#F97316","#16A34A","#38BDF8","#9333EA","#1D5B83"]
 };
 const darkC = {
   ink:"#E3E8EC", muted:"#6C7784", card:"#171C23", bg:"#0D1117",
-  grid:"rgba(255,255,255,0.06)", accent:"#8BD435", accentDark:"#E3E8EC",
-  gradFrom:"#132D42", gradTo:"#8BD435", donutA:"#8BD435", donutB:"#1B4A6C",
-  series:["#8BD435","#38BDF8","#F97316","#EF4444","#74B6D5","#6DBF1A","#D4EAF2","#ABDF65"]
+  grid:"rgba(255,255,255,0.06)", accent:"#C41230", accentDark:"#E3E8EC",
+  gradFrom:"#2D3842", gradTo:"#C41230", donutA:"#C41230", donutB:"#4E6373",
+  series:["#C41230","#38BDF8","#F97316","#16A34A","#74B6D5","#9333EA","#D4EAF2","#F5939D"]
 };
 function T() { return isDark ? darkC : lightC; }
 
@@ -457,12 +457,13 @@ async function renderOverview() {
 
   const fmtKwh = v => v >= 10000 ? (v/1000).toFixed(1) + " MWh" : v >= 100 ? v.toFixed(0) + " kWh" : v.toFixed(1) + " kWh";
   const fmtDollars = v => v >= 10000 ? "$" + (v/1000).toFixed(1) + "k" : v >= 1 ? "$" + v.toFixed(0) : "$" + v.toFixed(2);
-  const fmtPct = (a, b) => { if (!b) return "—"; const d = ((a - b) / b * 100); return (d >= 0 ? "+" : "") + d.toFixed(0) + "%"; };
+  const fmtDollarsBig = v => v >= 10000 ? "$" + (v/1000).toFixed(1) + "k" : "$" + v.toFixed(2);
+  const fmtPct = (a, b) => { if (!b) return "\u2014"; const d = ((a - b) / b * 100); return (d >= 0 ? "+" : "") + d.toFixed(0) + "%"; };
   const trendClass = (a, b) => a > b ? "trend-up" : a < b ? "trend-down" : "trend-flat";
-  // Short date formatter: "Feb 10" or "Feb 10 – Feb 16"
   const fmtDate = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  const fmtRange = (a, b) => fmtDate(a) + " – " + fmtDate(b);
+  const fmtRange = (a, b) => fmtDate(a) + " \u2013 " + fmtDate(b);
   const fmtMonth = d => d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  const fmtKw = v => v >= 1000 ? (v/1000).toFixed(1) + " MW" : v.toFixed(0) + " kW";
 
   // ── Compute kWh over a date window ──
   function windowKwh(series, from, to) {
@@ -475,8 +476,6 @@ async function renderOverview() {
     }
     return kwh;
   }
-
-  // ── Compute avg kW over a date window ──
   function windowAvgKw(series, from, to) {
     let sum = 0, cnt = 0;
     for (let i = 0; i < ts.length; i++) {
@@ -486,8 +485,6 @@ async function renderOverview() {
     }
     return cnt ? sum / cnt : 0;
   }
-
-  // ── Compute peak kW over a date window ──
   function windowPeakKw(series, from, to) {
     let pk = 0;
     for (let i = 0; i < ts.length; i++) {
@@ -500,98 +497,104 @@ async function renderOverview() {
   }
 
   // ── Time period boundaries ──
-  // "This week" = Monday of current week through now
+  // "Last Full Week" = most recently completed Mon–Sun
   const dayOfWeek = now.getUTCDay(); // 0=Sun
   const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   const thisWeekStart = new Date(now); thisWeekStart.setUTCDate(thisWeekStart.getUTCDate() - mondayOffset); thisWeekStart.setUTCHours(0,0,0,0);
-
-  // "Last week" = previous Mon–Sun
-  const lastWeekEnd = new Date(thisWeekStart); lastWeekEnd.setUTCMilliseconds(-1);
+  const lastWeekEnd = new Date(thisWeekStart); lastWeekEnd.setUTCMilliseconds(-1); // Sun 23:59:59
   const lastWeekStart = new Date(lastWeekEnd); lastWeekStart.setUTCDate(lastWeekStart.getUTCDate() - 6); lastWeekStart.setUTCHours(0,0,0,0);
+  // "Week before that" = the Mon–Sun before last full week
+  const prevWeekEnd = new Date(lastWeekStart); prevWeekEnd.setUTCMilliseconds(-1);
+  const prevWeekStart = new Date(prevWeekEnd); prevWeekStart.setUTCDate(prevWeekStart.getUTCDate() - 6); prevWeekStart.setUTCHours(0,0,0,0);
 
-  // "Last 7 weekdays" — count back 7 weekdays from now
-  let wdCount = 0;
-  const weekdaysStart = new Date(now);
-  while (wdCount < 7) {
-    weekdaysStart.setUTCDate(weekdaysStart.getUTCDate() - 1);
-    const d = weekdaysStart.getUTCDay();
-    if (d >= 1 && d <= 5) wdCount++;
-  }
-  weekdaysStart.setUTCHours(0,0,0,0);
-
-  // "Last weekend" — most recent Sat + Sun
+  // "Last Weekend" — most recent completed Sat + Sun
   const lastSat = new Date(now);
   while (lastSat.getUTCDay() !== 6) lastSat.setUTCDate(lastSat.getUTCDate() - 1);
+  // If today is Saturday, go back one more week to get the *completed* weekend
+  if (now.getUTCDay() === 6 || now.getUTCDay() === 0) {
+    // We might be on the current weekend, take the prior one
+    if (lastSat >= thisWeekStart) lastSat.setUTCDate(lastSat.getUTCDate() - 7);
+  }
   lastSat.setUTCHours(0,0,0,0);
   const lastSunEnd = new Date(lastSat); lastSunEnd.setUTCDate(lastSunEnd.getUTCDate() + 1); lastSunEnd.setUTCHours(23,59,59,999);
 
-  // "Previous weekend" (the weekend before last weekend)
+  // "Weekend Before That"
   const prevSat = new Date(lastSat); prevSat.setUTCDate(prevSat.getUTCDate() - 7);
   const prevSunEnd = new Date(prevSat); prevSunEnd.setUTCDate(prevSunEnd.getUTCDate() + 1); prevSunEnd.setUTCHours(23,59,59,999);
 
   // "Month-to-date"
   const mtdStart = new Date(now); mtdStart.setUTCDate(1); mtdStart.setUTCHours(0,0,0,0);
-
   // "Previous month"
   const prevMonthEnd = new Date(mtdStart); prevMonthEnd.setUTCMilliseconds(-1);
   const prevMonthStart = new Date(prevMonthEnd); prevMonthStart.setUTCDate(1); prevMonthStart.setUTCHours(0,0,0,0);
 
-  // "Last 30 days" for department breakdown
-  const monthAgoStart = new Date(now); monthAgoStart.setUTCDate(monthAgoStart.getUTCDate() - 30); monthAgoStart.setUTCHours(0,0,0,0);
-
   // ── Facility-level period metrics ──
-  const thisWeekKwh = windowKwh(totalKw, thisWeekStart, now);
-  const lastWeekKwh = windowKwh(totalKw, lastWeekStart, lastWeekEnd);
-  const weekdaysKwh = windowKwh(totalKw, weekdaysStart, now);
+  const lastFullWeekKwh = windowKwh(totalKw, lastWeekStart, lastWeekEnd);
+  const prevFullWeekKwh = windowKwh(totalKw, prevWeekStart, prevWeekEnd);
   const lastWeekendKwh = windowKwh(totalKw, lastSat, lastSunEnd);
   const prevWeekendKwh = windowKwh(totalKw, prevSat, prevSunEnd);
   const mtdKwh = windowKwh(totalKw, mtdStart, now);
   const prevMonthKwh = windowKwh(totalKw, prevMonthStart, prevMonthEnd);
-  const thisWeekPeak = windowPeakKw(totalKw, thisWeekStart, now);
   const lastWeekPeak = windowPeakKw(totalKw, lastWeekStart, lastWeekEnd);
-  const thisWeekAvg = windowAvgKw(totalKw, thisWeekStart, now);
+  const prevWeekPeakVal = windowPeakKw(totalKw, prevWeekStart, prevWeekEnd);
   const lastWeekAvg = windowAvgKw(totalKw, lastWeekStart, lastWeekEnd);
+  const prevWeekAvgVal = windowAvgKw(totalKw, prevWeekStart, prevWeekEnd);
 
-  // ── Department breakdown (Last 30 Days) ──
-  // Primary source: group_series (combo_columns like Production_kW, Facilities_kW)
-  // Fallback: DEPT_DEVICE_MAP from DB departments + device assignments
-  const deptColors = ["#8BD435", "#398EB9", "#F97316", "#EF4444", "#38BDF8", "#6DBF1A", "#1D5B83", "#9333EA"];
-  // Build set of disabled device IDs
+  // Costs
+  const lastFullWeekCost = lastFullWeekKwh * PRICE;
+  const prevFullWeekCost = prevFullWeekKwh * PRICE;
+  const lastWeekendCost = lastWeekendKwh * PRICE;
+  const prevWeekendCost = prevWeekendKwh * PRICE;
+  const mtdCost = mtdKwh * PRICE;
+
+  // ── Department breakdown (Last Full Week) ──
+  const deptColors = ["#C41230","#2D3842","#398EB9","#F97316","#16A34A","#38BDF8","#9333EA","#1D5B83"];
   const disabledDevices = new Set(ALL_DEVICES.filter(d => !d.enabled).map(d => d.id));
+
+  // Build dept->color lookup for top consumers
+  const deptColorMap = {};
   let deptRows = [];
   if (groupNames.length) {
     deptRows = groupNames.map((name, idx) => {
       const series = groupSeries[name] || [];
-      const kwh = windowKwh(series, monthAgoStart, now);
-      const prevKwh = windowKwh(series, lastWeekStart, lastWeekEnd);
+      const kwh = windowKwh(series, lastWeekStart, lastWeekEnd);
+      const avgKw = windowAvgKw(series, lastWeekStart, lastWeekEnd);
+      const peakKw = windowPeakKw(series, lastWeekStart, lastWeekEnd);
+      const prevKwh = windowKwh(series, prevWeekStart, prevWeekEnd);
       const label = name.replace(/_kW$/i, "").replace(/_/g, " ");
-      return { name: label, rawName: name, color: deptColors[idx % deptColors.length], kwh, prevKwh };
+      const color = deptColors[idx % deptColors.length];
+      deptColorMap[name] = color;
+      return { name: label, rawName: name, color, kwh, prevKwh, avgKw, peakKw };
     }).filter(d => d.kwh > 0 || d.prevKwh > 0);
   } else if (DEPARTMENTS.length) {
-    // Fallback: use DB departments with device-level panel data
     deptRows = DEPARTMENTS.map((dept, idx) => {
       const panels = (DEPT_DEVICE_MAP[dept.id] || []).filter(p => !disabledDevices.has(p));
-      let kwh = 0, prevKwh = 0;
+      let kwh = 0, prevKwh = 0, avgKw = 0, peakKw = 0;
       panels.forEach(p => {
         const s = panelSeries[p] || [];
-        kwh += windowKwh(s, monthAgoStart, now);
-        prevKwh += windowKwh(s, lastWeekStart, lastWeekEnd);
+        kwh += windowKwh(s, lastWeekStart, lastWeekEnd);
+        prevKwh += windowKwh(s, prevWeekStart, prevWeekEnd);
+        avgKw += windowAvgKw(s, lastWeekStart, lastWeekEnd);
+        peakKw = Math.max(peakKw, windowPeakKw(s, lastWeekStart, lastWeekEnd));
       });
-      return { name: dept.display_name, rawName: dept.id, color: dept.color || deptColors[idx % deptColors.length], kwh, prevKwh };
+      const color = dept.color || deptColors[idx % deptColors.length];
+      deptColorMap[dept.id] = color;
+      return { name: dept.display_name, rawName: dept.id, color, kwh, prevKwh, avgKw, peakKw };
     }).filter(d => d.kwh > 0 || d.prevKwh > 0);
-    // Add unassigned
     const assignedPanels = new Set();
     Object.values(DEPT_DEVICE_MAP).forEach(arr => arr.forEach(p => assignedPanels.add(p)));
     const unassigned = ALL_PANELS.filter(p => !assignedPanels.has(p) && !disabledDevices.has(p));
     if (unassigned.length) {
-      let kwh = 0, prevKwh = 0;
+      let kwh = 0, prevKwh = 0, avgKw = 0, peakKw = 0;
       unassigned.forEach(p => {
         const s = panelSeries[p] || [];
-        kwh += windowKwh(s, monthAgoStart, now);
-        prevKwh += windowKwh(s, lastWeekStart, lastWeekEnd);
+        kwh += windowKwh(s, lastWeekStart, lastWeekEnd);
+        prevKwh += windowKwh(s, prevWeekStart, prevWeekEnd);
+        avgKw += windowAvgKw(s, lastWeekStart, lastWeekEnd);
+        peakKw = Math.max(peakKw, windowPeakKw(s, lastWeekStart, lastWeekEnd));
       });
       if (kwh > 0 || prevKwh > 0) {
-        deptRows.push({ name: "Unassigned", rawName: "unassigned", color: "#9BA5B0", kwh, prevKwh });
+        deptRows.push({ name: "Unassigned", rawName: "unassigned", color: "#9BA5B0", kwh, prevKwh, avgKw, peakKw });
       }
     }
   }
@@ -599,103 +602,120 @@ async function renderOverview() {
   const deptTotal = deptRows.reduce((s, d) => s + d.kwh, 0) || 1;
   const deptMax = deptRows.length ? deptRows[0].kwh : 1;
 
-  // ── Top consumers by kWh this week — skip disabled devices ──
+  // ── Top consumers by kWh last full week — skip disabled ──
+  // Find department color for each device
+  function getDeviceDeptColor(devId) {
+    const dev = ALL_DEVICES.find(d => d.id === devId);
+    if (!dev) return "#9BA5B0";
+    if (dev.department_id && deptColorMap[dev.department_id]) return deptColorMap[dev.department_id];
+    // Check group membership
+    for (const [gName, gColor] of Object.entries(deptColorMap)) {
+      const gDef = (D.group_definitions || []).find(g => g.name === gName);
+      if (gDef && gDef.panels && gDef.panels.includes(devId)) return gColor;
+    }
+    return "#9BA5B0";
+  }
+
   const topConsumers = ALL_PANELS
     .filter(p => !disabledDevices.has(p))
     .map(p => {
-      const kwh = windowKwh(panelSeries[p] || [], thisWeekStart, now);
+      const kwh = windowKwh(panelSeries[p] || [], lastWeekStart, lastWeekEnd);
       const dev = ALL_DEVICES.find(d => d.id === p);
-      return { name: dev ? dev.display_name : p, kwh };
+      const color = getDeviceDeptColor(p);
+      return { name: dev ? dev.display_name : p, kwh, cost: kwh * PRICE, color };
     }).sort((a, b) => b.kwh - a.kwh).slice(0, 5);
   const topMax = topConsumers.length ? topConsumers[0].kwh : 1;
 
-  // ── Build stats sidebar HTML ──
-  const statsHtml = `
-    <div class="exec-card exec-headline">
-      <div class="exec-section-label">This Week <span class="exec-date-range">${fmtRange(thisWeekStart, now)}</span></div>
-      <div class="exec-headline-val">${fmtKwh(thisWeekKwh)}</div>
-      <div class="exec-headline-sub">
-        <span class="${trendClass(thisWeekKwh, lastWeekKwh)}">${fmtPct(thisWeekKwh, lastWeekKwh)}</span> vs last week (${fmtKwh(lastWeekKwh)})
-      </div>
-      <div class="exec-headline-cost">${fmtDollars(thisWeekKwh * PRICE)} est. cost</div>
-    </div>
-    <div class="exec-kpi-grid">
-      <div class="exec-kpi">
-        <div class="exec-kpi-label">Last 7 Weekdays</div>
-        <div class="exec-kpi-val">${fmtKwh(weekdaysKwh)}</div>
-        <div class="exec-kpi-sub">${fmtDollars(weekdaysKwh * PRICE)}</div>
-        <div class="exec-kpi-dates">${fmtRange(weekdaysStart, now)}</div>
+  // ── Build TOP cards (above floor plan) ──
+  const topCardsHtml = `
+    <div class="exec-cards-grid cols-4">
+      <div class="exec-card exec-headline">
+        <div class="exec-section-label">Last Full Week <span class="exec-date-range">${fmtRange(lastWeekStart, lastWeekEnd)}</span></div>
+        <div class="exec-headline-cost">${fmtDollarsBig(lastFullWeekCost)}</div>
+        <div class="exec-headline-val">${fmtKwh(lastFullWeekKwh)}</div>
+        <div class="exec-headline-sub">
+          <span class="${trendClass(lastFullWeekKwh, prevFullWeekKwh)}">${fmtPct(lastFullWeekKwh, prevFullWeekKwh)}</span> vs prior week (${fmtDollars(prevFullWeekCost)})
+        </div>
       </div>
       <div class="exec-kpi">
         <div class="exec-kpi-label">Last Weekend</div>
+        <div class="exec-kpi-cost">${fmtDollars(lastWeekendCost)}</div>
         <div class="exec-kpi-val">${fmtKwh(lastWeekendKwh)}</div>
         <div class="exec-kpi-sub"><span class="${trendClass(lastWeekendKwh, prevWeekendKwh)}">${fmtPct(lastWeekendKwh, prevWeekendKwh)}</span> vs prior</div>
         <div class="exec-kpi-dates">${fmtRange(lastSat, lastSunEnd)}</div>
       </div>
       <div class="exec-kpi">
+        <div class="exec-kpi-label">Weekend Before</div>
+        <div class="exec-kpi-cost">${fmtDollars(prevWeekendCost)}</div>
+        <div class="exec-kpi-val">${fmtKwh(prevWeekendKwh)}</div>
+        <div class="exec-kpi-dates">${fmtRange(prevSat, prevSunEnd)}</div>
+      </div>
+      <div class="exec-kpi">
         <div class="exec-kpi-label">Month to Date</div>
+        <div class="exec-kpi-cost">${fmtDollars(mtdCost)}</div>
         <div class="exec-kpi-val">${fmtKwh(mtdKwh)}</div>
-        <div class="exec-kpi-sub">${fmtDollars(mtdKwh * PRICE)}</div>
+        <div class="exec-kpi-sub"><span class="${trendClass(mtdKwh, prevMonthKwh)}">${fmtPct(mtdKwh, prevMonthKwh)}</span> vs ${fmtMonth(prevMonthStart)}</div>
         <div class="exec-kpi-dates">${fmtRange(mtdStart, now)}</div>
       </div>
-      <div class="exec-kpi">
-        <div class="exec-kpi-label">Prior Month</div>
-        <div class="exec-kpi-val">${fmtKwh(prevMonthKwh)}</div>
-        <div class="exec-kpi-sub"><span class="${trendClass(mtdKwh, prevMonthKwh)}">${fmtPct(mtdKwh, prevMonthKwh)}</span> MTD pace</div>
-        <div class="exec-kpi-dates">${fmtMonth(prevMonthStart)}</div>
+    </div>`;
+
+  document.getElementById("exec-cards-top").innerHTML = topCardsHtml;
+
+  // ── Build BOTTOM cards (below floor plan) ──
+  const bottomCardsHtml = `
+    <div class="exec-cards-grid cols-3">
+      <div class="exec-card">
+        <div class="exec-section-label">Load Summary <span class="exec-date-range">${fmtRange(lastWeekStart, lastWeekEnd)}</span></div>
+        <div class="exec-dept-row">
+          <div class="exec-dept-name">Peak Load</div>
+          <div class="exec-dept-val" style="width:auto">${fmtKw(lastWeekPeak)}</div>
+          <div class="exec-dept-stats"><span class="${trendClass(lastWeekPeak, prevWeekPeakVal)}">${fmtPct(lastWeekPeak, prevWeekPeakVal)}</span> vs prior wk</div>
+        </div>
+        <div class="exec-dept-row">
+          <div class="exec-dept-name">Avg Load</div>
+          <div class="exec-dept-val" style="width:auto">${fmtKw(lastWeekAvg)}</div>
+          <div class="exec-dept-stats"><span class="${trendClass(lastWeekAvg, prevWeekAvgVal)}">${fmtPct(lastWeekAvg, prevWeekAvgVal)}</span> vs prior wk</div>
+        </div>
+        <div class="exec-dept-row" style="margin-top:4px;padding-top:4px;border-top:1px solid var(--card-border)">
+          <div class="exec-dept-name" style="color:var(--muted);font-size:0.72rem">Load Factor</div>
+          <div class="exec-dept-val" style="width:auto">${lastWeekPeak > 0 ? (lastWeekAvg / lastWeekPeak * 100).toFixed(0) + "%" : "\u2014"}</div>
+        </div>
       </div>
-    </div>
-    <div class="exec-kpi-grid" style="margin-top:8px">
-      <div class="exec-kpi">
-        <div class="exec-kpi-label">Peak (This Week)</div>
-        <div class="exec-kpi-val">${thisWeekPeak >= 1000 ? (thisWeekPeak/1000).toFixed(1) + " MW" : thisWeekPeak.toFixed(0) + " kW"}</div>
-        <div class="exec-kpi-sub"><span class="${trendClass(thisWeekPeak, lastWeekPeak)}">${fmtPct(thisWeekPeak, lastWeekPeak)}</span> vs last week</div>
-        <div class="exec-kpi-dates">${fmtRange(thisWeekStart, now)}</div>
-      </div>
-      <div class="exec-kpi">
-        <div class="exec-kpi-label">Avg Load (This Week)</div>
-        <div class="exec-kpi-val">${thisWeekAvg >= 1000 ? (thisWeekAvg/1000).toFixed(1) + " MW" : thisWeekAvg.toFixed(0) + " kW"}</div>
-        <div class="exec-kpi-sub"><span class="${trendClass(thisWeekAvg, lastWeekAvg)}">${fmtPct(thisWeekAvg, lastWeekAvg)}</span> vs last week</div>
-        <div class="exec-kpi-dates">${fmtRange(thisWeekStart, now)}</div>
-      </div>
-    </div>
-    ${deptRows.length ? `<div class="exec-card">
-      <div class="exec-section-label">Departments <span class="exec-date-range">${fmtRange(monthAgoStart, now)}</span></div>
-      ${deptRows.map(d => `<div class="exec-dept-row">
-        <div class="exec-dept-dot" style="background:${d.color}"></div>
-        <div class="exec-dept-name">${d.name}</div>
-        <div class="exec-dept-bar-wrap"><div class="exec-dept-bar-fill" style="width:${(d.kwh/deptMax*100).toFixed(0)}%;background:${d.color}"></div></div>
-        <div class="exec-dept-pct">${(d.kwh/deptTotal*100).toFixed(0)}%</div>
-        <div class="exec-dept-val">${fmtKwh(d.kwh)}</div>
-      </div>`).join("")}
-      ${deptRows.some(d => d.prevKwh > 0) ? `<div class="exec-dept-trend-row">
-        ${deptRows.map(d => `<span class="exec-dept-trend">
-          <span class="exec-dept-dot" style="background:${d.color};display:inline-block"></span>
-          <span class="${trendClass(d.kwh, d.prevKwh)}">${fmtPct(d.kwh, d.prevKwh)}</span>
-        </span>`).join("")}
-        <span class="exec-dept-trend-label">vs last week</span>
+      ${deptRows.length ? `<div class="exec-card">
+        <div class="exec-section-label">Departments <span class="exec-date-range">Last Full Week</span></div>
+        ${deptRows.map(d => `<div class="exec-dept-row">
+          <div class="exec-dept-dot" style="background:${d.color}"></div>
+          <div class="exec-dept-name">${d.name}</div>
+          <div class="exec-dept-bar-wrap"><div class="exec-dept-bar-fill" style="width:${(d.kwh/deptMax*100).toFixed(0)}%;background:${d.color}"></div></div>
+          <div class="exec-dept-cost">${fmtDollars(d.kwh * PRICE)}</div>
+          <div class="exec-dept-val">${fmtKwh(d.kwh)}</div>
+        </div>`).join("")}
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--card-border);display:flex;flex-wrap:wrap;gap:10px">
+          ${deptRows.map(d => `<div style="font-size:0.62rem;color:var(--muted)">
+            <span class="exec-dept-dot" style="background:${d.color};display:inline-block;width:6px;height:6px;vertical-align:middle"></span>
+            Avg ${fmtKw(d.avgKw)} / Peak ${fmtKw(d.peakKw)}
+          </div>`).join("")}
+        </div>
+      </div>` : '<div class="exec-card"><div class="exec-section-label">Departments</div><div style="color:var(--muted);font-size:0.78rem">No department data</div></div>'}
+      ${topConsumers.length ? `<div class="exec-card">
+        <div class="exec-section-label">Top Consumers <span class="exec-date-range">Last Full Week</span></div>
+        ${topConsumers.map(c => `<div class="exec-top-row">
+          <div class="exec-top-dot" style="background:${c.color}"></div>
+          <div class="exec-top-name">${c.name}</div>
+          <div class="exec-top-bar-wrap"><div class="exec-top-bar-fill" style="width:${(c.kwh/(topMax||1)*100).toFixed(0)}%;background:${c.color}"></div></div>
+          <div class="exec-top-cost">${fmtDollars(c.cost)}</div>
+          <div class="exec-top-val">${fmtKwh(c.kwh)}</div>
+        </div>`).join("")}
       </div>` : ""}
-    </div>` : ""}
-    ${topConsumers.length ? `<div class="exec-card">
-      <div class="exec-section-label">Top Consumers <span class="exec-date-range">${fmtRange(thisWeekStart, now)}</span></div>
-      ${topConsumers.map(c => `<div class="exec-top-row">
-        <div class="exec-top-name">${c.name}</div>
-        <div class="exec-top-bar-wrap"><div class="exec-top-bar-fill" style="width:${(c.kwh/(topMax||1)*100).toFixed(0)}%"></div></div>
-        <div class="exec-top-val">${fmtKwh(c.kwh)}</div>
-      </div>`).join("")}
-    </div>` : ""}`;
+    </div>`;
 
-  document.getElementById("exec-stats-col").innerHTML = statsHtml;
+  document.getElementById("exec-cards-bottom").innerHTML = bottomCardsHtml;
 
-  // ── Floor plan hero (left column) ──
-  await _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, now, fmtKwh, fmtPct, trendClass, t, windowKwh);
-
-  // Remove load strip (no longer needed)
-  const strip = document.getElementById("exec-load-strip");
-  if (strip) strip.innerHTML = "";
+  // ── Floor plan (full width, center section) ──
+  await _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, now, fmtKwh, fmtDollars, fmtPct, trendClass, t, windowKwh, windowAvgKw, windowPeakKw, lastWeekStart, lastWeekEnd, lastSat, lastSunEnd, prevSat, prevSunEnd);
 }
 
-async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, now, fmtKwh, fmtPct, trendClass, t, windowKwh) {
+async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, now, fmtKwh, fmtDollars, fmtPct, trendClass, t, windowKwh, windowAvgKw, windowPeakKw, lastWeekStart, lastWeekEnd, lastSat, lastSunEnd, prevSat, prevSunEnd) {
   const col = document.getElementById("exec-floor-col");
   let plans = [];
   try { plans = await API.getFloorPlans(); } catch(e) {}
@@ -712,7 +732,7 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
       Plotly.newPlot("exec-fallback-load", [{
         x: ts, y: rolling, mode: "lines",
         line: { color: t.accent, width: 2.5, shape: "spline" },
-        fill: "tozeroy", fillcolor: "rgba(139,212,53,0.1)",
+        fill: "tozeroy", fillcolor: "rgba(196,18,48,0.08)",
         hovertemplate: "%{x}<br>%{y:.1f} kW<extra></extra>"
       }], pLayout({
         xaxis: xA({ type: "date" }), yaxis: yA({}),
@@ -726,45 +746,41 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
   const plan = await API.getFloorPlan(fp.id);
   const zones = plan.zones || [];
 
-  // Compute per-device metrics for heatmap intensity + week-over-week trend alert
+  // Compute per-device metrics for heatmap + WoW trend alert
   const deviceMetrics = {};
   const allWeekKwh = [];
-  // Week boundaries for WoW comparison
-  const wowThisStart = new Date(now); wowThisStart.setUTCDate(wowThisStart.getUTCDate() - 7); wowThisStart.setUTCHours(0,0,0,0);
-  const wowPrevStart = new Date(wowThisStart); wowPrevStart.setUTCDate(wowPrevStart.getUTCDate() - 7); wowPrevStart.setUTCHours(0,0,0,0);
   zones.forEach(zone => {
     const series = panelSeries[zone.device_id] || [];
-    let weekKwh = 0, monthKwh = 0, avgKw = 0, peakKw = 0, cnt = 0;
-    for (let i = 1; i < ts.length; i++) {
-      const ti = new Date(ts[i]);
-      const v = series[i] ?? 0;
-      const h = Math.max(0, (ti - new Date(ts[i-1])) / 3600000);
-      if (ti >= weekAgo) weekKwh += v * h;
-      if (ti >= monthAgo) monthKwh += v * h;
-      if (v > peakKw) peakKw = v;
-      avgKw += v; cnt++;
-    }
-    avgKw = cnt ? avgKw / cnt : 0;
-    // Week-over-week trend: this week vs last week
-    const thisWkKwh = windowKwh(series, wowThisStart, now);
-    const lastWkKwh = windowKwh(series, wowPrevStart, wowThisStart);
-    const trendPct = lastWkKwh > 0 ? ((thisWkKwh - lastWkKwh) / lastWkKwh * 100) : 0;
+    const weekKwh = windowKwh(series, lastWeekStart, lastWeekEnd);
+    const monthKwh = windowKwh(series, monthAgo, now);
+    const avgKw = windowAvgKw(series, lastWeekStart, lastWeekEnd);
+    const peakKw = windowPeakKw(series, lastWeekStart, lastWeekEnd);
+    // Previous week for WoW
+    const prevWkStart = new Date(lastWeekStart); prevWkStart.setUTCDate(prevWkStart.getUTCDate() - 7);
+    const prevWkEnd = new Date(lastWeekStart); prevWkEnd.setUTCMilliseconds(-1);
+    const prevWkKwh = windowKwh(series, prevWkStart, prevWkEnd);
+    const trendPct = prevWkKwh > 0 ? ((weekKwh - prevWkKwh) / prevWkKwh * 100) : 0;
     const alertUp = trendPct >= 5;
-    deviceMetrics[zone.device_id] = { peakKw, avgKw, weekKwh, monthKwh, trendPct, alertUp };
+    const alertDown = trendPct <= -5;
+    // Weekend data
+    const wkndKwh = windowKwh(series, lastSat, lastSunEnd);
+    const prevWkndKwh = windowKwh(series, prevSat, prevSunEnd);
+    const weekCost = weekKwh * PRICE;
+    const monthCost = monthKwh * PRICE;
+    deviceMetrics[zone.device_id] = { peakKw, avgKw, weekKwh, monthKwh, trendPct, alertUp, alertDown, wkndKwh, prevWkndKwh, weekCost, monthCost };
     allWeekKwh.push(weekKwh);
   });
   const maxKwh = Math.max(...allWeekKwh, 1);
 
-  // Heatmap color scale: blue (low) → green → yellow → orange → red (high)
+  // Heatmap color scale: blue→green→yellow→orange→red
   function heatColor(ratio) {
     const r = Math.min(1, Math.max(0, ratio));
-    // 5-stop gradient: #2196F3 → #4CAF50 → #FFC107 → #FF9800 → #F44336
     const stops = [
-      [0, 33, 150, 243],    // blue
-      [0.25, 76, 175, 80],  // green
-      [0.5, 255, 193, 7],   // yellow
-      [0.75, 255, 152, 0],  // orange
-      [1, 244, 67, 54],     // red
+      [0, 33, 150, 243],
+      [0.25, 76, 175, 80],
+      [0.5, 255, 193, 7],
+      [0.75, 255, 152, 0],
+      [1, 244, 67, 54],
     ];
     let lo = stops[0], hi = stops[stops.length - 1];
     for (let i = 0; i < stops.length - 1; i++) {
@@ -776,6 +792,9 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
     const B = Math.round(lo[3] + f * (hi[3] - lo[3]));
     return `rgb(${R},${G},${B})`;
   }
+
+  const fmtDate = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const fmtRange = (a, b) => fmtDate(a) + " \u2013 " + fmtDate(b);
 
   col.innerHTML = `
     <div class="panel-title" style="margin-bottom:0.5rem">${fp.name}
@@ -791,7 +810,6 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
       ${zones.map((zone, idx) => {
         const pts = zone.points || [];
         if (pts.length < 3) return "";
-        // Compute visual center constrained inside polygon bounding box
         const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
         const minX = Math.min(...xs), maxX = Math.max(...xs);
         const minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -800,22 +818,26 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
         const dm = deviceMetrics[zone.device_id] || {};
         const dev = ALL_DEVICES.find(d => d.id === zone.device_id);
         const label = zone.label || (dev ? dev.display_name : zone.device_id);
-        // Alert icon for >= 5% increase over 2-week trend
-        const alertHtml = dm.alertUp
-          ? `<span class="fp-zone-alert" title="+${dm.trendPct.toFixed(0)}% vs last week">&#9650;</span>`
-          : "";
-        // Scale label font based on zone size
+        // Alert icons: red up for >=5% increase, green down for <=−5% decrease
+        let alertHtml = "";
+        if (dm.alertUp) alertHtml = `<span class="fp-zone-alert" title="+${dm.trendPct.toFixed(0)}% vs last week">&#9650;</span>`;
+        else if (dm.alertDown) alertHtml = `<span class="fp-zone-alert-down" title="${dm.trendPct.toFixed(0)}% vs last week">&#9660;</span>`;
         const zoneW = maxX - minX, zoneH = maxY - minY;
         const zoneSz = Math.min(zoneW, zoneH);
         const fontSize = zoneSz < 8 ? 0.45 : zoneSz < 15 ? 0.55 : 0.62;
         const valSize = fontSize * 0.85;
         return `<div class="fp-zone-label" data-zone-idx="${idx}" style="left:${cx}%;top:${cy}%;max-width:${zoneW * 0.9}%">
           <div class="fp-zone-label-text" style="font-size:${fontSize}rem">${alertHtml}${label}</div>
-          <div class="fp-zone-label-val" style="font-size:${valSize}rem">${fmtKwh(dm.weekKwh||0)}/wk</div>
+          <div class="fp-zone-label-val" style="font-size:${valSize}rem">${fmtDollars(dm.weekCost||0)}/wk</div>
           <div class="fp-dash-tooltip">
-            <div class="fp-tt-title">${label}${dm.alertUp ? ' <span class="fp-zone-alert" style="font-size:0.7rem">&#9650; +' + dm.trendPct.toFixed(0) + '%</span>' : ""}</div>
-            <div class="fp-tt-row"><span>Last 7 Days</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>
-            <div class="fp-tt-row"><span>Last 30 Days</span> <strong>${fmtKwh(dm.monthKwh||0)}</strong></div>
+            <div class="fp-tt-title">${label}${dm.alertUp ? ' <span class="fp-zone-alert" style="font-size:0.7rem">&#9650; +' + dm.trendPct.toFixed(0) + '%</span>' : dm.alertDown ? ' <span class="fp-zone-alert-down" style="font-size:0.7rem">&#9660; ' + dm.trendPct.toFixed(0) + '%</span>' : ""}</div>
+            <div class="fp-tt-row"><span>Last Full Week</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>
+            <div class="fp-tt-row"><span>Weekly Cost</span> <strong class="fp-tt-cost">${fmtDollars(dm.weekCost||0)}</strong></div>
+            <hr class="fp-tt-divider"/>
+            <div class="fp-tt-row"><span>Last Weekend</span> <strong>${fmtKwh(dm.wkndKwh||0)} (${fmtDollars((dm.wkndKwh||0)*PRICE)})</strong></div>
+            <div class="fp-tt-row"><span>Prev Weekend</span> <strong>${fmtKwh(dm.prevWkndKwh||0)} (${fmtDollars((dm.prevWkndKwh||0)*PRICE)})</strong></div>
+            <hr class="fp-tt-divider"/>
+            <div class="fp-tt-row"><span>Last 30 Days</span> <strong>${fmtKwh(dm.monthKwh||0)} (${fmtDollars(dm.monthCost||0)})</strong></div>
             <div class="fp-tt-row"><span>Week over Week</span> <strong class="${trendClass(dm.trendPct, 0)}">${dm.trendPct >= 0 ? "+" : ""}${(dm.trendPct||0).toFixed(0)}%</strong></div>
             <div class="fp-tt-row"><span>Avg Load</span> <strong>${(dm.avgKw||0).toFixed(1)} kW</strong></div>
             <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw||0).toFixed(1)} kW</strong></div>
@@ -832,7 +854,6 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
     const dm = deviceMetrics[zone.device_id] || {};
     const ratio = maxKwh > 0 ? (dm.weekKwh || 0) / maxKwh : 0;
     const color = heatColor(ratio);
-
     const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
     poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
     poly.setAttribute("fill", color);
