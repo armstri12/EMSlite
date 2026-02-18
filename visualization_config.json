@@ -51,5 +51,6 @@
       "enabled": true,
       "output": "next_gen_dashboard.html"
     }
-  }
+  },
+  "carbon_kg_per_kwh": 0.4
 }

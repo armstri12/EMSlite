@@ -23,9 +23,13 @@
     <span class="sidebar-wordmark">EMSlite</span>
   </div>
   <nav class="sidebar-nav">
-    <a class="nav-item active" data-tab="overview">
+    <a class="nav-item active" data-tab="executive">
+      <svg viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M3 6h18"/><path d="M3 18h18"/></svg>
+      <span class="nav-label">Executive</span>
+    </a>
+    <a class="nav-item" data-tab="overview">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      <span class="nav-label">Dashboard</span>
+      <span class="nav-label">Operations</span>
     </a>
     <a class="nav-item" data-tab="analytics">
       <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -78,8 +82,20 @@
 <main class="main">
   <div class="main-container">
 
-    <!-- OVERVIEW TAB -->
-    <div class="tab-content active" id="tab-overview">
+    <!-- EXECUTIVE TAB -->
+    <div class="tab-content active" id="tab-executive">
+      <div id="execv-cards-top"></div>
+      <div class="charts-grid">
+        <div class="panel panel-12">
+          <div class="panel-title">Monthly Spend & Carbon Trend</div>
+          <div class="chart-area" id="chart-execv-monthly"></div>
+        </div>
+      </div>
+      <div id="execv-cards-bottom"></div>
+    </div>
+
+    <!-- OPERATIONS TAB -->
+    <div class="tab-content" id="tab-overview">
       <div id="exec-cards-top"></div>
       <div id="exec-floor-col"></div>
       <div id="exec-cards-bottom"></div>

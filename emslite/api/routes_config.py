@@ -18,6 +18,7 @@ class ConfigUpdate(BaseModel):
     line_voltage: float | None = None
     power_factor: float | None = None
     price_per_kwh: float | None = None
+    carbon_kg_per_kwh: float | None = None
     rolling_window: str | None = None
     glob_pattern: str | None = None
 
@@ -37,6 +38,7 @@ def get_config() -> dict[str, Any]:
         "line_voltage": cfg.get("line_voltage", 480.0),
         "power_factor": cfg.get("power_factor", 1.0),
         "price_per_kwh": cfg.get("price_per_kwh", 0.25),
+        "carbon_kg_per_kwh": cfg.get("carbon_kg_per_kwh", 0.4),
         "rolling_window": cfg.get("rolling_window", "1h"),
         "glob_pattern": cfg.get("glob_pattern", "Meter*_SystemCurrent.csv"),
         "drops_dir": cfg.get("drops_dir", "drops"),
