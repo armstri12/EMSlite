@@ -1005,6 +1005,12 @@ function renderComparison() {
   const p2s=new Date(st.p2Start+"T00:00:00Z"), p2e=new Date(st.p2End+"T23:59:59Z");
   if(isNaN(p1s)||isNaN(p1e)||isNaN(p2s)||isNaN(p2e)) return;
 
+  // Prominent period date headers
+  const fmtD = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"});
+  document.getElementById("comp-period-headers").innerHTML =
+    `<div class="comp-period-hdr"><div class="comp-period-dot" style="background:${t.accent}"></div><div><div class="comp-period-hdr-label">Period 1</div><div class="comp-period-hdr-dates">${fmtD(p1s)} — ${fmtD(p1e)}</div></div></div>` +
+    `<div class="comp-period-hdr"><div class="comp-period-dot" style="background:${t.accentDark}"></div><div><div class="comp-period-hdr-label">Period 2</div><div class="comp-period-hdr-dates">${fmtD(p2s)} — ${fmtD(p2e)}</div></div></div>`;
+
   const pd1={ts:[],kw:[]},pd2={ts:[],kw:[]};
   allTs.forEach((ts,i)=>{ const d=new Date(ts);
     if(d>=p1s&&d<=p1e){ pd1.ts.push(ts); pd1.kw.push(allKw[i]); }
@@ -1031,6 +1037,16 @@ function renderComparison() {
   document.getElementById("sav-lf").textContent=lfC.toFixed(1)+" pts";
 
   function setCC(id,cls) { document.getElementById("cc-"+id).className="comp-card "+cls; }
+
+  // Update "Period 1" / "Period 2" labels in cards with short date ranges
+  const fmtS = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
+  const p1Label = `P1: ${fmtS(p1s)}–${fmtS(p1e)}`;
+  const p2Label = `P2: ${fmtS(p2s)}–${fmtS(p2e)}`;
+  document.querySelectorAll(".comp-card .comp-row").forEach((row, i) => {
+    const span = row.querySelector(".comp-period");
+    if (span) span.textContent = (i % 2 === 0) ? p1Label : p2Label;
+  });
+
   document.getElementById("cc-e1").textContent=m1.totalKwh.toFixed(0)+" kWh";
   document.getElementById("cc-e2").textContent=m2.totalKwh.toFixed(0)+" kWh";
   const ced=document.getElementById("cc-ed"); ced.textContent=(m2.totalKwh-m1.totalKwh).toFixed(0)+" kWh";
@@ -1064,12 +1080,25 @@ function renderComparison() {
   cdd.textContent=dDiff.toFixed(0)+" kWh/d"; cdd.className="delta-val "+(dDiff<0?"pos":"neg");
   setCC("daily",dDiff<0?"savings":"increase");
 
-  Plotly.newPlot("chart-comp-load",[
-    {x:pd1.ts,y:pd1.kw,mode:"lines",name:"Period 1",line:{color:t.accent,width:2.5,shape:"spline"}},
-    {x:pd2.ts,y:pd2.kw,mode:"lines",name:"Period 2",line:{color:t.accentDark,width:2.5,shape:"spline"}}
-  ],pLayout({ legend:{orientation:"h",y:-0.15},
-    xaxis:xA({title:{text:"Time",font:{size:12}},type:"date"}),
-    yaxis:yA({title:{text:"kW",font:{size:12}}})
+  // Two side-by-side charts with same Y-axis range
+  const yMax = Math.max(
+    pd1.kw.length ? Math.max(...pd1.kw) : 0,
+    pd2.kw.length ? Math.max(...pd2.kw) : 0
+  ) * 1.08 || 1;
+  const sharedY = yA({title:{text:"kW",font:{size:12}},range:[0,yMax]});
+
+  Plotly.newPlot("chart-comp-load-p1",[
+    {x:pd1.ts,y:pd1.kw,mode:"lines",name:"Period 1",line:{color:t.accent,width:2.5,shape:"spline"},fill:"tozeroy",fillcolor:t.accent+"18"}
+  ],pLayout({
+    xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),
+    yaxis:sharedY
+  }),pCfg);
+
+  Plotly.newPlot("chart-comp-load-p2",[
+    {x:pd2.ts,y:pd2.kw,mode:"lines",name:"Period 2",line:{color:t.accentDark,width:2.5,shape:"spline"},fill:"tozeroy",fillcolor:t.accentDark+"18"}
+  ],pLayout({
+    xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),
+    yaxis:sharedY
   }),pCfg);
 
   const hp1=hourlyProfile(pd1.ts,pd1.kw),hp2=hourlyProfile(pd2.ts,pd2.kw);
