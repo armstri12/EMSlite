@@ -261,6 +261,17 @@ body {
   border-radius: 50%;
   border: 2px solid var(--card-bg);
 }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.badge-neg { background: var(--badge-neg-bg); color: var(--badge-neg-text); }
+.badge-warn { background: rgba(245,158,11,0.15); color: #D97706; }
 .avatar {
   width: 40px; height: 40px;
   border-radius: 50%;

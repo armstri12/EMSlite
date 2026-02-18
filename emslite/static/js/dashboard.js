@@ -18,6 +18,7 @@ let activeTab = "executive";
 let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
 let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
 let ALL_DEVICES = [];       // [{id, display_name, ...}]
+let ACTIVE_ALERTS = [];
 
 /* ─── Theme Palettes — Edwards brand ─── */
 const lightC = {
@@ -65,12 +66,14 @@ async function initDashboard() {
     setupThemeToggle();
     setupSidebar();
     setupTabNavigation();
+    setupNotifications();
     // Overview has no filter bar — it auto-displays latest data
     buildFilterBar("an-filter-bar", "analytics",  "daterange");
     buildFilterBar("cp-filter-bar", "comparison", "comparison");
     buildFilterBar("dt-filter-bar", "data",       "daterange");
     setupTableControls();
     renderCurrentTab();
+    await refreshAlerts();
   } catch (err) {
     console.error("Failed to load dashboard data:", err);
     document.querySelector(".main-container").innerHTML =
@@ -157,6 +160,65 @@ function setupTabNavigation() {
       switchTab(n.dataset.tab);
       document.getElementById("sidebar").classList.remove("open");
       document.getElementById("sidebar-overlay").classList.remove("active");
+    });
+  });
+}
+
+function setupNotifications() {
+  const btn = document.getElementById("notifications-btn");
+  if (!btn) return;
+  btn.addEventListener("click", () => showNotificationsPanel());
+}
+
+async function refreshAlerts() {
+  try {
+    const payload = await API.getAlerts(false);
+    ACTIVE_ALERTS = payload.alerts || [];
+  } catch (_e) {
+    ACTIVE_ALERTS = [];
+  }
+  const dot = document.querySelector(".notif-dot");
+  if (dot) dot.style.display = ACTIVE_ALERTS.length ? "block" : "none";
+}
+
+function showNotificationsPanel() {
+  const overlay = document.createElement("div");
+  overlay.className = "sidebar-overlay active";
+  overlay.style.zIndex = "400";
+  const panel = document.createElement("div");
+  panel.className = "fp-editor";
+  panel.style.zIndex = "401";
+  panel.innerHTML = `
+    <div class="fp-editor-head">
+      <h3>Active Alerts (${ACTIVE_ALERTS.length})</h3>
+      <button class="btn btn-ghost btn-sm" id="close-alerts">Close</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem;max-height:70vh;overflow:auto;">
+      ${ACTIVE_ALERTS.length ? ACTIVE_ALERTS.map(a => `
+        <div style="border:1px solid var(--card-border);border-radius:10px;padding:0.75rem;background:var(--card-bg)">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
+            <div>
+              <div style="font-weight:600;color:var(--heading)">${a.device_name}</div>
+              <div style="font-size:0.75rem;color:var(--muted)">${a.timestamp}</div>
+            </div>
+            <span class="badge ${a.severity === 'critical' ? 'badge-neg' : 'badge-warn'}">${a.severity}</span>
+          </div>
+          <div style="margin-top:0.5rem;font-size:0.875rem">${a.current_kw.toFixed(2)} kW (threshold: ${a.threshold_kw} kW)</div>
+          <button class="btn btn-ghost btn-sm ack-alert" data-key="${a.key}" style="margin-top:0.5rem">Acknowledge</button>
+        </div>
+      `).join("") : `<div style="color:var(--muted)">No active alerts.</div>`}
+    </div>`;
+  document.body.appendChild(overlay);
+  document.body.appendChild(panel);
+  const close = () => { overlay.remove(); panel.remove(); };
+  overlay.addEventListener("click", close);
+  panel.querySelector("#close-alerts").addEventListener("click", close);
+  panel.querySelectorAll(".ack-alert").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await API.acknowledgeAlerts([btn.dataset.key]);
+      await refreshAlerts();
+      close();
+      showNotificationsPanel();
     });
   });
 }
@@ -1347,6 +1409,33 @@ function renderTab(tabKey) {
   else if (tabKey === "comparison") renderComparison();
   else if (tabKey === "data")       renderDataTable();
   else if (tabKey === "devices")    renderDevicesTab();
+  else if (tabKey === "health")     renderHealthTab();
+}
+
+async function renderHealthTab() {
+  const cards = document.getElementById("health-summary-cards");
+  const failures = document.getElementById("health-failures");
+  const freshness = document.getElementById("health-freshness");
+  if (!cards || !failures || !freshness) return;
+  const payload = await API.getDataHealth();
+  const s = payload.summary || {};
+
+  cards.innerHTML = `<div class="exec-cards-grid cols-4">
+    <div class="exec-card"><div class="exec-metric-label">Ingest Events</div><div class="exec-metric-value">${s.total_ingest_events || 0}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Failed Events</div><div class="exec-metric-value">${s.failed_events || 0}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Success Rate</div><div class="exec-metric-value">${(s.success_rate_pct || 0).toFixed(1)}%</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Data Staleness</div><div class="exec-metric-value">${s.is_data_stale ? "Stale" : "Fresh"}</div></div>
+  </div>`;
+
+  const failRows = (payload.recent_failures || []).slice(0, 12).map(f =>
+    `<tr><td>${f.processed_at || "-"}</td><td>${f.filename || "-"}</td><td>${f.error_message || "-"}</td></tr>`
+  ).join("");
+  failures.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>File</th><th>Error</th></tr></thead><tbody>${failRows || '<tr><td colspan="3">No recent failures</td></tr>'}</tbody></table></div>`;
+
+  const freshRows = (payload.device_freshness || []).slice(0, 20).map(d =>
+    `<tr><td>${d.device_id}</td><td>${d.last_seen || "Never"}</td><td>${d.latest_value == null ? "-" : d.latest_value.toFixed(2)}</td></tr>`
+  ).join("");
+  freshness.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Device</th><th>Last Seen</th><th>Latest Amps</th></tr></thead><tbody>${freshRows || '<tr><td colspan="3">No devices</td></tr>'}</tbody></table></div>`;
 }
 
 function renderCurrentTab() {

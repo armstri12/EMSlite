@@ -215,3 +215,26 @@ class IngestLog(Base):
             "error_message": self.error_message,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,
         }
+
+
+class AlertEvent(Base):
+    """Acknowledgement state for computed alert events."""
+
+    __tablename__ = "alert_events"
+
+    key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    event_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+    def to_dict(self) -> dict:
+        return {
+            "key": self.key,
+            "device_id": self.device_id,
+            "severity": self.severity,
+            "event_ts": self.event_ts.isoformat() if self.event_ts else None,
+            "acknowledged": self.acknowledged,
+            "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
+        }
