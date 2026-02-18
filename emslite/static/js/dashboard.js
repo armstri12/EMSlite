@@ -18,6 +18,10 @@ let activeTab = "executive";
 let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
 let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
 let ALL_DEVICES = [];       // [{id, display_name, ...}]
+let ACTIVE_ALERTS = [];
+let ALERT_SUMMARY = { critical: 0, warning: 0, configured_devices: 0, window_hours: 24 };
+let ALERTS_INCLUDE_ACK = false;
+let ALERTS_WINDOW_HOURS = 24;
 
 /* ─── Theme Palettes — Edwards brand ─── */
 const lightC = {
@@ -65,12 +69,14 @@ async function initDashboard() {
     setupThemeToggle();
     setupSidebar();
     setupTabNavigation();
+    setupNotifications();
     // Overview has no filter bar — it auto-displays latest data
     buildFilterBar("an-filter-bar", "analytics",  "daterange");
     buildFilterBar("cp-filter-bar", "comparison", "comparison");
     buildFilterBar("dt-filter-bar", "data",       "daterange");
     setupTableControls();
     renderCurrentTab();
+    await refreshAlerts(true);
   } catch (err) {
     console.error("Failed to load dashboard data:", err);
     document.querySelector(".main-container").innerHTML =
@@ -157,6 +163,72 @@ function setupTabNavigation() {
       switchTab(n.dataset.tab);
       document.getElementById("sidebar").classList.remove("open");
       document.getElementById("sidebar-overlay").classList.remove("active");
+    });
+  });
+}
+
+function setupNotifications() {
+  const btn = document.getElementById("notifications-btn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    switchTab("alerts");
+  });
+}
+
+async function refreshAlerts(latestOnly = false) {
+  try {
+    const payload = await API.getAlerts({
+      includeAcknowledged: ALERTS_INCLUDE_ACK,
+      windowHours: ALERTS_WINDOW_HOURS,
+      latestOnly,
+    });
+    ACTIVE_ALERTS = payload.alerts || [];
+    ALERT_SUMMARY = payload.summary || ALERT_SUMMARY;
+  } catch (_e) {
+    ACTIVE_ALERTS = [];
+  }
+  const dot = document.querySelector(".notif-dot");
+  if (dot) dot.style.display = ACTIVE_ALERTS.some(a => !a.acknowledged) ? "block" : "none";
+}
+
+function showNotificationsPanel() {
+  const overlay = document.createElement("div");
+  overlay.className = "sidebar-overlay active";
+  overlay.style.zIndex = "400";
+  const panel = document.createElement("div");
+  panel.className = "fp-editor";
+  panel.style.zIndex = "401";
+  panel.innerHTML = `
+    <div class="fp-editor-head">
+      <h3>Active Alerts (${ACTIVE_ALERTS.length})</h3>
+      <button class="btn btn-ghost btn-sm" id="close-alerts">Close</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem;max-height:70vh;overflow:auto;">
+      ${ACTIVE_ALERTS.length ? ACTIVE_ALERTS.map(a => `
+        <div style="border:1px solid var(--card-border);border-radius:10px;padding:0.75rem;background:var(--card-bg)">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem">
+            <div>
+              <div style="font-weight:600;color:var(--heading)">${a.device_name}</div>
+              <div style="font-size:0.75rem;color:var(--muted)">${a.timestamp}</div>
+            </div>
+            <span class="badge ${a.severity === 'critical' ? 'badge-neg' : 'badge-warn'}">${a.severity}</span>
+          </div>
+          <div style="margin-top:0.5rem;font-size:0.875rem">${a.current_kw.toFixed(2)} kW (threshold: ${a.threshold_kw} kW)</div>
+          <button class="btn btn-ghost btn-sm ack-alert" data-key="${a.key}" style="margin-top:0.5rem">Acknowledge</button>
+        </div>
+      `).join("") : `<div style="color:var(--muted)">No active alerts.</div>`}
+    </div>`;
+  document.body.appendChild(overlay);
+  document.body.appendChild(panel);
+  const close = () => { overlay.remove(); panel.remove(); };
+  overlay.addEventListener("click", close);
+  panel.querySelector("#close-alerts").addEventListener("click", close);
+  panel.querySelectorAll(".ack-alert").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await API.acknowledgeAlerts([btn.dataset.key]);
+      await refreshAlerts(true);
+      close();
+      showNotificationsPanel();
     });
   });
 }
@@ -1347,6 +1419,118 @@ function renderTab(tabKey) {
   else if (tabKey === "comparison") renderComparison();
   else if (tabKey === "data")       renderDataTable();
   else if (tabKey === "devices")    renderDevicesTab();
+  else if (tabKey === "alerts")     renderAlertsTab();
+  else if (tabKey === "health")     renderHealthTab();
+}
+
+
+async function renderAlertsTab() {
+  const tableWrap = document.getElementById("alerts-table-wrap");
+  const cards = document.getElementById("alerts-summary-cards");
+  if (!tableWrap || !cards) return;
+
+  await refreshAlerts(false);
+
+  const includeAckEl = document.getElementById("alerts-include-ack");
+  const windowEl = document.getElementById("alerts-window");
+  if (includeAckEl) includeAckEl.checked = ALERTS_INCLUDE_ACK;
+  if (windowEl) windowEl.value = String(ALERTS_WINDOW_HOURS);
+
+  const refreshBtn = document.getElementById("alerts-refresh");
+  const ackAllBtn = document.getElementById("alerts-ack-all");
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = "1";
+    refreshBtn.addEventListener("click", async () => {
+      ALERTS_INCLUDE_ACK = !!document.getElementById("alerts-include-ack")?.checked;
+      ALERTS_WINDOW_HOURS = parseInt(document.getElementById("alerts-window")?.value || "24", 10);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+  if (includeAckEl && !includeAckEl.dataset.wired) {
+    includeAckEl.dataset.wired = "1";
+    includeAckEl.addEventListener("change", async () => {
+      ALERTS_INCLUDE_ACK = includeAckEl.checked;
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+  if (windowEl && !windowEl.dataset.wired) {
+    windowEl.dataset.wired = "1";
+    windowEl.addEventListener("change", async () => {
+      ALERTS_WINDOW_HOURS = parseInt(windowEl.value || "24", 10);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+  if (ackAllBtn && !ackAllBtn.dataset.wired) {
+    ackAllBtn.dataset.wired = "1";
+    ackAllBtn.addEventListener("click", async () => {
+      const keys = ACTIVE_ALERTS.filter(a => !a.acknowledged).map(a => a.key);
+      if (!keys.length) return;
+      await API.acknowledgeAlerts(keys);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+
+  const crit = ACTIVE_ALERTS.filter(a => a.severity === "critical").length;
+  const warn = ACTIVE_ALERTS.filter(a => a.severity === "warning").length;
+  const unacked = ACTIVE_ALERTS.filter(a => !a.acknowledged).length;
+  cards.innerHTML = `<div class="exec-cards-grid cols-4">
+    <div class="exec-card"><div class="exec-metric-label">Critical Alerts</div><div class="exec-metric-value">${crit}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Warning Alerts</div><div class="exec-metric-value">${warn}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Unacknowledged</div><div class="exec-metric-value">${unacked}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Threshold-configured Devices</div><div class="exec-metric-value">${ALERT_SUMMARY.configured_devices || 0}</div></div>
+  </div>`;
+
+  const rows = ACTIVE_ALERTS.map(a => `<tr>
+    <td>${a.timestamp}</td>
+    <td>${a.device_name || a.device_id}</td>
+    <td><span class="badge ${a.severity === "critical" ? "badge-neg" : "badge-warn"}">${a.severity}</span></td>
+    <td>${a.current_kw.toFixed(2)}</td>
+    <td>${a.threshold_kw == null ? "-" : Number(a.threshold_kw).toFixed(2)}</td>
+    <td>${a.acknowledged ? '<span class="kpi-badge positive">Acknowledged</span>' : '<span class="kpi-badge negative">Active</span>'}</td>
+    <td>${a.acknowledged ? "" : `<button class="btn btn-ghost btn-sm ack-row" data-key="${a.key}">Acknowledge</button>`}</td>
+  </tr>`).join("");
+
+  tableWrap.innerHTML = `<table class="data-table"><thead><tr>
+    <th>Timestamp</th><th>Device</th><th>Severity</th><th>Current kW</th><th>Threshold kW</th><th>Status</th><th>Action</th>
+  </tr></thead><tbody>${rows || '<tr><td colspan="7">No alerts for selected window.</td></tr>'}</tbody></table>`;
+
+  tableWrap.querySelectorAll(".ack-row").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await API.acknowledgeAlerts([btn.dataset.key]);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  });
+}
+
+async function renderHealthTab() {
+  const cards = document.getElementById("health-summary-cards");
+  const failures = document.getElementById("health-failures");
+  const freshness = document.getElementById("health-freshness");
+  if (!cards || !failures || !freshness) return;
+  const payload = await API.getDataHealth();
+  const s = payload.summary || {};
+
+  cards.innerHTML = `<div class="exec-cards-grid cols-4">
+    <div class="exec-card"><div class="exec-metric-label">Ingest Events</div><div class="exec-metric-value">${s.total_ingest_events || 0}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Failed Events</div><div class="exec-metric-value">${s.failed_events || 0}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Success Rate</div><div class="exec-metric-value">${(s.success_rate_pct || 0).toFixed(1)}%</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Data Staleness</div><div class="exec-metric-value">${s.is_data_stale ? "Stale" : "Fresh"}</div></div>
+  </div>`;
+
+  const failRows = (payload.recent_failures || []).slice(0, 12).map(f =>
+    `<tr><td>${f.processed_at || "-"}</td><td>${f.filename || "-"}</td><td>${f.error_message || "-"}</td></tr>`
+  ).join("");
+  failures.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>File</th><th>Error</th></tr></thead><tbody>${failRows || '<tr><td colspan="3">No recent failures</td></tr>'}</tbody></table></div>`;
+
+  const freshRows = (payload.device_freshness || []).slice(0, 20).map(d =>
+    `<tr><td>${d.device_id}</td><td>${d.last_seen || "Never"}</td><td>${d.latest_value == null ? "-" : d.latest_value.toFixed(2)}</td></tr>`
+  ).join("");
+  freshness.innerHTML = `<div class="data-table-wrap"><table class="data-table"><thead><tr><th>Device</th><th>Last Seen</th><th>Latest Amps</th></tr></thead><tbody>${freshRows || '<tr><td colspan="3">No devices</td></tr>'}</tbody></table></div>`;
 }
 
 function renderCurrentTab() {
