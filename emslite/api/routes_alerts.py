@@ -30,6 +30,7 @@ def get_alerts(
     include_acknowledged: bool = Query(False),
     window_hours: int = Query(24, ge=1, le=168),
     latest_only: bool = Query(False),
+    limit: int = Query(500, ge=1, le=5000),
 ) -> dict[str, Any]:
     """Return computed threshold alerts over a recent time window."""
     master = _get_master_path()
@@ -132,15 +133,18 @@ def get_alerts(
 
         alerts.sort(
             key=lambda a: (
-                0 if a["severity"] == "critical" else 1,
-                0 if not a["acknowledged"] else 1,
+                1 if a["severity"] == "critical" else 0,
+                1 if not a["acknowledged"] else 0,
                 a["timestamp"],
-            )
+            ),
+            reverse=True,
         )
-        alerts.reverse()
 
+        total_count = len(alerts)
         critical_count = sum(1 for a in alerts if a["severity"] == "critical")
         warning_count = sum(1 for a in alerts if a["severity"] == "warning")
+        truncated = total_count > limit
+        alerts = alerts[:limit]
         return {
             "alerts": alerts,
             "latest_timestamp": latest_ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -149,6 +153,8 @@ def get_alerts(
                 "warning": warning_count,
                 "configured_devices": configured_devices,
                 "window_hours": window_hours,
+                "total_count": total_count,
+                "truncated": truncated,
             },
         }
     finally:
@@ -180,10 +186,11 @@ def acknowledge_alerts(body: AlertAckBody) -> dict[str, Any]:
                     acknowledged_at=now,
                 )
                 session.add(record)
+                updated += 1
             elif not record.acknowledged:
                 record.acknowledged = True
                 record.acknowledged_at = now
-            updated += 1
+                updated += 1
 
         session.commit()
         return {"acknowledged": updated}
