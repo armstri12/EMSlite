@@ -742,35 +742,9 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
     return;
   }
 
-  const fp = dashPlans[0];
-  const plan = await API.getFloorPlan(fp.id);
-  const zones = plan.zones || [];
-
-  // Compute per-device metrics for heatmap + WoW trend alert
-  const deviceMetrics = {};
-  const allWeekKwh = [];
-  zones.forEach(zone => {
-    const series = panelSeries[zone.device_id] || [];
-    const weekKwh = windowKwh(series, lastWeekStart, lastWeekEnd);
-    const monthKwh = windowKwh(series, monthAgo, now);
-    const avgKw = windowAvgKw(series, lastWeekStart, lastWeekEnd);
-    const peakKw = windowPeakKw(series, lastWeekStart, lastWeekEnd);
-    // Previous week for WoW
-    const prevWkStart = new Date(lastWeekStart); prevWkStart.setUTCDate(prevWkStart.getUTCDate() - 7);
-    const prevWkEnd = new Date(lastWeekStart); prevWkEnd.setUTCMilliseconds(-1);
-    const prevWkKwh = windowKwh(series, prevWkStart, prevWkEnd);
-    const trendPct = prevWkKwh > 0 ? ((weekKwh - prevWkKwh) / prevWkKwh * 100) : 0;
-    const alertUp = trendPct >= 5;
-    const alertDown = trendPct <= -5;
-    // Weekend data
-    const wkndKwh = windowKwh(series, lastSat, lastSunEnd);
-    const prevWkndKwh = windowKwh(series, prevSat, prevSunEnd);
-    const weekCost = weekKwh * PRICE;
-    const monthCost = monthKwh * PRICE;
-    deviceMetrics[zone.device_id] = { peakKw, avgKw, weekKwh, monthKwh, trendPct, alertUp, alertDown, wkndKwh, prevWkndKwh, weekCost, monthCost };
-    allWeekKwh.push(weekKwh);
-  });
-  const maxKwh = Math.max(...allWeekKwh, 1);
+  // Fetch all plan details in parallel
+  const planDetails = await Promise.all(dashPlans.map(fp => API.getFloorPlan(fp.id)));
+  const showTabs = dashPlans.length > 1;
 
   // Heatmap color scale: blue→green→yellow→orange→red
   function heatColor(ratio) {
@@ -796,105 +770,166 @@ async function _renderExecFloorPlan(panelSeries, groupSeries, groupNames, ts, no
   const fmtDate = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
   const fmtRange = (a, b) => fmtDate(a) + " \u2013 " + fmtDate(b);
 
+  // Compute per-plan metrics and HTML
+  const planData = planDetails.map((plan, idx) => {
+    const zones = plan.zones || [];
+    const deviceMetrics = {};
+    const allWeekKwh = [];
+    zones.forEach(zone => {
+      const series = panelSeries[zone.device_id] || [];
+      const weekKwh = windowKwh(series, lastWeekStart, lastWeekEnd);
+      const monthKwh = windowKwh(series, monthAgo, now);
+      const avgKw = windowAvgKw(series, lastWeekStart, lastWeekEnd);
+      const peakKw = windowPeakKw(series, lastWeekStart, lastWeekEnd);
+      const prevWkStart = new Date(lastWeekStart); prevWkStart.setUTCDate(prevWkStart.getUTCDate() - 7);
+      const prevWkEnd = new Date(lastWeekStart); prevWkEnd.setUTCMilliseconds(-1);
+      const prevWkKwh = windowKwh(series, prevWkStart, prevWkEnd);
+      const trendPct = prevWkKwh > 0 ? ((weekKwh - prevWkKwh) / prevWkKwh * 100) : 0;
+      const alertUp = trendPct >= 5;
+      const alertDown = trendPct <= -5;
+      const wkndKwh = windowKwh(series, lastSat, lastSunEnd);
+      const prevWkndKwh = windowKwh(series, prevSat, prevSunEnd);
+      const weekCost = weekKwh * PRICE;
+      const monthCost = monthKwh * PRICE;
+      deviceMetrics[zone.device_id] = { peakKw, avgKw, weekKwh, monthKwh, trendPct, alertUp, alertDown, wkndKwh, prevWkndKwh, weekCost, monthCost };
+      allWeekKwh.push(weekKwh);
+    });
+    const maxKwh = Math.max(...allWeekKwh, 1);
+    return { plan, zones, deviceMetrics, maxKwh };
+  });
+
+  // Build tab bar
+  const tabsHtml = showTabs ? `<div class="fp-tabs">${dashPlans.map((fp, i) =>
+    `<button class="fp-tab${i === 0 ? ' active' : ''}" data-fp-idx="${i}">${fp.name}</button>`
+  ).join('')}</div>` : '';
+
+  // Build per-plan pane HTML
+  const panesHtml = planData.map((pd, idx) => {
+    const { plan, zones, deviceMetrics, maxKwh } = pd;
+    const zonesHtml = zones.map((zone, zi) => {
+      const pts = zone.points || [];
+      if (pts.length < 3) return "";
+      const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+      const dm = deviceMetrics[zone.device_id] || {};
+      const dev = ALL_DEVICES.find(d => d.id === zone.device_id);
+      const label = zone.label || (dev ? dev.display_name : zone.device_id);
+      let alertHtml = "";
+      if (dm.alertUp) alertHtml = `<span class="fp-zone-alert" title="+${dm.trendPct.toFixed(0)}% vs last week">&#9650;</span>`;
+      else if (dm.alertDown) alertHtml = `<span class="fp-zone-alert-down" title="${dm.trendPct.toFixed(0)}% vs last week">&#9660;</span>`;
+      const zoneW = maxX - minX, zoneH = maxY - minY;
+      const zoneSz = Math.min(zoneW, zoneH);
+      const fontSize = zoneSz < 8 ? 0.45 : zoneSz < 15 ? 0.55 : 0.62;
+      const valSize = fontSize * 0.85;
+      return `<div class="fp-zone-label" data-zone-idx="${zi}" style="left:${cx}%;top:${cy}%;max-width:${zoneW * 0.9}%">
+        <div class="fp-zone-label-text" style="font-size:${fontSize}rem">${alertHtml}${label}</div>
+        <div class="fp-zone-label-val" style="font-size:${valSize}rem">${fmtDollars(dm.weekCost||0)}/wk</div>
+        <div class="fp-dash-tooltip">
+          <div class="fp-tt-title">${label}${dm.alertUp ? ' <span class="fp-zone-alert" style="font-size:0.7rem">&#9650; +' + dm.trendPct.toFixed(0) + '%</span>' : dm.alertDown ? ' <span class="fp-zone-alert-down" style="font-size:0.7rem">&#9660; ' + dm.trendPct.toFixed(0) + '%</span>' : ""}</div>
+          <div class="fp-tt-row"><span>Last Full Week</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>
+          <div class="fp-tt-row"><span>Weekly Cost</span> <strong class="fp-tt-cost">${fmtDollars(dm.weekCost||0)}</strong></div>
+          <hr class="fp-tt-divider"/>
+          <div class="fp-tt-row"><span>Last Weekend</span> <strong>${fmtKwh(dm.wkndKwh||0)} (${fmtDollars((dm.wkndKwh||0)*PRICE)})</strong></div>
+          <div class="fp-tt-row"><span>Prev Weekend</span> <strong>${fmtKwh(dm.prevWkndKwh||0)} (${fmtDollars((dm.prevWkndKwh||0)*PRICE)})</strong></div>
+          <hr class="fp-tt-divider"/>
+          <div class="fp-tt-row"><span>Last 30 Days</span> <strong>${fmtKwh(dm.monthKwh||0)} (${fmtDollars(dm.monthCost||0)})</strong></div>
+          <div class="fp-tt-row"><span>Week over Week</span> <strong class="${trendClass(dm.trendPct, 0)}">${dm.trendPct >= 0 ? "+" : ""}${(dm.trendPct||0).toFixed(0)}%</strong></div>
+          <div class="fp-tt-row"><span>Avg Load</span> <strong>${(dm.avgKw||0).toFixed(1)} kW</strong></div>
+          <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw||0).toFixed(1)} kW</strong></div>
+        </div>
+      </div>`;
+    }).join("");
+
+    return `<div class="fp-tab-pane${idx === 0 ? '' : ' hidden'}" data-fp-idx="${idx}">
+      <div class="fp-image-wrap" id="fp-wrap-${idx}">
+        <img src="${plan.image_path}" id="fp-img-${idx}"/>
+        <svg class="fp-heatmap-svg" id="fp-heatmap-svg-${idx}" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+        ${zonesHtml}
+      </div>
+    </div>`;
+  }).join("");
+
   col.innerHTML = `
-    <div class="panel-title" style="margin-bottom:0.5rem">${fp.name}
+    <div class="panel-title" style="margin-bottom:0.5rem">${showTabs ? 'Floor Plans' : dashPlans[0].name}
       <span class="fp-heatmap-legend">
         <span class="fp-legend-low">Low</span>
         <span class="fp-legend-bar"></span>
         <span class="fp-legend-high">High</span>
       </span>
     </div>
-    <div class="fp-image-wrap" id="fp-wrap-hero">
-      <img src="${plan.image_path}" id="fp-img-hero"/>
-      <svg class="fp-heatmap-svg" id="fp-heatmap-svg" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-      ${zones.map((zone, idx) => {
-        const pts = zone.points || [];
-        if (pts.length < 3) return "";
-        const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
-        const cx = (minX + maxX) / 2;
-        const cy = (minY + maxY) / 2;
-        const dm = deviceMetrics[zone.device_id] || {};
-        const dev = ALL_DEVICES.find(d => d.id === zone.device_id);
-        const label = zone.label || (dev ? dev.display_name : zone.device_id);
-        // Alert icons: red up for >=5% increase, green down for <=−5% decrease
-        let alertHtml = "";
-        if (dm.alertUp) alertHtml = `<span class="fp-zone-alert" title="+${dm.trendPct.toFixed(0)}% vs last week">&#9650;</span>`;
-        else if (dm.alertDown) alertHtml = `<span class="fp-zone-alert-down" title="${dm.trendPct.toFixed(0)}% vs last week">&#9660;</span>`;
-        const zoneW = maxX - minX, zoneH = maxY - minY;
-        const zoneSz = Math.min(zoneW, zoneH);
-        const fontSize = zoneSz < 8 ? 0.45 : zoneSz < 15 ? 0.55 : 0.62;
-        const valSize = fontSize * 0.85;
-        return `<div class="fp-zone-label" data-zone-idx="${idx}" style="left:${cx}%;top:${cy}%;max-width:${zoneW * 0.9}%">
-          <div class="fp-zone-label-text" style="font-size:${fontSize}rem">${alertHtml}${label}</div>
-          <div class="fp-zone-label-val" style="font-size:${valSize}rem">${fmtDollars(dm.weekCost||0)}/wk</div>
-          <div class="fp-dash-tooltip">
-            <div class="fp-tt-title">${label}${dm.alertUp ? ' <span class="fp-zone-alert" style="font-size:0.7rem">&#9650; +' + dm.trendPct.toFixed(0) + '%</span>' : dm.alertDown ? ' <span class="fp-zone-alert-down" style="font-size:0.7rem">&#9660; ' + dm.trendPct.toFixed(0) + '%</span>' : ""}</div>
-            <div class="fp-tt-row"><span>Last Full Week</span> <strong>${fmtKwh(dm.weekKwh||0)}</strong></div>
-            <div class="fp-tt-row"><span>Weekly Cost</span> <strong class="fp-tt-cost">${fmtDollars(dm.weekCost||0)}</strong></div>
-            <hr class="fp-tt-divider"/>
-            <div class="fp-tt-row"><span>Last Weekend</span> <strong>${fmtKwh(dm.wkndKwh||0)} (${fmtDollars((dm.wkndKwh||0)*PRICE)})</strong></div>
-            <div class="fp-tt-row"><span>Prev Weekend</span> <strong>${fmtKwh(dm.prevWkndKwh||0)} (${fmtDollars((dm.prevWkndKwh||0)*PRICE)})</strong></div>
-            <hr class="fp-tt-divider"/>
-            <div class="fp-tt-row"><span>Last 30 Days</span> <strong>${fmtKwh(dm.monthKwh||0)} (${fmtDollars(dm.monthCost||0)})</strong></div>
-            <div class="fp-tt-row"><span>Week over Week</span> <strong class="${trendClass(dm.trendPct, 0)}">${dm.trendPct >= 0 ? "+" : ""}${(dm.trendPct||0).toFixed(0)}%</strong></div>
-            <div class="fp-tt-row"><span>Avg Load</span> <strong>${(dm.avgKw||0).toFixed(1)} kW</strong></div>
-            <div class="fp-tt-row"><span>Peak</span> <strong>${(dm.peakKw||0).toFixed(1)} kW</strong></div>
-          </div>
-        </div>`;
-      }).join("")}
-    </div>`;
+    ${tabsHtml}
+    ${panesHtml}`;
 
-  // Draw heatmap polygons on SVG
-  const svg = document.getElementById("fp-heatmap-svg");
-  zones.forEach((zone, idx) => {
-    const pts = zone.points || [];
-    if (pts.length < 3) return;
-    const dm = deviceMetrics[zone.device_id] || {};
-    const ratio = maxKwh > 0 ? (dm.weekKwh || 0) / maxKwh : 0;
-    const color = heatColor(ratio);
-    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-    poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
-    poly.setAttribute("fill", color);
-    poly.setAttribute("fill-opacity", "0.4");
-    poly.setAttribute("stroke", color);
-    poly.setAttribute("stroke-width", "0.3");
-    poly.setAttribute("stroke-opacity", "0.9");
-    poly.dataset.zoneIdx = idx;
-    poly.style.cursor = "pointer";
-    poly.style.pointerEvents = "all";
-    svg.appendChild(poly);
-  });
-
-  // Wire zone hover tooltips
-  const wrap = document.getElementById("fp-wrap-hero");
-  wrap.querySelectorAll(".fp-zone-label").forEach(labelEl => {
-    const tooltip = labelEl.querySelector(".fp-dash-tooltip");
-    labelEl.addEventListener("mouseenter", () => {
-      const wrapRect = wrap.getBoundingClientRect();
-      const elRect = labelEl.getBoundingClientRect();
-      tooltip.style.left = "0px";
-      tooltip.style.top = "0px";
-      wrap.appendChild(tooltip);
-      tooltip.classList.add("fp-tt-visible");
-      const ttW = tooltip.offsetWidth;
-      const ttH = tooltip.offsetHeight;
-      const cx = elRect.left + elRect.width / 2 - wrapRect.left;
-      const cy = elRect.top - wrapRect.top;
-      let left = cx - ttW / 2;
-      left = Math.max(4, Math.min(left, wrapRect.width - ttW - 4));
-      let top = cy - ttH - 8;
-      if (top < 4) top = cy + elRect.height + 8;
-      top = Math.max(4, Math.min(top, wrapRect.height - ttH - 4));
-      tooltip.style.left = left + "px";
-      tooltip.style.top = top + "px";
-    });
-    labelEl.addEventListener("mouseleave", () => {
-      tooltip.classList.remove("fp-tt-visible");
-      labelEl.appendChild(tooltip);
+  // Draw heatmap polygons on each plan's SVG
+  planData.forEach((pd, idx) => {
+    const svg = document.getElementById("fp-heatmap-svg-" + idx);
+    if (!svg) return;
+    pd.zones.forEach((zone, zi) => {
+      const pts = zone.points || [];
+      if (pts.length < 3) return;
+      const dm = pd.deviceMetrics[zone.device_id] || {};
+      const ratio = pd.maxKwh > 0 ? (dm.weekKwh || 0) / pd.maxKwh : 0;
+      const color = heatColor(ratio);
+      const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      poly.setAttribute("points", pts.map(p => `${p.x},${p.y}`).join(" "));
+      poly.setAttribute("fill", color);
+      poly.setAttribute("fill-opacity", "0.4");
+      poly.setAttribute("stroke", color);
+      poly.setAttribute("stroke-width", "0.3");
+      poly.setAttribute("stroke-opacity", "0.9");
+      poly.dataset.zoneIdx = zi;
+      poly.style.cursor = "pointer";
+      poly.style.pointerEvents = "all";
+      svg.appendChild(poly);
     });
   });
+
+  // Wire zone hover tooltips for each plan
+  planData.forEach((pd, idx) => {
+    const wrap = document.getElementById("fp-wrap-" + idx);
+    if (!wrap) return;
+    wrap.querySelectorAll(".fp-zone-label").forEach(labelEl => {
+      const tooltip = labelEl.querySelector(".fp-dash-tooltip");
+      labelEl.addEventListener("mouseenter", () => {
+        const wrapRect = wrap.getBoundingClientRect();
+        const elRect = labelEl.getBoundingClientRect();
+        tooltip.style.left = "0px";
+        tooltip.style.top = "0px";
+        wrap.appendChild(tooltip);
+        tooltip.classList.add("fp-tt-visible");
+        const ttW = tooltip.offsetWidth;
+        const ttH = tooltip.offsetHeight;
+        const cx = elRect.left + elRect.width / 2 - wrapRect.left;
+        const cy = elRect.top - wrapRect.top;
+        let left = cx - ttW / 2;
+        left = Math.max(4, Math.min(left, wrapRect.width - ttW - 4));
+        let top = cy - ttH - 8;
+        if (top < 4) top = cy + elRect.height + 8;
+        top = Math.max(4, Math.min(top, wrapRect.height - ttH - 4));
+        tooltip.style.left = left + "px";
+        tooltip.style.top = top + "px";
+      });
+      labelEl.addEventListener("mouseleave", () => {
+        tooltip.classList.remove("fp-tt-visible");
+        labelEl.appendChild(tooltip);
+      });
+    });
+  });
+
+  // Wire tab switching
+  if (showTabs) {
+    col.querySelectorAll('.fp-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        col.querySelectorAll('.fp-tab').forEach(b => b.classList.remove('active'));
+        col.querySelectorAll('.fp-tab-pane').forEach(p => p.classList.add('hidden'));
+        btn.classList.add('active');
+        col.querySelector('.fp-tab-pane[data-fp-idx="' + btn.dataset.fpIdx + '"]').classList.remove('hidden');
+      });
+    });
+  }
 }
 
 function renderAnalytics() {
