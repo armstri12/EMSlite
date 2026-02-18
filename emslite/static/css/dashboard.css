@@ -282,7 +282,7 @@ body {
    ═══════════════════════════════════════════════════════ */
 .main {
   margin-left: var(--sidebar-w);
-  padding: 2rem;
+  padding: 1.25rem 1.5rem;
   min-height: calc(100vh - var(--topbar-h));
   transition: margin-left 0.3s;
 }
@@ -988,7 +988,7 @@ body {
 
 /* Top cards row */
 #exec-cards-top {
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.75rem;
 }
 
 /* Floor plan — full width */
@@ -996,9 +996,9 @@ body {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--card-radius);
-  padding: var(--card-pad);
+  padding: 0.75rem 1rem;
   box-shadow: var(--shadow-card);
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.75rem;
 }
 
 /* Bottom cards row */
@@ -1009,7 +1009,7 @@ body {
 /* Cards grid used inside top/bottom sections */
 .exec-cards-grid {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 .exec-cards-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
 .exec-cards-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
@@ -1020,21 +1020,20 @@ body {
   .exec-cards-grid.cols-3 { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Headline card (Last Full Week summary) */
-.exec-headline {
-  padding: 1.25rem 1.4rem;
-  background: linear-gradient(135deg, var(--s-600), var(--s-700));
+/* Headline card (Last Full Week summary) — use .exec-card.exec-headline for specificity */
+.exec-card.exec-headline {
+  padding: 0.9rem 1.1rem;
+  background: linear-gradient(135deg, var(--s-600), var(--s-700)) !important;
   border: none;
   border-radius: 1rem;
   box-shadow: 0 4px 16px rgba(45,56,66,0.25);
   color: #ffffff;
 }
-.exec-headline .exec-section-label { color: rgba(255,255,255,0.7); }
-.exec-headline .exec-date-range { color: rgba(255,255,255,0.5); }
-.exec-headline-val { font-size: 1.8rem; font-weight: 800; color: #ffffff; margin: 6px 0 4px; }
-.exec-headline-cost { font-size: 1.3rem; font-weight: 700; color: #ffffff; margin-top: 2px; }
-.exec-headline-cost .dollar-sign { font-size: 1rem; opacity: 0.7; }
-.exec-headline-sub { font-size: 0.78rem; color: rgba(255,255,255,0.8); margin-top: 4px; }
+.exec-card.exec-headline .exec-section-label { color: rgba(255,255,255,0.7); }
+.exec-card.exec-headline .exec-date-range { color: rgba(255,255,255,0.5); }
+.exec-headline-val { font-size: 1.5rem; font-weight: 800; color: #ffffff; margin: 3px 0 2px; }
+.exec-headline-cost { font-size: 1.15rem; font-weight: 700; color: #ffffff; margin-top: 1px; }
+.exec-headline-sub { font-size: 0.72rem; color: rgba(255,255,255,0.8); margin-top: 2px; }
 
 /* Trend indicators */
 .trend-up { color: #EF4444; font-weight: 700; }
@@ -1042,56 +1041,56 @@ body {
 .trend-flat { color: var(--muted); font-weight: 600; }
 
 /* Department trend row (WoW changes) */
-.exec-dept-trend-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--card-border); flex-wrap: wrap; }
-.exec-dept-trend { display: inline-flex; align-items: center; gap: 3px; font-size: 0.65rem; }
-.exec-dept-trend-label { font-size: 0.6rem; color: var(--muted); margin-left: auto; }
+.exec-dept-trend-row { display: flex; align-items: center; gap: 6px; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--card-border); flex-wrap: wrap; }
+.exec-dept-trend { display: inline-flex; align-items: center; gap: 3px; font-size: 0.6rem; }
+.exec-dept-trend-label { font-size: 0.55rem; color: var(--muted); margin-left: auto; }
 
 /* Compact KPI cards */
 .exec-kpi {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 1rem;
-  padding: 1rem 1.15rem;
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.85rem;
   box-shadow: var(--shadow-card);
   transition: box-shadow 0.2s, transform 0.2s;
 }
 .exec-kpi:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
-.exec-kpi-label { font-size: 0.68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
-.exec-kpi-val { font-size: 1.15rem; font-weight: 800; color: var(--heading); margin-top: 4px; }
-.exec-kpi-cost { font-size: 1rem; font-weight: 700; color: var(--p-400); margin-top: 2px; }
-.exec-kpi-sub { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
-.exec-kpi-dates { font-size: 0.58rem; color: var(--muted); opacity: 0.65; margin-top: 3px; }
+.exec-kpi-label { font-size: 0.6rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.exec-kpi-val { font-size: 0.95rem; font-weight: 800; color: var(--heading); margin-top: 2px; }
+.exec-kpi-cost { font-size: 0.88rem; font-weight: 700; color: var(--p-400); margin-top: 1px; }
+.exec-kpi-sub { font-size: 0.6rem; color: var(--muted); margin-top: 2px; }
+.exec-kpi-dates { font-size: 0.52rem; color: var(--muted); opacity: 0.65; margin-top: 1px; }
 
 /* Section wrapper card */
 .exec-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  border-radius: 1rem;
-  padding: 1rem 1.15rem;
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.85rem;
   box-shadow: var(--shadow-card);
 }
-.exec-section-label { font-size: 0.68rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; display: flex; align-items: baseline; gap: 6px; }
-.exec-date-range { font-size: 0.58rem; font-weight: 500; color: var(--muted); opacity: 0.65; text-transform: none; letter-spacing: 0; }
+.exec-section-label { font-size: 0.62rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 5px; display: flex; align-items: baseline; gap: 6px; }
+.exec-date-range { font-size: 0.52rem; font-weight: 500; color: var(--muted); opacity: 0.65; text-transform: none; letter-spacing: 0; }
 
 /* Department compact list */
-.exec-dept-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.exec-dept-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.exec-dept-name { font-size: 0.82rem; font-weight: 500; color: var(--heading); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.exec-dept-bar-wrap { width: 60px; height: 7px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; flex-shrink: 0; }
+.exec-dept-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.exec-dept-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.exec-dept-name { font-size: 0.75rem; font-weight: 500; color: var(--heading); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exec-dept-bar-wrap { width: 50px; height: 6px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; flex-shrink: 0; }
 .exec-dept-bar-fill { height: 100%; border-radius: 9999px; }
-.exec-dept-pct { font-size: 0.75rem; color: var(--muted); width: 32px; text-align: right; flex-shrink: 0; }
-.exec-dept-val { font-size: 0.75rem; font-weight: 600; color: var(--heading); width: 70px; text-align: right; flex-shrink: 0; }
-.exec-dept-cost { font-size: 0.72rem; font-weight: 600; color: var(--p-400); width: 55px; text-align: right; flex-shrink: 0; }
-.exec-dept-stats { font-size: 0.65rem; color: var(--muted); white-space: nowrap; }
+.exec-dept-pct { font-size: 0.68rem; color: var(--muted); width: 30px; text-align: right; flex-shrink: 0; }
+.exec-dept-val { font-size: 0.68rem; font-weight: 600; color: var(--heading); width: 65px; text-align: right; flex-shrink: 0; }
+.exec-dept-cost { font-size: 0.68rem; font-weight: 600; color: var(--p-400); width: 50px; text-align: right; flex-shrink: 0; }
+.exec-dept-stats { font-size: 0.6rem; color: var(--muted); white-space: nowrap; }
 
 /* Top consumers compact list */
-.exec-top-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.exec-top-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.exec-top-name { font-size: 0.78rem; font-weight: 500; color: var(--heading); width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
-.exec-top-bar-wrap { flex: 1; height: 7px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
+.exec-top-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.exec-top-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.exec-top-name { font-size: 0.72rem; font-weight: 500; color: var(--heading); width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.exec-top-bar-wrap { flex: 1; height: 6px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
 .exec-top-bar-fill { height: 100%; border-radius: 9999px; background: var(--s-600); }
-.exec-top-cost { font-size: 0.78rem; font-weight: 700; color: var(--p-400); width: 55px; text-align: right; flex-shrink: 0; }
-.exec-top-val { font-size: 0.72rem; font-weight: 600; color: var(--muted); width: 65px; text-align: right; flex-shrink: 0; }
+.exec-top-cost { font-size: 0.72rem; font-weight: 700; color: var(--p-400); width: 50px; text-align: right; flex-shrink: 0; }
+.exec-top-val { font-size: 0.65rem; font-weight: 600; color: var(--muted); width: 60px; text-align: right; flex-shrink: 0; }
 
 /* ═══════════════════════════════════════════════════════
    FLOOR PLAN PINS + TOOLTIPS
