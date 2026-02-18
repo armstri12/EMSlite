@@ -47,6 +47,10 @@
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       <span class="nav-label">Devices</span>
     </a>
+    <a class="nav-item" data-tab="alerts">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span class="nav-label">Alerts Center</span>
+    </a>
     <a class="nav-item" data-tab="health">
       <svg viewBox="0 0 24 24"><path d="M3 13h4l2-6 4 12 2-6h6"/></svg>
       <span class="nav-label">Data Health</span>
@@ -220,6 +224,36 @@
         </div>
         <div id="floorplan-list"></div>
         <div id="floorplan-editor" class="hidden"></div>
+      </div>
+    </div>
+
+    <!-- ALERTS TAB -->
+    <div class="tab-content" id="tab-alerts">
+      <div class="filter-bar" id="alerts-toolbar" style="justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:0.75rem">
+          <label style="display:flex;align-items:center;gap:0.4rem;color:var(--body-text)">
+            <input type="checkbox" id="alerts-include-ack"/>
+            Include acknowledged
+          </label>
+          <label style="display:flex;align-items:center;gap:0.4rem;color:var(--body-text)">
+            Window
+            <select id="alerts-window" class="filter-input" style="min-width:100px">
+              <option value="1">1h</option>
+              <option value="6">6h</option>
+              <option value="24" selected>24h</option>
+              <option value="72">72h</option>
+            </select>
+          </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" id="alerts-refresh">Refresh</button>
+          <button class="btn btn-primary btn-sm" id="alerts-ack-all">Acknowledge Visible</button>
+        </div>
+      </div>
+      <div id="alerts-summary-cards"></div>
+      <div class="panel" style="margin-top:1rem">
+        <div class="panel-title">Alert Events</div>
+        <div id="alerts-table-wrap" class="data-table-wrap"></div>
       </div>
     </div>
 

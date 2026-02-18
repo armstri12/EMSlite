@@ -19,6 +19,9 @@ let DEPARTMENTS = [];       // [{id, display_name, color, device_count}]
 let DEPT_DEVICE_MAP = {};   // department_id -> [panel_id, ...]
 let ALL_DEVICES = [];       // [{id, display_name, ...}]
 let ACTIVE_ALERTS = [];
+let ALERT_SUMMARY = { critical: 0, warning: 0, configured_devices: 0, window_hours: 24 };
+let ALERTS_INCLUDE_ACK = false;
+let ALERTS_WINDOW_HOURS = 24;
 
 /* ─── Theme Palettes — Edwards brand ─── */
 const lightC = {
@@ -73,7 +76,7 @@ async function initDashboard() {
     buildFilterBar("dt-filter-bar", "data",       "daterange");
     setupTableControls();
     renderCurrentTab();
-    await refreshAlerts();
+    await refreshAlerts(true);
   } catch (err) {
     console.error("Failed to load dashboard data:", err);
     document.querySelector(".main-container").innerHTML =
@@ -167,18 +170,25 @@ function setupTabNavigation() {
 function setupNotifications() {
   const btn = document.getElementById("notifications-btn");
   if (!btn) return;
-  btn.addEventListener("click", () => showNotificationsPanel());
+  btn.addEventListener("click", () => {
+    switchTab("alerts");
+  });
 }
 
-async function refreshAlerts() {
+async function refreshAlerts(latestOnly = false) {
   try {
-    const payload = await API.getAlerts(false);
+    const payload = await API.getAlerts({
+      includeAcknowledged: ALERTS_INCLUDE_ACK,
+      windowHours: ALERTS_WINDOW_HOURS,
+      latestOnly,
+    });
     ACTIVE_ALERTS = payload.alerts || [];
+    ALERT_SUMMARY = payload.summary || ALERT_SUMMARY;
   } catch (_e) {
     ACTIVE_ALERTS = [];
   }
   const dot = document.querySelector(".notif-dot");
-  if (dot) dot.style.display = ACTIVE_ALERTS.length ? "block" : "none";
+  if (dot) dot.style.display = ACTIVE_ALERTS.some(a => !a.acknowledged) ? "block" : "none";
 }
 
 function showNotificationsPanel() {
@@ -216,7 +226,7 @@ function showNotificationsPanel() {
   panel.querySelectorAll(".ack-alert").forEach(btn => {
     btn.addEventListener("click", async () => {
       await API.acknowledgeAlerts([btn.dataset.key]);
-      await refreshAlerts();
+      await refreshAlerts(true);
       close();
       showNotificationsPanel();
     });
@@ -1409,7 +1419,92 @@ function renderTab(tabKey) {
   else if (tabKey === "comparison") renderComparison();
   else if (tabKey === "data")       renderDataTable();
   else if (tabKey === "devices")    renderDevicesTab();
+  else if (tabKey === "alerts")     renderAlertsTab();
   else if (tabKey === "health")     renderHealthTab();
+}
+
+
+async function renderAlertsTab() {
+  const tableWrap = document.getElementById("alerts-table-wrap");
+  const cards = document.getElementById("alerts-summary-cards");
+  if (!tableWrap || !cards) return;
+
+  await refreshAlerts(false);
+
+  const includeAckEl = document.getElementById("alerts-include-ack");
+  const windowEl = document.getElementById("alerts-window");
+  if (includeAckEl) includeAckEl.checked = ALERTS_INCLUDE_ACK;
+  if (windowEl) windowEl.value = String(ALERTS_WINDOW_HOURS);
+
+  const refreshBtn = document.getElementById("alerts-refresh");
+  const ackAllBtn = document.getElementById("alerts-ack-all");
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = "1";
+    refreshBtn.addEventListener("click", async () => {
+      ALERTS_INCLUDE_ACK = !!document.getElementById("alerts-include-ack")?.checked;
+      ALERTS_WINDOW_HOURS = parseInt(document.getElementById("alerts-window")?.value || "24", 10);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+  if (includeAckEl && !includeAckEl.dataset.wired) {
+    includeAckEl.dataset.wired = "1";
+    includeAckEl.addEventListener("change", async () => {
+      ALERTS_INCLUDE_ACK = includeAckEl.checked;
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+  if (windowEl && !windowEl.dataset.wired) {
+    windowEl.dataset.wired = "1";
+    windowEl.addEventListener("change", async () => {
+      ALERTS_WINDOW_HOURS = parseInt(windowEl.value || "24", 10);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+  if (ackAllBtn && !ackAllBtn.dataset.wired) {
+    ackAllBtn.dataset.wired = "1";
+    ackAllBtn.addEventListener("click", async () => {
+      const keys = ACTIVE_ALERTS.filter(a => !a.acknowledged).map(a => a.key);
+      if (!keys.length) return;
+      await API.acknowledgeAlerts(keys);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  }
+
+  const crit = ACTIVE_ALERTS.filter(a => a.severity === "critical").length;
+  const warn = ACTIVE_ALERTS.filter(a => a.severity === "warning").length;
+  const unacked = ACTIVE_ALERTS.filter(a => !a.acknowledged).length;
+  cards.innerHTML = `<div class="exec-cards-grid cols-4">
+    <div class="exec-card"><div class="exec-metric-label">Critical Alerts</div><div class="exec-metric-value">${crit}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Warning Alerts</div><div class="exec-metric-value">${warn}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Unacknowledged</div><div class="exec-metric-value">${unacked}</div></div>
+    <div class="exec-card"><div class="exec-metric-label">Threshold-configured Devices</div><div class="exec-metric-value">${ALERT_SUMMARY.configured_devices || 0}</div></div>
+  </div>`;
+
+  const rows = ACTIVE_ALERTS.map(a => `<tr>
+    <td>${a.timestamp}</td>
+    <td>${a.device_name || a.device_id}</td>
+    <td><span class="badge ${a.severity === "critical" ? "badge-neg" : "badge-warn"}">${a.severity}</span></td>
+    <td>${a.current_kw.toFixed(2)}</td>
+    <td>${a.threshold_kw == null ? "-" : Number(a.threshold_kw).toFixed(2)}</td>
+    <td>${a.acknowledged ? '<span class="kpi-badge positive">Acknowledged</span>' : '<span class="kpi-badge negative">Active</span>'}</td>
+    <td>${a.acknowledged ? "" : `<button class="btn btn-ghost btn-sm ack-row" data-key="${a.key}">Acknowledge</button>`}</td>
+  </tr>`).join("");
+
+  tableWrap.innerHTML = `<table class="data-table"><thead><tr>
+    <th>Timestamp</th><th>Device</th><th>Severity</th><th>Current kW</th><th>Threshold kW</th><th>Status</th><th>Action</th>
+  </tr></thead><tbody>${rows || '<tr><td colspan="7">No alerts for selected window.</td></tr>'}</tbody></table>`;
+
+  tableWrap.querySelectorAll(".ack-row").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await API.acknowledgeAlerts([btn.dataset.key]);
+      await refreshAlerts(false);
+      renderAlertsTab();
+    });
+  });
 }
 
 async function renderHealthTab() {

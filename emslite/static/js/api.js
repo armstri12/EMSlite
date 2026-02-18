@@ -177,8 +177,12 @@ const API = {
     return res.json();
   },
 
-  async getAlerts(includeAcknowledged = false) {
-    const res = await fetch("/api/alerts?include_acknowledged=" + (includeAcknowledged ? "true" : "false"));
+  async getAlerts(params = {}) {
+    const q = new URLSearchParams();
+    if (params.includeAcknowledged) q.set("include_acknowledged", "true");
+    if (params.windowHours) q.set("window_hours", String(params.windowHours));
+    if (params.latestOnly) q.set("latest_only", "true");
+    const res = await fetch("/api/alerts?" + q.toString());
     return res.json();
   },
 
