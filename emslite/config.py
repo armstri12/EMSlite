@@ -23,6 +23,11 @@ DEFAULT_CONFIG: dict = {
     "data_dir": "data",
     "master_filename": "RawPanelUsageHistory.csv",
     "glob_pattern": "Meter*_SystemCurrent.csv",
+    "weather": {
+        "enabled": False,
+        "station_id": None,
+        "unit": "celsius",
+    },
 }
 
 

@@ -217,6 +217,26 @@ class IngestLog(Base):
         }
 
 
+class WeatherCache(Base):
+    """Cached hourly weather data from NOAA NCEI."""
+
+    __tablename__ = "weather_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    station_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    temperature_c: Mapped[float | None] = mapped_column(Float, default=None)
+    humidity_pct: Mapped[float | None] = mapped_column(Float, default=None)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        return {
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "temperature_c": self.temperature_c,
+            "humidity_pct": self.humidity_pct,
+        }
+
+
 class AlertEvent(Base):
     """Acknowledgement state for computed alert events."""
 

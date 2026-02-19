@@ -52,5 +52,10 @@
       "output": "next_gen_dashboard.html"
     }
   },
-  "carbon_kg_per_kwh": 0.4
+  "carbon_kg_per_kwh": 0.4,
+  "weather": {
+    "enabled": true,
+    "station_id": "72503014732",
+    "unit": "celsius"
+  }
 }
