@@ -87,6 +87,7 @@ async function initDashboard() {
     buildFilterBar("an-filter-bar", "analytics",  "daterange");
     buildFilterBar("cp-filter-bar", "comparison", "comparison");
     buildFilterBar("dt-filter-bar", "data",       "daterange");
+    buildBehaviorFilterBar();
     setupTableControls();
     renderCurrentTab();
     await refreshAlerts(true);
@@ -105,7 +106,8 @@ const tabState = {
   overview:   { panels: new Set(), startDate: "", endDate: "", department: "" },
   analytics:  { panels: new Set(), startDate: "", endDate: "", department: "" },
   comparison: { panels: new Set(), p1Start: "", p1End: "", p2Start: "", p2End: "", department: "" },
-  data:       { panels: new Set(), startDate: "", endDate: "", department: "" }
+  data:       { panels: new Set(), startDate: "", endDate: "", department: "" },
+  behavior:   { panel: "", startDate: "", endDate: "" }
 };
 
 function initTabState() {
@@ -118,6 +120,9 @@ function initTabState() {
   tabState.analytics.endDate = DATE_MAX;
   tabState.data.startDate = DATE_MIN;
   tabState.data.endDate = DATE_MAX;
+  tabState.behavior.startDate = DATE_MIN;
+  tabState.behavior.endDate = DATE_MAX;
+  tabState.behavior.panel = ALL_PANELS.length ? ALL_PANELS[0] : "";
 
   // Auto-init comparison periods
   const totalDays = DATE_MIN && DATE_MAX ? (new Date(DATE_MAX) - new Date(DATE_MIN)) / 86400000 : 0;
@@ -1630,6 +1635,7 @@ function renderTab(tabKey) {
   else if (tabKey === "devices")    renderDevicesTab();
   else if (tabKey === "alerts")     renderAlertsTab();
   else if (tabKey === "health")     renderHealthTab();
+  else if (tabKey === "behavior")   renderBehaviorTab();
 }
 
 
@@ -1744,6 +1750,249 @@ async function renderHealthTab() {
 
 function renderCurrentTab() {
   renderTab(activeTab);
+}
+
+/* ═══════════════════════════════════════════════════════
+   BEHAVIOR TAB
+   ═══════════════════════════════════════════════════════ */
+function buildBehaviorFilterBar() {
+  const container = document.getElementById("bh-filter-bar");
+  if (!container) return;
+  const st = tabState.behavior;
+
+  let html = '';
+  html += '<div class="filter-group"><label>Panel / Device</label>';
+  html += '<select id="bh-panel" class="filter-input" style="min-width:220px">';
+  ALL_PANELS.forEach(p => {
+    const dev = ALL_DEVICES.find(d => d.id === p);
+    const label = dev ? dev.display_name + " (" + p + ")" : p;
+    html += '<option value="' + p + '"' + (p === st.panel ? ' selected' : '') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+
+  html += '<div class="filter-divider"></div>';
+  html += '<div class="filter-group"><label>Start</label>';
+  html += '<input type="date" id="bh-start" class="filter-input" value="' + st.startDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
+  html += '<div class="filter-group"><label>End</label>';
+  html += '<input type="date" id="bh-end" class="filter-input" value="' + st.endDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
+  html += '<button class="btn btn-primary btn-sm" id="bh-analyze">Analyze</button>';
+
+  container.innerHTML = html;
+
+  document.getElementById("bh-analyze").addEventListener("click", () => {
+    tabState.behavior.panel = document.getElementById("bh-panel").value;
+    tabState.behavior.startDate = document.getElementById("bh-start").value;
+    tabState.behavior.endDate = document.getElementById("bh-end").value;
+    renderBehaviorTab();
+  });
+}
+
+async function renderBehaviorTab() {
+  const st = tabState.behavior;
+  const t = T();
+  const narrative = document.getElementById("bh-narrative");
+  const cards = document.getElementById("bh-kpi-cards");
+  const detail = document.getElementById("bh-narrative-detail");
+
+  if (!st.panel) {
+    if (narrative) narrative.innerHTML =
+      '<div style="text-align:center;color:var(--muted);padding:3rem">' +
+      '<h2>Select a Panel</h2><p>Choose a panel or device above to analyze its power usage behavior.</p></div>';
+    return;
+  }
+
+  if (narrative) narrative.innerHTML =
+    '<div style="text-align:center;color:var(--muted);padding:2rem">Analyzing behavior\u2026</div>';
+
+  try {
+    const bh = await API.getBehavior({
+      panel: st.panel,
+      start: st.startDate ? st.startDate + "T00:00:00Z" : undefined,
+      end: st.endDate ? st.endDate + "T23:59:59Z" : undefined,
+    });
+
+    renderBehaviorNarrative(bh, narrative);
+    renderBehaviorKPIs(bh, cards);
+    renderBehaviorHourlyChart(bh, t);
+    renderBehaviorSplitChart(bh, t);
+    renderBehaviorScenariosChart(bh, t);
+    renderBehaviorDetailNarrative(bh, detail);
+
+  } catch (err) {
+    console.error("Behavior analysis failed:", err);
+    if (narrative) narrative.innerHTML =
+      '<div style="text-align:center;color:var(--negative-text,#dc2626);padding:2rem">' +
+      '<h3>Analysis Failed</h3><p>' + err.message + '</p></div>';
+  }
+}
+
+function renderBehaviorNarrative(bh, container) {
+  if (!container) return;
+  const n = bh.narrative;
+  const cls = bh.energy_split.off_shift_pct >= 40 ? "negative" : "positive";
+  container.innerHTML =
+    '<div class="savings-banner ' + cls + '" style="margin-bottom:var(--card-gap)">' +
+    '<h3 style="font-size:1.4rem;margin-bottom:8px">' + n.headline + '</h3>' +
+    '<p style="opacity:0.9;font-size:0.95rem;line-height:1.7;max-width:72ch">' + n.phantom_story + '</p>' +
+    '</div>';
+}
+
+function renderBehaviorKPIs(bh, container) {
+  if (!container) return;
+  const es = bh.energy_split;
+  const ph = bh.phantom_draw;
+  const an = bh.annualized_phantom;
+
+  container.innerHTML =
+    '<div class="exec-cards-grid cols-4" style="margin-bottom:var(--card-gap)">' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Off-Shift Energy</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--p-400,#C41230)">' + es.off_shift_pct.toFixed(0) + '%</div>' +
+        '<div style="font-size:0.75rem;color:var(--muted)">' + es.off_shift_kwh.toFixed(0) + ' kWh of ' + es.total_kwh.toFixed(0) + ' kWh</div>' +
+      '</div>' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Phantom Draw</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + ph.phantom_kw.toFixed(2) + ' kW</div>' +
+        '<div style="font-size:0.75rem;color:var(--muted)">Sustained minimum load overnight</div>' +
+      '</div>' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Annual Phantom Cost</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--p-400,#C41230)">$' + an.annual_phantom_cost.toLocaleString() + '</div>' +
+        '<div style="font-size:0.75rem;color:var(--muted)">' + an.annual_phantom_kwh.toLocaleString() + ' kWh/year wasted</div>' +
+      '</div>' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Annual Carbon Impact</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + an.annual_phantom_carbon_kg.toLocaleString() + ' kg CO\u2082</div>' +
+        '<div style="font-size:0.75rem;color:var(--muted)">' + an.annual_phantom_carbon_tonnes.toFixed(1) + ' tonnes CO\u2082/year</div>' +
+      '</div>' +
+    '</div>';
+}
+
+function renderBehaviorHourlyChart(bh, t) {
+  const hp = bh.hourly_profile;
+
+  // Shift band shape (6:00-14:30)
+  const shiftShape = {
+    type: "rect", xref: "x", yref: "paper",
+    x0: 6, x1: 14.5, y0: 0, y1: 1,
+    fillcolor: "rgba(22,163,74,0.08)",
+    line: { width: 0 },
+  };
+
+  const traces = [
+    {
+      x: hp.hours, y: hp.avg_kw,
+      mode: "lines+markers", name: "Overall Avg kW",
+      line: { color: t.accentDark, width: 3, shape: "spline" },
+      marker: { size: 8, color: t.accentDark, line: { color: t.card, width: 2 } },
+      fill: "tozeroy", fillcolor: t.accentDark + "12",
+    },
+    {
+      x: hp.hours, y: hp.off_shift_avg_kw,
+      mode: "lines", name: "Off-Shift Avg kW",
+      line: { color: t.accent, width: 2, dash: "dash", shape: "spline" },
+    },
+  ];
+
+  // Phantom draw reference line
+  const phantomKw = bh.phantom_draw.phantom_kw;
+  if (phantomKw > 0) {
+    traces.push({
+      x: [0, 23], y: [phantomKw, phantomKw],
+      mode: "lines", name: "Phantom Draw (" + phantomKw.toFixed(2) + " kW)",
+      line: { color: "#EF4444", width: 2, dash: "dot" },
+    });
+  }
+
+  Plotly.newPlot("chart-bh-hourly", traces, pLayout({
+    xaxis: xA({ title: { text: "Hour of Day (Eastern)", font: { size: 12 } }, dtick: 1, range: [-0.5, 23.5] }),
+    yaxis: yA({ title: { text: "kW", font: { size: 12 } } }),
+    shapes: [shiftShape],
+    annotations: [{
+      x: 10.25, y: 1, xref: "x", yref: "paper",
+      text: "Shift (6 AM \u2013 2:30 PM)", showarrow: false,
+      font: { size: 10, color: "rgba(22,163,74,0.6)" }, yanchor: "top",
+    }],
+    legend: { orientation: "h", y: -0.2 },
+  }), pCfg);
+}
+
+function renderBehaviorSplitChart(bh, t) {
+  const es = bh.energy_split;
+
+  Plotly.newPlot("chart-bh-split", [{
+    values: [es.shift_kwh, es.off_shift_kwh],
+    labels: ["Shift (" + es.shift_kwh.toFixed(0) + " kWh)", "Off-Shift (" + es.off_shift_kwh.toFixed(0) + " kWh)"],
+    type: "pie", hole: 0.55,
+    marker: { colors: ["#16A34A", "#EF4444"] },
+    textinfo: "percent",
+    textfont: { size: 14, color: "#fff" },
+    hovertemplate: "%{label}<br>%{value:.0f} kWh<br>%{percent}<extra></extra>",
+  }], pLayout({
+    annotations: [{
+      text: es.off_shift_pct.toFixed(0) + "%<br>Off-Shift",
+      font: { size: 18, color: t.ink, weight: 700 },
+      showarrow: false, x: 0.5, y: 0.5,
+    }],
+    legend: { orientation: "h", y: -0.1 },
+  }), pCfg);
+}
+
+function renderBehaviorScenariosChart(bh, t) {
+  const sc = bh.reduction_scenarios;
+
+  Plotly.newPlot("chart-bh-scenarios", [
+    {
+      x: sc.map(s => s.reduction_pct + "% Reduction"),
+      y: sc.map(s => s.annual_cost_saved),
+      type: "bar", name: "Annual $ Saved",
+      marker: { color: ["#38BDF8", "#16A34A", "#F97316", t.accent] },
+      text: sc.map(s => "$" + s.annual_cost_saved.toLocaleString()),
+      textposition: "outside",
+      textfont: { size: 12, color: t.ink },
+    },
+  ], pLayout({
+    xaxis: xA({ title: { text: "Phantom Reduction Level", font: { size: 12 } } }),
+    yaxis: yA({ title: { text: "Annual Savings ($)", font: { size: 12 } } }),
+    bargap: 0.3,
+  }), pCfg);
+}
+
+function renderBehaviorDetailNarrative(bh, container) {
+  if (!container) return;
+  const n = bh.narrative;
+  const sc = bh.reduction_scenarios;
+  const full = sc.find(s => s.reduction_pct === 100);
+
+  let fullKpis = '';
+  if (full) {
+    fullKpis =
+      '<div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--card-border,#e5e7eb)">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:10px">If Phantom Draw Were Eliminated Entirely</div>' +
+        '<div class="exec-cards-grid cols-4">' +
+          '<div class="exec-card"><div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase">kWh Saved / Year</div><div style="font-size:1.3rem;font-weight:800;color:var(--ink)">' + full.annual_kwh_saved.toLocaleString() + '</div></div>' +
+          '<div class="exec-card"><div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase">Cost Saved / Year</div><div style="font-size:1.3rem;font-weight:800;color:var(--p-400,#C41230)">$' + full.annual_cost_saved.toLocaleString() + '</div></div>' +
+          '<div class="exec-card"><div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase">Equivalent Trees</div><div style="font-size:1.3rem;font-weight:800;color:var(--ink)">' + full.equivalent_trees_year.toFixed(0) + ' trees</div></div>' +
+          '<div class="exec-card"><div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase">Equivalent Miles Not Driven</div><div style="font-size:1.3rem;font-weight:800;color:var(--ink)">' + full.equivalent_miles_driven.toLocaleString() + '</div></div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  container.innerHTML =
+    '<div class="panel" style="margin-top:var(--card-gap)">' +
+      '<div class="panel-title">Impact Analysis</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--card-gap,1.5rem)">' +
+        '<div>' +
+          '<h4 style="color:var(--ink);font-size:1rem;margin-bottom:8px">The Cost of Inaction</h4>' +
+          '<p style="color:var(--muted);line-height:1.7;font-size:0.9rem">' + n.cost_impact + '</p>' +
+        '</div>' +
+        '<div>' +
+          '<h4 style="color:var(--ink);font-size:1rem;margin-bottom:8px">What You Can Do</h4>' +
+          '<p style="color:var(--muted);line-height:1.7;font-size:0.9rem">' + n.call_to_action + '</p>' +
+        '</div>' +
+      '</div>' +
+      fullKpis +
+    '</div>';
 }
 
 /* ─── Boot ─── */

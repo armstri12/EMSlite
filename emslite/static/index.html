@@ -55,6 +55,10 @@
       <svg viewBox="0 0 24 24"><path d="M3 13h4l2-6 4 12 2-6h6"/></svg>
       <span class="nav-label">Data Health</span>
     </a>
+    <a class="nav-item" data-tab="behavior">
+      <svg viewBox="0 0 24 24"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+      <span class="nav-label">Behavior</span>
+    </a>
   </nav>
   <div class="sidebar-footer">
     <a class="nav-item" style="cursor:default;opacity:0.5">
@@ -270,6 +274,28 @@
           <div id="health-freshness"></div>
         </div>
       </div>
+    </div>
+
+    <!-- BEHAVIOR TAB -->
+    <div class="tab-content" id="tab-behavior">
+      <div class="filter-bar" id="bh-filter-bar"></div>
+      <div id="bh-narrative"></div>
+      <div id="bh-kpi-cards"></div>
+      <div class="charts-grid">
+        <div class="panel panel-12">
+          <div class="panel-title">24-Hour Power Profile &mdash; Shift vs Off-Shift</div>
+          <div class="chart-area" id="chart-bh-hourly"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Energy Split: Shift vs Off-Shift</div>
+          <div class="chart-area" id="chart-bh-split"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Phantom Draw Reduction Scenarios</div>
+          <div class="chart-area" id="chart-bh-scenarios"></div>
+        </div>
+      </div>
+      <div id="bh-narrative-detail"></div>
     </div>
 
   </div>

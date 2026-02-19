@@ -1191,3 +1191,12 @@ body {
 .fp-tt-row strong { color: var(--heading); }
 .fp-tt-divider { border: none; border-top: 1px solid var(--card-border); margin: 4px 0; }
 .fp-tt-cost { color: var(--p-400); font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════
+   BEHAVIOR TAB
+   ═══════════════════════════════════════════════════════ */
+@media (max-width: 767px) {
+  #bh-narrative-detail .panel > div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+}
