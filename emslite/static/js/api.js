@@ -201,4 +201,12 @@ const API = {
     const res = await fetch("/api/data-health");
     return res.json();
   },
+
+  async getWeather(params = {}) {
+    const q = new URLSearchParams();
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    const res = await fetch("/api/weather?" + q.toString());
+    return res.json();
+  },
 };

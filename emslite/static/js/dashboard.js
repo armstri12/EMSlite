@@ -22,6 +22,8 @@ let ACTIVE_ALERTS = [];
 let ALERT_SUMMARY = { critical: 0, warning: 0, configured_devices: 0, window_hours: 24 };
 let ALERTS_INCLUDE_ACK = false;
 let ALERTS_WINDOW_HOURS = 24;
+let WEATHER = { enabled: false, timestamps: [], temperature_c: [], humidity_pct: [], unit: "celsius" };
+let WEATHER_OVERLAY = { temperature: false, humidity: false };
 
 /* ─── Theme Palettes — Edwards brand ─── */
 const lightC = {
@@ -63,6 +65,17 @@ async function initDashboard() {
       if (dev.department_id && DEPT_DEVICE_MAP[dev.department_id]) {
         DEPT_DEVICE_MAP[dev.department_id].push(dev.id);
       }
+    }
+
+    // Load weather config and data if enabled
+    try {
+      const cfg = await API.getConfig();
+      const wCfg = (cfg && cfg.weather) || {};
+      if (wCfg.enabled && wCfg.station_id && DATE_MIN && DATE_MAX) {
+        WEATHER = await API.getWeather({ start: DATE_MIN, end: DATE_MAX });
+      }
+    } catch (e) {
+      console.warn("Weather data load skipped:", e);
     }
 
     initTabState();
@@ -309,6 +322,25 @@ function buildFilterBar(containerId, tabKey, mode) {
       <input type="date" id="cp2e-${uid}" class="filter-input" value="${st.p2End}"/></div>`;
   }
 
+  // Weather overlay toggles (Analytics & Comparison tabs only)
+  if (WEATHER.enabled && (tabKey === "analytics" || tabKey === "comparison")) {
+    html += `<div class="filter-divider"></div>
+    <div class="filter-group" style="gap:10px;align-items:center">
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="wx-temp-${uid}" ${WEATHER_OVERLAY.temperature ? "checked" : ""}
+               style="accent-color:#F97316"/>
+        <span style="color:#F97316;font-size:0.7rem;font-weight:600">&#9728;</span>
+        <span style="font-size:0.75rem">Temp</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="wx-hum-${uid}" ${WEATHER_OVERLAY.humidity ? "checked" : ""}
+               style="accent-color:#38BDF8"/>
+        <span style="color:#38BDF8;font-size:0.7rem;font-weight:600">&#9679;</span>
+        <span style="font-size:0.75rem">Humidity</span>
+      </label>
+    </div>`;
+  }
+
   html += `<button class="btn btn-primary" id="apply-${uid}">Apply</button>
     <button class="btn btn-ghost" id="reset-${uid}">Reset</button>`;
 
@@ -412,6 +444,22 @@ function buildFilterBar(containerId, tabKey, mode) {
     }
     renderTab(tabKey);
   });
+
+  // Wire weather overlay toggles
+  const wxTemp = document.getElementById("wx-temp-" + uid);
+  const wxHum = document.getElementById("wx-hum-" + uid);
+  if (wxTemp) {
+    wxTemp.addEventListener("change", () => {
+      WEATHER_OVERLAY.temperature = wxTemp.checked;
+      renderTab(tabKey);
+    });
+  }
+  if (wxHum) {
+    wxHum.addEventListener("change", () => {
+      WEATHER_OVERLAY.humidity = wxHum.checked;
+      renderTab(tabKey);
+    });
+  }
 }
 
 function syncDDBadge(uid, st) {
@@ -512,6 +560,137 @@ function weekendShapes(ts) {
   for(let i=0;i<ts.length;i++){ const d=new Date(ts[i]).getUTCDay();const isWe=d===0||d===6;
     if(isWe&&ws===null)ws=ts[i]; if(!isWe&&ws!==null){ shapes.push({type:"rect",xref:"x",yref:"paper",x0:ws,x1:ts[i],y0:0,y1:1,line:{width:0},fillcolor:"rgba(139,212,53,0.06)"}); ws=null; }
   } if(ws!==null)shapes.push({type:"rect",xref:"x",yref:"paper",x0:ws,x1:ts[ts.length-1],y0:0,y1:1,line:{width:0},fillcolor:"rgba(139,212,53,0.06)"}); return shapes;
+}
+
+/* ─── Weather overlay helpers ─── */
+
+function filterWeather(startISO, endISO) {
+  if (!WEATHER.enabled || !WEATHER.timestamps.length) return null;
+  const sD = startISO ? new Date(startISO) : null;
+  const eD = endISO ? new Date(endISO) : null;
+  const ts = [], temp = [], hum = [];
+  WEATHER.timestamps.forEach((t, i) => {
+    const d = new Date(t);
+    if (sD && d < sD) return;
+    if (eD && d > eD) return;
+    ts.push(t);
+    temp.push(WEATHER.temperature_c[i]);
+    hum.push(WEATHER.humidity_pct[i]);
+  });
+  if (!ts.length) return null;
+  return { timestamps: ts, temperature_c: temp, humidity_pct: hum };
+}
+
+function weatherTimeSeriesTraces(wx, opts) {
+  opts = opts || {};
+  const traces = [];
+  const dash = opts.dash || "dot";
+  const unitLabel = WEATHER.unit === "fahrenheit" ? "\u00B0F" : "\u00B0C";
+  if (WEATHER_OVERLAY.temperature && wx.temperature_c.some(v => v != null)) {
+    traces.push({
+      x: wx.timestamps, y: wx.temperature_c,
+      mode: "lines", name: "Temp (" + unitLabel + ")",
+      line: { color: "#F97316", width: 1.5, dash: dash, shape: "spline" },
+      yaxis: "y2", opacity: 0.85,
+      hovertemplate: "%{y:.1f}" + unitLabel + "<extra>Temp</extra>"
+    });
+  }
+  if (WEATHER_OVERLAY.humidity && wx.humidity_pct.some(v => v != null)) {
+    traces.push({
+      x: wx.timestamps, y: wx.humidity_pct,
+      mode: "lines", name: "Humidity (%)",
+      line: { color: "#38BDF8", width: 1.5, dash: dash, shape: "spline" },
+      yaxis: "y3", opacity: 0.75,
+      hovertemplate: "%{y:.0f}%<extra>Humidity</extra>"
+    });
+  }
+  return traces;
+}
+
+function weatherAxesLayout() {
+  const layout = {};
+  if (WEATHER_OVERLAY.temperature) {
+    layout.yaxis2 = {
+      title: { text: WEATHER.unit === "fahrenheit" ? "\u00B0F" : "\u00B0C",
+               font: { size: 11, color: "#F97316" } },
+      overlaying: "y", side: "right", showgrid: false, zeroline: false,
+      tickfont: { color: "#F97316", size: 10 }
+    };
+  }
+  if (WEATHER_OVERLAY.humidity) {
+    layout.yaxis3 = {
+      title: { text: "%RH", font: { size: 11, color: "#38BDF8" } },
+      overlaying: "y", side: "right",
+      position: WEATHER_OVERLAY.temperature ? 0.97 : 1.0,
+      showgrid: false, zeroline: false,
+      tickfont: { color: "#38BDF8", size: 10 }
+    };
+    if (WEATHER_OVERLAY.temperature) layout.margin = { r: 75 };
+  }
+  return layout;
+}
+
+function weatherDailyTraces(wx) {
+  const traces = [];
+  const dayT = {}, dayH = {}, dayC = {};
+  wx.timestamps.forEach((t, i) => {
+    const dk = new Date(t).toISOString().slice(0, 10);
+    if (!dayT[dk]) { dayT[dk] = 0; dayH[dk] = 0; dayC[dk] = 0; }
+    if (wx.temperature_c[i] != null) { dayT[dk] += wx.temperature_c[i]; dayC[dk]++; }
+    if (wx.humidity_pct[i] != null) dayH[dk] += wx.humidity_pct[i];
+  });
+  const dates = Object.keys(dayT).sort();
+  const unitLabel = WEATHER.unit === "fahrenheit" ? "\u00B0F" : "\u00B0C";
+  if (WEATHER_OVERLAY.temperature) {
+    traces.push({
+      x: dates, y: dates.map(d => dayC[d] ? dayT[d] / dayC[d] : null),
+      mode: "lines+markers", name: "Avg Temp (" + unitLabel + ")",
+      line: { color: "#F97316", width: 2, shape: "spline" },
+      marker: { size: 5, color: "#F97316" }, yaxis: "y2"
+    });
+  }
+  if (WEATHER_OVERLAY.humidity) {
+    traces.push({
+      x: dates, y: dates.map(d => dayC[d] ? dayH[d] / dayC[d] : null),
+      mode: "lines+markers", name: "Avg Humidity (%)",
+      line: { color: "#38BDF8", width: 2, shape: "spline" },
+      marker: { size: 5, color: "#38BDF8" }, yaxis: "y3"
+    });
+  }
+  return traces;
+}
+
+function weatherHourlyProfileTraces(wx) {
+  const traces = [];
+  const sT = Array(24).fill(0), sH = Array(24).fill(0), c = Array(24).fill(0);
+  wx.timestamps.forEach((t, i) => {
+    const h = new Date(t).getUTCHours();
+    if (wx.temperature_c[i] != null) { sT[h] += wx.temperature_c[i]; c[h]++; }
+    if (wx.humidity_pct[i] != null) sH[h] += wx.humidity_pct[i];
+  });
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const unitLabel = WEATHER.unit === "fahrenheit" ? "\u00B0F" : "\u00B0C";
+  if (WEATHER_OVERLAY.temperature) {
+    traces.push({
+      x: hours, y: hours.map(h => c[h] ? sT[h] / c[h] : null),
+      mode: "lines+markers", name: "Avg Temp",
+      line: { color: "#F97316", width: 1.5, dash: "dot", shape: "spline" },
+      marker: { size: 5, color: "#F97316" }, yaxis: "y2"
+    });
+  }
+  if (WEATHER_OVERLAY.humidity) {
+    traces.push({
+      x: hours, y: hours.map(h => c[h] ? sH[h] / c[h] : null),
+      mode: "lines+markers", name: "Avg Humidity",
+      line: { color: "#38BDF8", width: 1.5, dash: "dot", shape: "spline" },
+      marker: { size: 5, color: "#38BDF8" }, yaxis: "y3"
+    });
+  }
+  return traces;
+}
+
+function hasWeatherOverlay() {
+  return WEATHER.enabled && (WEATHER_OVERLAY.temperature || WEATHER_OVERLAY.humidity);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1161,15 +1340,21 @@ function renderAnalytics() {
   }),pCfg);
 
   const hp=hourlyProfile(data.timestamps,data.totalKw);
-  Plotly.newPlot("chart-hourly",[{
+  const hpTraces=[{
     x:hp.hours,y:hp.avgs, mode:"lines+markers",
     line:{color:t.accentDark,width:2.5,shape:"spline"},
     marker:{size:7,color:t.accentDark,line:{color:t.card,width:2}},
     fill:"tozeroy",fillcolor:t.accentDark+"12"
-  }],pLayout({
+  }];
+  const hpLayout={
     xaxis:xA({title:{text:"Hour (UTC)",font:{size:12}},dtick:2}),
     yaxis:yA({title:{text:"Avg kW",font:{size:12}}})
-  }),pCfg);
+  };
+  if (hasWeatherOverlay()) {
+    const wx = filterWeather(st.startDate ? st.startDate+"T00:00:00Z" : null, st.endDate ? st.endDate+"T23:59:59Z" : null);
+    if (wx) { hpTraces.push(...weatherHourlyProfileTraces(wx)); Object.assign(hpLayout, weatherAxesLayout()); }
+  }
+  Plotly.newPlot("chart-hourly",hpTraces,pLayout(hpLayout),pCfg);
 
   const wp=weekdayProfile(data.timestamps,data.totalKw);
   Plotly.newPlot("chart-weekday",[{
@@ -1180,12 +1365,18 @@ function renderAnalytics() {
   }),pCfg);
 
   const de=dailyEnergy(data.timestamps,data.totalKw);
-  Plotly.newPlot("chart-daily-energy",[{
+  const deTraces=[{
     x:de.dates,y:de.values, type:"bar", marker:{color:t.accentDark}
-  }],pLayout({
+  }];
+  const deLayout={
     xaxis:xA({title:{text:"Date",font:{size:12}},type:"category"}),
     yaxis:yA({title:{text:"kWh",font:{size:12}}}), bargap:0.15
-  }),pCfg);
+  };
+  if (hasWeatherOverlay()) {
+    const wx = filterWeather(st.startDate ? st.startDate+"T00:00:00Z" : null, st.endDate ? st.endDate+"T23:59:59Z" : null);
+    if (wx) { deTraces.push(...weatherDailyTraces(wx)); Object.assign(deLayout, weatherAxesLayout()); }
+  }
+  Plotly.newPlot("chart-daily-energy",deTraces,pLayout(deLayout),pCfg);
 
   // Department load trends
   if (DEPARTMENTS.length) {
@@ -1223,14 +1414,20 @@ function renderAnalytics() {
 
   const pShow = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
   if(pShow.length) {
-    Plotly.newPlot("chart-panels",pShow.map(p=>({
+    const panelTraces=pShow.map(p=>({
       x:data.timestamps, y:data.panelSeries[p]||[], mode:"lines",name:p,line:{width:2,shape:"spline"}
-    })),pLayout({
+    }));
+    const panelLayout={
       legend:{orientation:"h",y:-0.15},
       xaxis:xA({title:{text:"Time",font:{size:12}},type:"date"}),
       yaxis:yA({title:{text:"kW",font:{size:12}}}),
       shapes:weekendShapes(data.timestamps)
-    }),pCfg);
+    };
+    if (hasWeatherOverlay()) {
+      const wx = filterWeather(st.startDate ? st.startDate+"T00:00:00Z" : null, st.endDate ? st.endDate+"T23:59:59Z" : null);
+      if (wx) { panelTraces.push(...weatherTimeSeriesTraces(wx)); Object.assign(panelLayout, weatherAxesLayout()); }
+    }
+    Plotly.newPlot("chart-panels",panelTraces,pLayout(panelLayout),pCfg);
   }
 }
 
@@ -1329,28 +1526,40 @@ function renderComparison() {
   ) * 1.08 || 1;
   const sharedY = yA({title:{text:"kW",font:{size:12}},range:[0,yMax]});
 
-  Plotly.newPlot("chart-comp-load-p1",[
+  const p1Traces=[
     {x:pd1.ts,y:pd1.kw,mode:"lines",name:"Period 1",line:{color:t.accent,width:2.5,shape:"spline"},fill:"tozeroy",fillcolor:t.accent+"18"}
-  ],pLayout({
-    xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),
-    yaxis:sharedY
-  }),pCfg);
-
-  Plotly.newPlot("chart-comp-load-p2",[
+  ];
+  const p1Layout={xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),yaxis:sharedY};
+  const p2Traces=[
     {x:pd2.ts,y:pd2.kw,mode:"lines",name:"Period 2",line:{color:t.accentDark,width:2.5,shape:"spline"},fill:"tozeroy",fillcolor:t.accentDark+"18"}
-  ],pLayout({
-    xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),
-    yaxis:sharedY
-  }),pCfg);
+  ];
+  const p2Layout={xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),yaxis:sharedY};
+  if (hasWeatherOverlay()) {
+    const wx1 = filterWeather(st.p1Start+"T00:00:00Z", st.p1End+"T23:59:59Z");
+    if (wx1) { p1Traces.push(...weatherTimeSeriesTraces(wx1,{dash:"dot"})); Object.assign(p1Layout, weatherAxesLayout()); }
+    const wx2 = filterWeather(st.p2Start+"T00:00:00Z", st.p2End+"T23:59:59Z");
+    if (wx2) { p2Traces.push(...weatherTimeSeriesTraces(wx2,{dash:"dot"})); Object.assign(p2Layout, weatherAxesLayout()); }
+  }
+  Plotly.newPlot("chart-comp-load-p1",p1Traces,pLayout(p1Layout),pCfg);
+  Plotly.newPlot("chart-comp-load-p2",p2Traces,pLayout(p2Layout),pCfg);
 
   const hp1=hourlyProfile(pd1.ts,pd1.kw),hp2=hourlyProfile(pd2.ts,pd2.kw);
-  Plotly.newPlot("chart-comp-hourly",[
+  const compHourTraces=[
     {x:hp1.hours,y:hp1.avgs,mode:"lines+markers",name:"P1",line:{color:t.accent,width:2.5,shape:"spline"},marker:{size:7,color:t.accent}},
     {x:hp2.hours,y:hp2.avgs,mode:"lines+markers",name:"P2",line:{color:t.accentDark,width:2.5,shape:"spline"},marker:{size:7,color:t.accentDark}}
-  ],pLayout({ legend:{orientation:"h",y:-0.15},
+  ];
+  const compHourLayout={ legend:{orientation:"h",y:-0.15},
     xaxis:xA({title:{text:"Hour",font:{size:12}},dtick:2}),
     yaxis:yA({title:{text:"Avg kW",font:{size:12}}})
-  }),pCfg);
+  };
+  if (hasWeatherOverlay()) {
+    const wxAll = filterWeather(
+      new Date(Math.min(new Date(st.p1Start), new Date(st.p2Start))).toISOString(),
+      new Date(Math.max(new Date(st.p1End+"T23:59:59Z"), new Date(st.p2End+"T23:59:59Z"))).toISOString()
+    );
+    if (wxAll) { compHourTraces.push(...weatherHourlyProfileTraces(wxAll)); Object.assign(compHourLayout, weatherAxesLayout()); }
+  }
+  Plotly.newPlot("chart-comp-hourly",compHourTraces,pLayout(compHourLayout),pCfg);
 
   const wp1=weekdayProfile(pd1.ts,pd1.kw),wp2=weekdayProfile(pd2.ts,pd2.kw);
   Plotly.newPlot("chart-comp-weekday",[

@@ -19,6 +19,7 @@ from .routes_devices import router as devices_router
 from .routes_floorplans import router as floorplans_router
 from .routes_health import router as health_router
 from .routes_alerts import router as alerts_router
+from .routes_weather import router as weather_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(floorplans_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
     app.include_router(alerts_router, prefix="/api")
+    app.include_router(weather_router, prefix="/api")
 
     # Serve static frontend files
     static_dir = Path(__file__).resolve().parent.parent / "static"

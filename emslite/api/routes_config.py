@@ -43,6 +43,7 @@ def get_config() -> dict[str, Any]:
         "glob_pattern": cfg.get("glob_pattern", "Meter*_SystemCurrent.csv"),
         "drops_dir": cfg.get("drops_dir", "drops"),
         "data_dir": cfg.get("data_dir", "data"),
+        "weather": cfg.get("weather", {}),
     }
 
 
