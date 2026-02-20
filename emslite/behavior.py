@@ -116,7 +116,9 @@ def compute_shift_energy_split(
 ) -> dict[str, Any]:
     """Split total energy consumption into shift vs off-shift.
 
-    Uses trapezoidal integration: kwh = kw * dt_hours.
+    Uses left-point rectangular integration: kwh = kw * dt_hours, where dt_hours
+    is the interval to the *next* sample. This is an approximation; for uniform
+    cadence the error is negligible, but it will diverge with irregular sampling.
     """
     dt_hours = timestamps.diff().dt.total_seconds().fillna(0) / 3600.0
     kwh = kw * dt_hours

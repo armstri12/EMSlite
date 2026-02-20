@@ -48,7 +48,13 @@ def fetch_weather_from_api(
         if not ts_str:
             continue
         try:
-            ts = datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc)
+            parsed = datetime.fromisoformat(ts_str)
+            # Use astimezone to correctly convert any embedded offset to UTC,
+            # rather than replace() which overwrites tzinfo without converting.
+            if parsed.tzinfo is None:
+                ts = parsed.replace(tzinfo=timezone.utc)
+            else:
+                ts = parsed.astimezone(timezone.utc)
         except (ValueError, TypeError):
             continue
 
@@ -84,19 +90,31 @@ def cache_weather_data(
     station_id: str,
     records: list[dict[str, Any]],
 ) -> int:
-    """Upsert weather records into the cache table. Returns count stored."""
+    """Upsert weather records into the cache table. Returns count stored.
+
+    Uses a bulk-fetch strategy: all existing timestamps are retrieved in one
+    query, then inserts and updates are batched into a single commit.
+    """
+    if not records:
+        return 0
+
     session = get_session()
     try:
-        count = 0
-        for rec in records:
-            existing = (
-                session.query(WeatherCache)
-                .filter(
-                    WeatherCache.station_id == station_id,
-                    WeatherCache.timestamp == rec["timestamp"],
-                )
-                .first()
+        timestamps = [rec["timestamp"] for rec in records]
+
+        # Single query to find all already-cached rows in this batch
+        existing_rows = (
+            session.query(WeatherCache)
+            .filter(
+                WeatherCache.station_id == station_id,
+                WeatherCache.timestamp.in_(timestamps),
             )
+            .all()
+        )
+        existing_map = {row.timestamp: row for row in existing_rows}
+
+        for rec in records:
+            existing = existing_map.get(rec["timestamp"])
             if existing:
                 existing.temperature_c = rec["temperature_c"]
                 existing.humidity_pct = rec["humidity_pct"]
@@ -109,9 +127,9 @@ def cache_weather_data(
                         humidity_pct=rec["humidity_pct"],
                     )
                 )
-            count += 1
+
         session.commit()
-        return count
+        return len(records)
     finally:
         session.close()
 
@@ -151,7 +169,10 @@ def get_weather_for_range(
         hour=23, minute=59, second=59, tzinfo=timezone.utc
     )
 
-    # Check cache completeness
+    # Check cache completeness.
+    # expected_hours is computed from UTC bounds; DST transitions within the range
+    # create 23-hour or 25-hour days, so the actual record count may differ by ±1.
+    # The 80% threshold provides tolerance for this and for sparse API responses.
     cached = get_cached_weather(station_id, start_dt, end_dt)
     expected_hours = int((end_dt - start_dt).total_seconds() / 3600) + 1
 

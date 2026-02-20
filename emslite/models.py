@@ -224,7 +224,7 @@ class WeatherCache(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     station_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     temperature_c: Mapped[float | None] = mapped_column(Float, default=None)
     humidity_pct: Mapped[float | None] = mapped_column(Float, default=None)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -245,9 +245,9 @@ class AlertEvent(Base):
     key: Mapped[str] = mapped_column(String(256), primary_key=True)
     device_id: Mapped[str] = mapped_column(String(128), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
-    event_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    event_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
-    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     def to_dict(self) -> dict:
         return {

@@ -11,7 +11,12 @@ from .core import amps_to_kw
 
 
 def _daily_kwh(timestamps: pd.Series, kw: pd.Series) -> pd.Series:
-    """Compute daily energy (kWh) via trapezoidal integration."""
+    """Compute daily energy (kWh) via left-point rectangular integration.
+
+    Each sample contributes kw * dt_hours, where dt_hours is the elapsed time
+    since the previous sample. This is rectangular (not trapezoidal) integration.
+    For uniform cadence the error is negligible; divergence grows with irregular sampling.
+    """
     dt_hours = timestamps.diff().dt.total_seconds().fillna(0) / 3600.0
     kwh = kw * dt_hours
     dates = timestamps.dt.date
@@ -131,12 +136,15 @@ def compute_trending_snapshot(
     # Sort by absolute pct_change descending (biggest movers first)
     panels.sort(key=lambda p: abs(p["pct_change"]), reverse=True)
 
-    # Facility-level totals
-    total_pct = (
-        round((total_recent_kwh - total_prior_kwh) / total_prior_kwh * 100, 1)
-        if total_prior_kwh > 0
-        else 0.0
-    )
+    # Facility-level totals.
+    # When prior=0 and recent>0, return 100.0 to match per-panel fallback semantics
+    # (new energy appeared; treating as 100% increase rather than undefined).
+    if total_prior_kwh > 0:
+        total_pct = round((total_recent_kwh - total_prior_kwh) / total_prior_kwh * 100, 1)
+    elif total_recent_kwh > 0:
+        total_pct = 100.0
+    else:
+        total_pct = 0.0
 
     return {
         "panels": panels,
