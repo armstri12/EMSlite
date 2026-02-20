@@ -88,6 +88,7 @@ async function initDashboard() {
     buildFilterBar("cp-filter-bar", "comparison", "comparison");
     buildFilterBar("dt-filter-bar", "data",       "daterange");
     buildBehaviorFilterBar();
+    buildTrendingFilterBar();
     setupTableControls();
     renderCurrentTab();
     await refreshAlerts(true);
@@ -107,7 +108,8 @@ const tabState = {
   analytics:  { panels: new Set(), startDate: "", endDate: "", department: "" },
   comparison: { panels: new Set(), p1Start: "", p1End: "", p2Start: "", p2End: "", department: "" },
   data:       { panels: new Set(), startDate: "", endDate: "", department: "" },
-  behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" }
+  behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" },
+  trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" }
 };
 
 function initTabState() {
@@ -123,6 +125,9 @@ function initTabState() {
   tabState.behavior.startDate = DATE_MIN;
   tabState.behavior.endDate = DATE_MAX;
   tabState.behavior.panel = ALL_PANELS.length ? ALL_PANELS[0] : "";
+  tabState.trending.startDate = DATE_MIN;
+  tabState.trending.endDate = DATE_MAX;
+  tabState.trending.panel = ALL_PANELS.length ? ALL_PANELS[0] : "";
 
   // Auto-init comparison periods
   const totalDays = DATE_MIN && DATE_MAX ? (new Date(DATE_MAX) - new Date(DATE_MIN)) / 86400000 : 0;
@@ -1636,6 +1641,7 @@ function renderTab(tabKey) {
   else if (tabKey === "alerts")     renderAlertsTab();
   else if (tabKey === "health")     renderHealthTab();
   else if (tabKey === "behavior")   renderBehaviorTab();
+  else if (tabKey === "trending")   renderTrendingTab();
 }
 
 
@@ -2163,6 +2169,360 @@ function renderBehaviorDetailNarrative(bh, container) {
       '</div>' +
       fullKpis +
     '</div>';
+}
+
+/* ═══════════════════════════════════════════════════════
+   TRENDING TAB
+   ═══════════════════════════════════════════════════════ */
+let _trSnapshotCache = null; // for CSV export
+
+function buildTrendingFilterBar() {
+  const container = document.getElementById("tr-filter-bar");
+  if (!container) return;
+  const st = tabState.trending;
+  let html = '';
+
+  const periodOpts = [7, 14, 30].map(d =>
+    `<option value="${d}"${st.periodDays === d ? " selected" : ""}>${d} days</option>`
+  ).join("");
+
+  if (st.view === "snapshot") {
+    html =
+      '<label class="filter-label">Period<select id="tr-period" class="filter-input">' + periodOpts + '</select></label>' +
+      '<label class="filter-label">From<input type="date" id="tr-start" class="filter-input" value="' + (st.startDate||"") + '"/></label>' +
+      '<label class="filter-label">To<input type="date" id="tr-end" class="filter-input" value="' + (st.endDate||"") + '"/></label>' +
+      '<button class="btn btn-primary btn-sm" id="tr-analyze">Analyze</button>' +
+      '<button class="btn btn-ghost btn-sm" id="tr-export">Export CSV</button>';
+  } else {
+    const panelOpts = ALL_PANELS.map(p =>
+      `<option value="${p}"${p === st.panel ? " selected" : ""}>${p}</option>`
+    ).join("");
+    html =
+      '<button class="btn btn-ghost btn-sm" id="tr-back">&larr; All Panels</button>' +
+      '<label class="filter-label">Panel<select id="tr-panel" class="filter-input">' + panelOpts + '</select></label>' +
+      '<label class="filter-label">Period<select id="tr-period" class="filter-input">' + periodOpts + '</select></label>' +
+      '<label class="filter-label">From<input type="date" id="tr-start" class="filter-input" value="' + (st.startDate||"") + '"/></label>' +
+      '<label class="filter-label">To<input type="date" id="tr-end" class="filter-input" value="' + (st.endDate||"") + '"/></label>' +
+      '<button class="btn btn-primary btn-sm" id="tr-analyze">Analyze</button>';
+  }
+
+  container.innerHTML = html;
+
+  if (st.view === "snapshot") {
+    document.getElementById("tr-analyze").addEventListener("click", () => {
+      st.periodDays = parseInt(document.getElementById("tr-period").value) || 7;
+      st.startDate = document.getElementById("tr-start").value;
+      st.endDate = document.getElementById("tr-end").value;
+      renderTrendingTab();
+    });
+    document.getElementById("tr-export").addEventListener("click", exportTrendingCSV);
+  } else {
+    document.getElementById("tr-back").addEventListener("click", () => {
+      st.view = "snapshot";
+      buildTrendingFilterBar();
+      renderTrendingTab();
+    });
+    document.getElementById("tr-analyze").addEventListener("click", () => {
+      st.panel = document.getElementById("tr-panel").value;
+      st.periodDays = parseInt(document.getElementById("tr-period").value) || 7;
+      st.startDate = document.getElementById("tr-start").value;
+      st.endDate = document.getElementById("tr-end").value;
+      renderTrendingTab();
+    });
+  }
+}
+
+function setTrendingDetailView(panelId) {
+  const st = tabState.trending;
+  st.view = "detail";
+  st.panel = panelId;
+  buildTrendingFilterBar();
+  renderTrendingTab();
+}
+
+async function renderTrendingTab() {
+  const st = tabState.trending;
+  if (st.view === "snapshot") {
+    await renderTrendingSnapshotView();
+  } else {
+    await renderTrendingDetailView();
+  }
+}
+
+/* ─── Snapshot View ─── */
+async function renderTrendingSnapshotView() {
+  const st = tabState.trending;
+  const summaryEl = document.getElementById("tr-summary-cards");
+  const snapshotEl = document.getElementById("tr-snapshot");
+  const detailEl = document.getElementById("tr-detail");
+  const chartsGrid = document.getElementById("tr-charts-grid");
+
+  if (detailEl) detailEl.innerHTML = '';
+  if (chartsGrid) chartsGrid.style.display = "none";
+  if (snapshotEl) snapshotEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:2rem">Scanning all panels\u2026</div>';
+
+  try {
+    const data = await API.getTrendingSnapshot({
+      periodDays: st.periodDays,
+      start: st.startDate ? st.startDate + "T00:00:00Z" : undefined,
+      end: st.endDate ? st.endDate + "T23:59:59Z" : undefined,
+    });
+    _trSnapshotCache = data;
+
+    const sm = data.summary;
+    const panels = data.panels;
+    const t = T();
+
+    // Summary cards
+    const totalPctAbs = Math.abs(sm.total_pct_change);
+    const totalDir = sm.total_pct_change > 5 ? "rising" : (sm.total_pct_change < -5 ? "falling" : "stable");
+    const totalColor = totalDir === "rising" ? "#DC2626" : (totalDir === "falling" ? "#16A34A" : t.muted);
+    const totalArrow = totalDir === "rising" ? "\u2197" : (totalDir === "falling" ? "\u2198" : "\u2192");
+
+    if (summaryEl) summaryEl.innerHTML =
+      '<div class="exec-cards-grid cols-4" style="margin-bottom:var(--card-gap)">' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Panels Analyzed</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + sm.panel_count + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">' + sm.period_days + '-day comparison</div>' +
+        '</div>' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Rising</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#DC2626">' + sm.rising_count + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">panels up &gt;5%</div>' +
+        '</div>' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Falling</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:#16A34A">' + sm.falling_count + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">panels down &gt;5%</div>' +
+        '</div>' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Facility Trend</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:' + totalColor + '">' + totalArrow + ' ' + totalPctAbs.toFixed(1) + '%</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">vs prior ' + sm.period_days + ' days</div>' +
+        '</div>' +
+      '</div>';
+
+    // Snapshot table
+    let html = '<div class="panel"><div class="panel-title" style="display:flex;justify-content:space-between;align-items:center">' +
+      'Panel Trend Snapshot \u2014 Recent vs Prior ' + sm.period_days + ' Days' +
+      '<span style="font-size:0.7rem;font-weight:400;color:var(--muted)">' + panels.length + ' panels &bull; sorted by biggest mover</span></div>';
+
+    html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>' +
+      '<th style="width:36px">#</th>' +
+      '<th>Panel</th>' +
+      '<th>Trend</th>' +
+      '<th>Recent kWh</th>' +
+      '<th>Prior kWh</th>' +
+      '<th>Change</th>' +
+      '<th style="min-width:110px">Magnitude</th>' +
+      '<th>Sparkline</th>' +
+      '<th>Cost \u0394</th>' +
+      '<th style="width:70px"></th>' +
+      '</tr></thead><tbody>';
+
+    panels.forEach((p, i) => {
+      const rowClass = p.direction === "rising" ? " class=\"tr-row-rising\"" : (p.direction === "falling" ? " class=\"tr-row-falling\"" : "");
+      const arrow = p.direction === "rising" ? "\u2197" : (p.direction === "falling" ? "\u2198" : "\u2192");
+      const pct = Math.abs(p.pct_change);
+      const badgeCls = "tr-badge tr-badge-" + p.direction;
+      const barFillCls = "tr-bar-fill-" + p.direction;
+      const barW = Math.min(100, pct * 2).toFixed(0); // scale: 50% change = full bar
+      const costSign = p.cost_change >= 0 ? "+" : "";
+      const costColor = p.cost_change > 0 ? "#DC2626" : (p.cost_change < 0 ? "#16A34A" : t.muted);
+      const sparkColor = p.direction === "rising" ? "#EF4444" : (p.direction === "falling" ? "#16A34A" : t.muted);
+      const spark = sparkSVG(p.spark_values, sparkColor);
+
+      html += '<tr' + rowClass + '>' +
+        '<td style="font-weight:700;color:var(--muted)">' + (i + 1) + '</td>' +
+        '<td style="font-weight:600;color:var(--ink)">' + p.display_name + '</td>' +
+        '<td><span class="' + badgeCls + '">' + arrow + ' ' + p.direction.charAt(0).toUpperCase() + p.direction.slice(1) + '</span></td>' +
+        '<td>' + p.recent_kwh.toFixed(1) + ' kWh</td>' +
+        '<td style="color:var(--muted)">' + p.prior_kwh.toFixed(1) + ' kWh</td>' +
+        '<td style="font-weight:700;color:' + (p.pct_change >= 0 ? "#DC2626" : "#16A34A") + '">' +
+          (p.pct_change >= 0 ? "+" : "") + p.pct_change.toFixed(1) + '%</td>' +
+        '<td class="tr-bar-cell"><div class="tr-bar-wrap"><div class="' + barFillCls + '" style="width:' + barW + '%"></div></div></td>' +
+        '<td><div class="tr-spark">' + spark + '</div></td>' +
+        '<td style="font-weight:600;color:' + costColor + '">' + costSign + '$' + Math.abs(p.cost_change).toFixed(2) + '</td>' +
+        '<td><button class="btn btn-ghost btn-sm tr-drill" data-panel="' + p.panel_id + '">Detail</button></td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table></div></div>';
+    if (snapshotEl) snapshotEl.innerHTML = html;
+
+    // Wire drill-in buttons
+    snapshotEl.querySelectorAll(".tr-drill").forEach(btn => {
+      btn.addEventListener("click", () => setTrendingDetailView(btn.dataset.panel));
+    });
+
+  } catch (err) {
+    console.error("Trending snapshot failed:", err);
+    if (snapshotEl) snapshotEl.innerHTML =
+      '<div style="text-align:center;color:var(--negative-text,#dc2626);padding:2rem">' +
+      '<h3>Snapshot Failed</h3><p>' + err.message + '</p></div>';
+  }
+}
+
+function exportTrendingCSV() {
+  const data = _trSnapshotCache;
+  if (!data || !data.panels.length) return;
+  let csv = "Rank,Panel ID,Display Name,Direction,Recent kWh,Prior kWh,Pct Change,Recent Cost,Prior Cost,Cost Change\n";
+  data.panels.forEach((p, i) => {
+    csv += [i + 1, '"' + p.panel_id + '"', '"' + p.display_name + '"', p.direction,
+      p.recent_kwh, p.prior_kwh, p.pct_change, p.recent_cost, p.prior_cost, p.cost_change].join(",") + "\n";
+  });
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "trending_snapshot.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ─── Detail View ─── */
+async function renderTrendingDetailView() {
+  const st = tabState.trending;
+  const t = T();
+  const summaryEl = document.getElementById("tr-summary-cards");
+  const snapshotEl = document.getElementById("tr-snapshot");
+  const detailEl = document.getElementById("tr-detail");
+  const chartsGrid = document.getElementById("tr-charts-grid");
+
+  if (snapshotEl) snapshotEl.innerHTML = '';
+  if (summaryEl) summaryEl.innerHTML = '';
+  if (chartsGrid) chartsGrid.style.display = "";
+
+  if (!st.panel) {
+    if (detailEl) detailEl.innerHTML =
+      '<div style="text-align:center;color:var(--muted);padding:3rem">' +
+      '<h2>Select a Panel</h2><p>Choose a panel from the snapshot table or the dropdown above.</p></div>';
+    return;
+  }
+
+  if (detailEl) detailEl.innerHTML =
+    '<div style="text-align:center;color:var(--muted);padding:2rem">Loading panel detail\u2026</div>';
+
+  try {
+    const d = await API.getTrendingDetail({
+      panel: st.panel,
+      periodDays: st.periodDays,
+      start: st.startDate ? st.startDate + "T00:00:00Z" : undefined,
+      end: st.endDate ? st.endDate + "T23:59:59Z" : undefined,
+    });
+
+    const cmp = d.comparison;
+    const arrow = cmp.direction === "rising" ? "\u2197" : (cmp.direction === "falling" ? "\u2198" : "\u2192");
+    const chgColor = cmp.pct_change > 5 ? "#DC2626" : (cmp.pct_change < -5 ? "#16A34A" : t.muted);
+    const costSign = cmp.cost_change >= 0 ? "+" : "";
+    const costColor = cmp.cost_change > 0 ? "#DC2626" : (cmp.cost_change < 0 ? "#16A34A" : t.muted);
+
+    // KPI cards
+    if (detailEl) detailEl.innerHTML =
+      '<div class="exec-cards-grid cols-4" style="margin-bottom:var(--card-gap)">' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Recent ' + d.period_days + 'd kWh</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + cmp.recent_kwh.toFixed(1) + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">Avg ' + cmp.recent_avg_kw.toFixed(2) + ' kW &bull; Peak ' + cmp.recent_peak_kw.toFixed(2) + ' kW</div>' +
+        '</div>' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Prior ' + d.period_days + 'd kWh</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:var(--muted)">' + cmp.prior_kwh.toFixed(1) + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">Avg ' + cmp.prior_avg_kw.toFixed(2) + ' kW &bull; Peak ' + cmp.prior_peak_kw.toFixed(2) + ' kW</div>' +
+        '</div>' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Period Change</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:' + chgColor + '">' + arrow + ' ' + (cmp.pct_change >= 0 ? "+" : "") + cmp.pct_change.toFixed(1) + '%</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">' + (cmp.recent_kwh - cmp.prior_kwh).toFixed(1) + ' kWh net change</div>' +
+        '</div>' +
+        '<div class="exec-card">' +
+          '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Cost Impact</div>' +
+          '<div style="font-size:1.5rem;font-weight:800;color:' + costColor + '">' + costSign + '$' + Math.abs(cmp.cost_change).toFixed(2) + '</div>' +
+          '<div style="font-size:0.75rem;color:var(--muted)">$' + cmp.recent_cost.toFixed(2) + ' recent vs $' + cmp.prior_cost.toFixed(2) + ' prior</div>' +
+        '</div>' +
+      '</div>';
+
+    // Chart 1: Raw kW time series + rolling average
+    const cs = d.chart_series;
+    const seriesTraces = [];
+    if (cs.kw.length) {
+      seriesTraces.push({
+        x: cs.timestamps, y: cs.kw,
+        mode: "lines", name: "kW",
+        line: { color: t.accentDark, width: 1, shape: "linear" },
+        opacity: 0.5,
+      });
+    }
+    if (cs.rolling_kw.length) {
+      seriesTraces.push({
+        x: cs.timestamps, y: cs.rolling_kw,
+        mode: "lines", name: "24h Rolling Avg",
+        line: { color: t.accent, width: 2.5, shape: "spline" },
+      });
+    }
+    Plotly.newPlot("chart-tr-series", seriesTraces, pLayout({
+      xaxis: xA({ type: "date", title: { text: "Time", font: { size: 12 } } }),
+      yaxis: yA({ title: { text: "kW", font: { size: 12 } } }),
+      shapes: weekendShapes(cs.timestamps),
+      legend: { orientation: "h", y: -0.2 },
+    }), pCfg);
+
+    // Chart 2: Daily energy bar chart — prior period muted, recent colored
+    const de = d.daily_energy;
+    if (de.dates.length) {
+      // Determine which dates are in the recent period
+      const recentCutoff = new Date(d.date_range.end);
+      recentCutoff.setDate(recentCutoff.getDate() - d.period_days);
+
+      const barColors = de.dates.map(dt =>
+        new Date(dt) > recentCutoff ? t.accent : t.muted + "55"
+      );
+
+      Plotly.newPlot("chart-tr-daily", [{
+        x: de.dates, y: de.values,
+        type: "bar", name: "Daily kWh",
+        marker: { color: barColors },
+        hovertemplate: "%{x}<br>%{y:.1f} kWh<extra></extra>",
+      }], pLayout({
+        xaxis: xA({ type: "date", title: { text: "Date", font: { size: 12 } } }),
+        yaxis: yA({ title: { text: "kWh", font: { size: 12 } } }),
+        bargap: 0.15,
+        annotations: [{
+          x: 0.98, y: 0.98, xref: "paper", yref: "paper",
+          text: "\u25A0 Recent period  \u25A0 Prior period",
+          showarrow: false, font: { size: 10, color: t.muted },
+          xanchor: "right", yanchor: "top",
+        }],
+      }), pCfg);
+    }
+
+    // Chart 3: Hourly profile — recent vs prior
+    const hp = d.hourly_profile;
+    Plotly.newPlot("chart-tr-hourly", [
+      {
+        x: hp.hours, y: hp.recent_avg_kw,
+        mode: "lines+markers", name: "Recent " + d.period_days + "d",
+        line: { color: t.accent, width: 2.5, shape: "spline" },
+        marker: { size: 6, color: t.accent, line: { color: t.card, width: 1.5 } },
+        fill: "tozeroy", fillcolor: t.accent + "18",
+      },
+      {
+        x: hp.hours, y: hp.prior_avg_kw,
+        mode: "lines", name: "Prior " + d.period_days + "d",
+        line: { color: t.muted, width: 2, dash: "dash", shape: "spline" },
+      },
+    ], pLayout({
+      xaxis: xA({ title: { text: "Hour of Day", font: { size: 12 } }, dtick: 2, range: [-0.5, 23.5] }),
+      yaxis: yA({ title: { text: "Avg kW", font: { size: 12 } } }),
+      legend: { orientation: "h", y: -0.2 },
+    }), pCfg);
+
+  } catch (err) {
+    console.error("Trending detail failed:", err);
+    if (detailEl) detailEl.innerHTML =
+      '<div style="text-align:center;color:var(--negative-text,#dc2626);padding:2rem">' +
+      '<h3>Detail Failed</h3><p>' + err.message + '</p></div>';
+  }
 }
 
 /* ─── Boot ─── */

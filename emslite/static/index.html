@@ -59,6 +59,10 @@
       <svg viewBox="0 0 24 24"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
       <span class="nav-label">Behavior</span>
     </a>
+    <a class="nav-item" data-tab="trending">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      <span class="nav-label">Trending</span>
+    </a>
   </nav>
   <div class="sidebar-footer">
     <a class="nav-item" style="cursor:default;opacity:0.5">
@@ -272,6 +276,28 @@
         <div class="panel panel-6">
           <div class="panel-title">Device Freshness</div>
           <div id="health-freshness"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRENDING TAB -->
+    <div class="tab-content" id="tab-trending">
+      <div class="filter-bar" id="tr-filter-bar"></div>
+      <div id="tr-summary-cards"></div>
+      <div id="tr-snapshot"></div>
+      <div id="tr-detail"></div>
+      <div class="charts-grid" id="tr-charts-grid" style="display:none">
+        <div class="panel panel-12">
+          <div class="panel-title">Power Trend &mdash; Raw &amp; 24h Rolling Average</div>
+          <div class="chart-area" id="chart-tr-series"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Daily Energy (kWh)</div>
+          <div class="chart-area" id="chart-tr-daily"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Hourly Profile &mdash; Recent vs Prior Period</div>
+          <div class="chart-area" id="chart-tr-hourly"></div>
         </div>
       </div>
     </div>
