@@ -278,6 +278,82 @@ def generate_narrative(
     }
 
 
+def compute_phantom_rankings(
+    df: pd.DataFrame,
+    panel_cols: list[str],
+    line_voltage: float = 480.0,
+    power_factor: float = 1.0,
+    price_per_kwh: float = 0.25,
+    carbon_kg_per_kwh: float = 0.4,
+    display_names: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Rank all panels by phantom draw waste.
+
+    Computes phantom draw, off-shift energy, and annualized costs for every
+    panel, then returns a sorted ranking (worst offenders first).
+    """
+    names = display_names or {}
+    timestamps = df["Timestamp"]
+    dt_hours = timestamps.diff().dt.total_seconds().fillna(0) / 3600.0
+
+    # Classify once — shared across all panels
+    shift_class = classify_shift_hours(timestamps)
+    shift_mask = shift_class == "shift"
+
+    rankings: list[dict[str, Any]] = []
+    for col in panel_cols:
+        if col not in df.columns:
+            continue
+        kw = amps_to_kw(df[col].fillna(0), line_voltage, power_factor)
+
+        phantom = compute_phantom_draw(timestamps, kw)
+        phantom_kw = phantom["phantom_kw"]
+
+        kwh = kw * dt_hours
+        total_kwh = float(kwh.sum())
+        off_shift_kwh = float(kwh[~shift_mask].sum())
+        off_shift_pct = (
+            round(off_shift_kwh / total_kwh * 100, 1) if total_kwh > 0 else 0.0
+        )
+
+        ann = compute_annualized_phantom_cost(
+            phantom_kw, price_per_kwh, carbon_kg_per_kwh
+        )
+
+        rankings.append({
+            "panel_id": col,
+            "display_name": names.get(col, col),
+            "phantom_kw": round(phantom_kw, 4),
+            "off_shift_pct": off_shift_pct,
+            "annual_phantom_kwh": ann["annual_phantom_kwh"],
+            "annual_phantom_cost": ann["annual_phantom_cost"],
+            "annual_phantom_carbon_kg": ann["annual_phantom_carbon_kg"],
+            "total_kwh": round(total_kwh, 2),
+            "off_shift_kwh": round(off_shift_kwh, 2),
+        })
+
+    rankings.sort(key=lambda r: r["annual_phantom_cost"], reverse=True)
+
+    total_cost = sum(r["annual_phantom_cost"] for r in rankings)
+    total_kwh = sum(r["annual_phantom_kwh"] for r in rankings)
+    total_carbon = sum(r["annual_phantom_carbon_kg"] for r in rankings)
+
+    return {
+        "rankings": rankings,
+        "facility_totals": {
+            "total_phantom_cost": round(total_cost, 2),
+            "total_phantom_kwh": round(total_kwh, 2),
+            "total_phantom_carbon_kg": round(total_carbon, 2),
+            "panel_count": len(rankings),
+        },
+        "data_points": len(df),
+        "date_range": {
+            "start": timestamps.min().isoformat() if not timestamps.empty else None,
+            "end": timestamps.max().isoformat() if not timestamps.empty else None,
+        },
+    }
+
+
 def analyze_behavior(
     df: pd.DataFrame,
     panel_col: str,
