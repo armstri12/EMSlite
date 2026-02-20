@@ -1,5 +1,11 @@
 # EMSlite
 
+## Documentation campaign
+
+A full documentation campaign plan (covering architecture, calculations, implementation notes, API references, code comments/docstrings, and operational guides) is available at:
+
+- `docs/documentation_campaign_plan.md`
+
 ## Visualization script
 
 Use `visualize_meter_data.py` to generate multiple interactive plots from a wide CSV export (Timestamp + meter columns).
