@@ -1206,3 +1206,36 @@ body {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════
+   TRENDING TAB
+   ═══════════════════════════════════════════════════════ */
+
+/* Direction badges */
+.tr-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 0.7rem; font-weight: 700; padding: 2px 8px;
+  border-radius: 9999px; white-space: nowrap;
+}
+.tr-badge-rising  { background: rgba(239,68,68,0.1);  color: #DC2626; }
+.tr-badge-falling { background: rgba(22,163,74,0.1);  color: #16A34A; }
+.tr-badge-stable  { background: rgba(107,114,128,0.1); color: #6B7280; }
+
+/* Snapshot table row tints */
+#tr-snapshot .data-table tr.tr-row-rising td  { background: rgba(239,68,68,0.04); }
+#tr-snapshot .data-table tr.tr-row-falling td { background: rgba(22,163,74,0.04); }
+
+/* Trend change bar (like phantom-bar) */
+#tr-snapshot .data-table td.tr-bar-cell { padding: 8px 6px; }
+.tr-bar-wrap { width: 100%; height: 8px; background: var(--bar-track); border-radius: 9999px; overflow: hidden; }
+.tr-bar-fill-rising  { height: 100%; border-radius: 9999px; background: linear-gradient(90deg, #F97316, #EF4444); }
+.tr-bar-fill-falling { height: 100%; border-radius: 9999px; background: linear-gradient(90deg, #34D399, #16A34A); }
+.tr-bar-fill-stable  { height: 100%; border-radius: 9999px; background: var(--muted); opacity: 0.4; }
+
+/* Sparkline cell */
+.tr-spark { display: inline-block; vertical-align: middle; width: 120px; height: 28px; }
+.tr-spark svg { width: 100%; height: 100%; }
+
+@media (max-width: 900px) {
+  .tr-spark { display: none; }
+}
