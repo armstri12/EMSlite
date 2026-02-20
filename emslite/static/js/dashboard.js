@@ -107,7 +107,7 @@ const tabState = {
   analytics:  { panels: new Set(), startDate: "", endDate: "", department: "" },
   comparison: { panels: new Set(), p1Start: "", p1End: "", p2Start: "", p2End: "", department: "" },
   data:       { panels: new Set(), startDate: "", endDate: "", department: "" },
-  behavior:   { panel: "", startDate: "", endDate: "" }
+  behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" }
 };
 
 function initTabState() {
@@ -1755,53 +1755,223 @@ function renderCurrentTab() {
 /* ═══════════════════════════════════════════════════════
    BEHAVIOR TAB
    ═══════════════════════════════════════════════════════ */
+let _bhRankingsCache = null; // cache rankings data for CSV export
+
 function buildBehaviorFilterBar() {
   const container = document.getElementById("bh-filter-bar");
   if (!container) return;
   const st = tabState.behavior;
-
   let html = '';
-  html += '<div class="filter-group"><label>Panel / Device</label>';
-  html += '<select id="bh-panel" class="filter-input" style="min-width:220px">';
-  ALL_PANELS.forEach(p => {
-    const dev = ALL_DEVICES.find(d => d.id === p);
-    const label = dev ? dev.display_name + " (" + p + ")" : p;
-    html += '<option value="' + p + '"' + (p === st.panel ? ' selected' : '') + '>' + label + '</option>';
-  });
-  html += '</select></div>';
 
-  html += '<div class="filter-divider"></div>';
-  html += '<div class="filter-group"><label>Start</label>';
-  html += '<input type="date" id="bh-start" class="filter-input" value="' + st.startDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
-  html += '<div class="filter-group"><label>End</label>';
-  html += '<input type="date" id="bh-end" class="filter-input" value="' + st.endDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
-  html += '<button class="btn btn-primary btn-sm" id="bh-analyze">Analyze</button>';
+  if (st.view === "rankings") {
+    // Rankings view: date range + scan button + export
+    html += '<div class="filter-group"><label>Start</label>';
+    html += '<input type="date" id="bh-start" class="filter-input" value="' + st.startDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
+    html += '<div class="filter-group"><label>End</label>';
+    html += '<input type="date" id="bh-end" class="filter-input" value="' + st.endDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
+    html += '<button class="btn btn-primary btn-sm" id="bh-scan">Scan All Panels</button>';
+    html += '<button class="btn btn-ghost btn-sm" id="bh-export" style="margin-left:auto">Export CSV</button>';
+  } else {
+    // Detail view: back button + panel selector + date range + analyze
+    html += '<button class="btn btn-ghost btn-sm" id="bh-back" style="margin-right:0.5rem">\u2190 Rankings</button>';
+    html += '<div class="filter-divider"></div>';
+    html += '<div class="filter-group"><label>Panel / Device</label>';
+    html += '<select id="bh-panel" class="filter-input" style="min-width:220px">';
+    ALL_PANELS.forEach(p => {
+      const dev = ALL_DEVICES.find(d => d.id === p);
+      const label = dev ? dev.display_name + " (" + p + ")" : p;
+      html += '<option value="' + p + '"' + (p === st.panel ? ' selected' : '') + '>' + label + '</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="filter-divider"></div>';
+    html += '<div class="filter-group"><label>Start</label>';
+    html += '<input type="date" id="bh-start" class="filter-input" value="' + st.startDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
+    html += '<div class="filter-group"><label>End</label>';
+    html += '<input type="date" id="bh-end" class="filter-input" value="' + st.endDate + '" min="' + DATE_MIN + '" max="' + DATE_MAX + '"/></div>';
+    html += '<button class="btn btn-primary btn-sm" id="bh-analyze">Analyze</button>';
+  }
 
   container.innerHTML = html;
 
-  document.getElementById("bh-analyze").addEventListener("click", () => {
-    tabState.behavior.panel = document.getElementById("bh-panel").value;
-    tabState.behavior.startDate = document.getElementById("bh-start").value;
-    tabState.behavior.endDate = document.getElementById("bh-end").value;
-    renderBehaviorTab();
-  });
+  // Wire events
+  if (st.view === "rankings") {
+    document.getElementById("bh-scan").addEventListener("click", () => {
+      st.startDate = document.getElementById("bh-start").value;
+      st.endDate = document.getElementById("bh-end").value;
+      renderBehaviorTab();
+    });
+    document.getElementById("bh-export").addEventListener("click", () => {
+      exportBehaviorRankingsCSV();
+    });
+  } else {
+    document.getElementById("bh-back").addEventListener("click", () => {
+      st.view = "rankings";
+      buildBehaviorFilterBar();
+      renderBehaviorTab();
+    });
+    document.getElementById("bh-analyze").addEventListener("click", () => {
+      st.panel = document.getElementById("bh-panel").value;
+      st.startDate = document.getElementById("bh-start").value;
+      st.endDate = document.getElementById("bh-end").value;
+      renderBehaviorTab();
+    });
+  }
+}
+
+function setBehaviorDetailView(panelId) {
+  const st = tabState.behavior;
+  st.view = "detail";
+  st.panel = panelId;
+  buildBehaviorFilterBar();
+  renderBehaviorTab();
 }
 
 async function renderBehaviorTab() {
   const st = tabState.behavior;
+  if (st.view === "rankings") {
+    await renderBehaviorRankingsView();
+  } else {
+    await renderBehaviorDetailView();
+  }
+}
+
+/* ─── Rankings View ─── */
+async function renderBehaviorRankingsView() {
+  const st = tabState.behavior;
+  const rankingsEl = document.getElementById("bh-rankings");
+  const narrativeEl = document.getElementById("bh-narrative");
+  const cardsEl = document.getElementById("bh-kpi-cards");
+  const chartsGrid = document.querySelector("#tab-behavior .charts-grid");
+  const detailEl = document.getElementById("bh-narrative-detail");
+
+  // Hide detail-only sections
+  if (narrativeEl) narrativeEl.innerHTML = '';
+  if (cardsEl) cardsEl.innerHTML = '';
+  if (chartsGrid) chartsGrid.style.display = "none";
+  if (detailEl) detailEl.innerHTML = '';
+
+  if (!rankingsEl) return;
+  rankingsEl.innerHTML = '<div style="text-align:center;color:var(--muted);padding:2rem">Scanning all panels\u2026</div>';
+
+  try {
+    const data = await API.getBehaviorRankings({
+      start: st.startDate ? st.startDate + "T00:00:00Z" : undefined,
+      end: st.endDate ? st.endDate + "T23:59:59Z" : undefined,
+    });
+    _bhRankingsCache = data;
+
+    const ft = data.facility_totals;
+    const r = data.rankings;
+    const maxCost = r.length ? r[0].annual_phantom_cost : 1;
+
+    // Summary cards
+    let html = '<div class="exec-cards-grid cols-4" style="margin-bottom:var(--card-gap)">' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Panels Scanned</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + ft.panel_count + '</div>' +
+      '</div>' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Total Annual Phantom Cost</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--p-400,#C41230)">$' + ft.total_phantom_cost.toLocaleString() + '</div>' +
+      '</div>' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Total Annual Phantom kWh</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + ft.total_phantom_kwh.toLocaleString() + '</div>' +
+      '</div>' +
+      '<div class="exec-card">' +
+        '<div style="font-size:0.7rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.03em">Total Annual CO\u2082</div>' +
+        '<div style="font-size:1.5rem;font-weight:800;color:var(--ink)">' + ft.total_phantom_carbon_kg.toLocaleString() + ' kg</div>' +
+      '</div>' +
+    '</div>';
+
+    // Rankings table
+    html += '<div class="panel"><div class="panel-title" style="display:flex;justify-content:space-between;align-items:center">' +
+      'Worst Offenders \u2014 Ranked by Annual Phantom Cost' +
+      '<span style="font-size:0.7rem;font-weight:400;color:var(--muted)">' + r.length + ' panels</span></div>';
+    html += '<div class="data-table-wrap"><table class="data-table"><thead><tr>' +
+      '<th style="width:40px">#</th>' +
+      '<th>Panel</th>' +
+      '<th>Phantom Draw</th>' +
+      '<th>Off-Shift %</th>' +
+      '<th style="min-width:120px">Relative Waste</th>' +
+      '<th>Annual kWh Wasted</th>' +
+      '<th>Annual Cost</th>' +
+      '<th>Annual CO\u2082</th>' +
+      '<th style="width:70px"></th>' +
+      '</tr></thead><tbody>';
+
+    r.forEach((p, i) => {
+      const rowClass = i < 3 ? ' class="offender-critical"' : (i < 8 ? ' class="offender-warning"' : '');
+      const pct = maxCost > 0 ? (p.annual_phantom_cost / maxCost * 100).toFixed(0) : 0;
+      html += '<tr' + rowClass + '>' +
+        '<td style="font-weight:700;color:var(--muted)">' + (i + 1) + '</td>' +
+        '<td style="font-weight:600;color:var(--ink)">' + p.display_name + '</td>' +
+        '<td>' + p.phantom_kw.toFixed(2) + ' kW</td>' +
+        '<td>' + p.off_shift_pct.toFixed(0) + '%</td>' +
+        '<td class="phantom-bar"><div class="phantom-bar-wrap"><div class="phantom-bar-fill" style="width:' + pct + '%"></div></div></td>' +
+        '<td>' + p.annual_phantom_kwh.toLocaleString() + '</td>' +
+        '<td style="font-weight:700;color:var(--p-400,#C41230)">$' + p.annual_phantom_cost.toLocaleString() + '</td>' +
+        '<td>' + p.annual_phantom_carbon_kg.toLocaleString() + ' kg</td>' +
+        '<td><button class="btn btn-ghost btn-sm bh-drill" data-panel="' + p.panel_id + '">Analyze</button></td>' +
+        '</tr>';
+    });
+
+    html += '</tbody></table></div></div>';
+    rankingsEl.innerHTML = html;
+
+    // Wire drill-in buttons
+    rankingsEl.querySelectorAll(".bh-drill").forEach(btn => {
+      btn.addEventListener("click", () => {
+        setBehaviorDetailView(btn.dataset.panel);
+      });
+    });
+
+  } catch (err) {
+    console.error("Rankings failed:", err);
+    rankingsEl.innerHTML = '<div style="text-align:center;color:var(--negative-text,#dc2626);padding:2rem">' +
+      '<h3>Rankings Failed</h3><p>' + err.message + '</p></div>';
+  }
+}
+
+function exportBehaviorRankingsCSV() {
+  const data = _bhRankingsCache;
+  if (!data || !data.rankings.length) return;
+  let csv = "Rank,Panel ID,Display Name,Phantom kW,Off-Shift %,Annual kWh Wasted,Annual Cost,Annual CO2 kg\n";
+  data.rankings.forEach((p, i) => {
+    csv += [i + 1, '"' + p.panel_id + '"', '"' + p.display_name + '"',
+      p.phantom_kw, p.off_shift_pct, p.annual_phantom_kwh,
+      p.annual_phantom_cost, p.annual_phantom_carbon_kg].join(",") + "\n";
+  });
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "phantom_draw_rankings.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ─── Detail View (single panel) ─── */
+async function renderBehaviorDetailView() {
+  const st = tabState.behavior;
   const t = T();
-  const narrative = document.getElementById("bh-narrative");
-  const cards = document.getElementById("bh-kpi-cards");
-  const detail = document.getElementById("bh-narrative-detail");
+  const rankingsEl = document.getElementById("bh-rankings");
+  const narrativeEl = document.getElementById("bh-narrative");
+  const cardsEl = document.getElementById("bh-kpi-cards");
+  const chartsGrid = document.querySelector("#tab-behavior .charts-grid");
+  const detailEl = document.getElementById("bh-narrative-detail");
+
+  // Hide rankings, show detail sections
+  if (rankingsEl) rankingsEl.innerHTML = '';
+  if (chartsGrid) chartsGrid.style.display = "";
 
   if (!st.panel) {
-    if (narrative) narrative.innerHTML =
+    if (narrativeEl) narrativeEl.innerHTML =
       '<div style="text-align:center;color:var(--muted);padding:3rem">' +
       '<h2>Select a Panel</h2><p>Choose a panel or device above to analyze its power usage behavior.</p></div>';
     return;
   }
 
-  if (narrative) narrative.innerHTML =
+  if (narrativeEl) narrativeEl.innerHTML =
     '<div style="text-align:center;color:var(--muted);padding:2rem">Analyzing behavior\u2026</div>';
 
   try {
@@ -1811,16 +1981,16 @@ async function renderBehaviorTab() {
       end: st.endDate ? st.endDate + "T23:59:59Z" : undefined,
     });
 
-    renderBehaviorNarrative(bh, narrative);
-    renderBehaviorKPIs(bh, cards);
+    renderBehaviorNarrative(bh, narrativeEl);
+    renderBehaviorKPIs(bh, cardsEl);
     renderBehaviorHourlyChart(bh, t);
     renderBehaviorSplitChart(bh, t);
     renderBehaviorScenariosChart(bh, t);
-    renderBehaviorDetailNarrative(bh, detail);
+    renderBehaviorDetailNarrative(bh, detailEl);
 
   } catch (err) {
     console.error("Behavior analysis failed:", err);
-    if (narrative) narrative.innerHTML =
+    if (narrativeEl) narrativeEl.innerHTML =
       '<div style="text-align:center;color:var(--negative-text,#dc2626);padding:2rem">' +
       '<h3>Analysis Failed</h3><p>' + err.message + '</p></div>';
   }
