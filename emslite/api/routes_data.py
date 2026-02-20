@@ -146,8 +146,18 @@ def get_metrics(
     kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, carbon_kg_per_kwh, all_panels)
     rankings = compute_panel_rankings(df, line_voltage, power_factor, all_panels, top_n=10)
 
-    # Department breakdown
+    # Department breakdown.
+    # When a department filter is active, return breakdown only for that department
+    # so the response is consistent with the filtered KPI and rankings.
+    # Without a filter, return all departments.
     dept_map = _get_all_department_panels()
+    if department and department in dept_map:
+        dept_map = {department: dept_map[department]}
+    elif department:
+        # Filter by display name as fallback (dept param may be display name)
+        filtered = {k: v for k, v in dept_map.items() if k == department}
+        if filtered:
+            dept_map = filtered
     dept_breakdown = compute_department_breakdown(
         df,
         dept_map,

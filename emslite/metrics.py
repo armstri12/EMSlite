@@ -40,7 +40,10 @@ def compute_kpi(
     dt_hours = ts.diff().dt.total_seconds().fillna(0) / 3600.0
     total_kwh = (total_kw * dt_hours).sum()
     peak_kw = float(total_kw.max())
-    avg_kw = float(total_kw.mean())
+    # Time-weighted average: consistent with total_kwh for irregular sample cadence.
+    # Falls back to simple mean when total interval is zero (e.g. single-row dataframe).
+    total_dt = float(dt_hours.sum())
+    avg_kw = float((total_kw * dt_hours).sum() / total_dt) if total_dt > 0 else float(total_kw.mean())
     load_factor = (avg_kw / peak_kw * 100.0) if peak_kw > 0 else 0.0
     date_range = (ts.max() - ts.min()).total_seconds() / 86400.0
 

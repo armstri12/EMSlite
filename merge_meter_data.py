@@ -109,10 +109,12 @@ def parse_timestamps_to_tz(series: pd.Series) -> pd.Series:
     if not (pd.api.types.is_datetime64_any_dtype(dt) or pd.api.types.is_datetime64tz_dtype(dt)):
         dt = pd.to_datetime(dt, errors="coerce")
 
-    # Localize or convert to target timezone
+    # Localize or convert to target timezone.
+    # ambiguous="infer" uses the surrounding context to resolve DST ambiguity,
+    # preserving records that would otherwise become NaT during fall-back transitions.
     if getattr(dt.dt, "tz", None) is None:
         try:
-            dt = dt.dt.tz_localize(TIMEZONE, nonexistent="shift_forward", ambiguous="NaT")
+            dt = dt.dt.tz_localize(TIMEZONE, nonexistent="shift_forward", ambiguous="infer")
         except Exception:
             dt = dt.dt.tz_localize(TIMEZONE)
     else:
