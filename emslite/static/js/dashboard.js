@@ -129,11 +129,13 @@ function initTabState() {
   tabState.trending.endDate = DATE_MAX;
   tabState.trending.panel = ALL_PANELS.length ? ALL_PANELS[0] : "";
 
-  // Auto-init comparison periods
-  const totalDays = DATE_MIN && DATE_MAX ? (new Date(DATE_MAX) - new Date(DATE_MIN)) / 86400000 : 0;
+  // Auto-init comparison periods (EST-aware)
+  const estMin = D.timestamps.length ? estDateOf(D.timestamps[0]) : DATE_MIN;
+  const estMax = D.timestamps.length ? estDateOf(D.timestamps[D.timestamps.length - 1]) : DATE_MAX;
+  const totalDays = estMin && estMax ? (new Date(estMax) - new Date(estMin)) / 86400000 : 0;
   const st = tabState.comparison;
   if (totalDays >= 14) {
-    const e2 = new Date(DATE_MAX), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
+    const e2 = new Date(estMax), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
     const e1 = new Date(s2); e1.setDate(e1.getDate()-1);
     const s1 = new Date(e1); s1.setDate(s1.getDate()-6);
     st.p1Start = s1.toISOString().slice(0,10);
@@ -141,12 +143,12 @@ function initTabState() {
     st.p2Start = s2.toISOString().slice(0,10);
     st.p2End   = e2.toISOString().slice(0,10);
   } else if (totalDays > 0) {
-    const mid = new Date(DATE_MIN); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
+    const mid = new Date(estMin); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
     const midN = new Date(mid); midN.setDate(midN.getDate()+1);
-    st.p1Start = DATE_MIN;
+    st.p1Start = estMin;
     st.p1End   = mid.toISOString().slice(0,10);
     st.p2Start = midN.toISOString().slice(0,10);
-    st.p2End   = DATE_MAX;
+    st.p2End   = estMax;
   }
 }
 
@@ -434,18 +436,20 @@ function buildFilterBar(containerId, tabKey, mode) {
       document.getElementById("fs-" + uid).value = DATE_MIN;
       document.getElementById("fe-" + uid).value = DATE_MAX;
     } else {
-      const totalDays = DATE_MIN && DATE_MAX ? (new Date(DATE_MAX) - new Date(DATE_MIN)) / 86400000 : 0;
+      const estMin = D.timestamps.length ? estDateOf(D.timestamps[0]) : DATE_MIN;
+      const estMax = D.timestamps.length ? estDateOf(D.timestamps[D.timestamps.length - 1]) : DATE_MAX;
+      const totalDays = estMin && estMax ? (new Date(estMax) - new Date(estMin)) / 86400000 : 0;
       if (totalDays >= 14) {
-        const e2 = new Date(DATE_MAX), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
+        const e2 = new Date(estMax), s2 = new Date(e2); s2.setDate(s2.getDate()-6);
         const e1 = new Date(s2); e1.setDate(e1.getDate()-1);
         const s1 = new Date(e1); s1.setDate(s1.getDate()-6);
         st.p1Start = s1.toISOString().slice(0,10); st.p1End = e1.toISOString().slice(0,10);
         st.p2Start = s2.toISOString().slice(0,10); st.p2End = e2.toISOString().slice(0,10);
       } else {
-        const mid = new Date(DATE_MIN); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
+        const mid = new Date(estMin); mid.setDate(mid.getDate()+Math.floor(totalDays/2));
         const midN = new Date(mid); midN.setDate(midN.getDate()+1);
-        st.p1Start = DATE_MIN; st.p1End = mid.toISOString().slice(0,10);
-        st.p2Start = midN.toISOString().slice(0,10); st.p2End = DATE_MAX;
+        st.p1Start = estMin; st.p1End = mid.toISOString().slice(0,10);
+        st.p2Start = midN.toISOString().slice(0,10); st.p2End = estMax;
       }
       document.getElementById("cp1s-" + uid).value = st.p1Start;
       document.getElementById("cp1e-" + uid).value = st.p1End;
@@ -543,6 +547,78 @@ function weekdayProfile(ts,kw) {
   ts.forEach((t,i)=>{ const w=new Date(t).getUTCDay(); s[w]+=kw[i]??0; c[w]++; });
   return { days:["Sun","Mon","Tue","Wed","Thu","Fri","Sat"], avgs:s.map((v,i)=>c[i]?v/c[i]:0) };
 }
+
+/* ─── EST/EDT helpers (for Comparison tab) ─── */
+const _estParts = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+  hour12: false
+});
+function toEST(utcISO) {
+  const parts = _estParts.formatToParts(new Date(utcISO));
+  const p = {};
+  parts.forEach(({ type, value }) => { p[type] = value; });
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+}
+function estDateOf(utcISO) { return toEST(utcISO).slice(0, 10); }
+function estHourOf(estStr) { return parseInt(estStr.slice(11, 13), 10); }
+
+function hourlyProfileEST(estTs, kw) {
+  const s = Array(24).fill(0), c = Array(24).fill(0);
+  estTs.forEach((t, i) => { const h = estHourOf(t); s[h] += kw[i] ?? 0; c[h]++; });
+  return { hours: Array.from({ length: 24 }, (_, i) => i), avgs: s.map((v, i) => c[i] ? v / c[i] : 0) };
+}
+function weekdayProfileEST(estTs, kw) {
+  const s = Array(7).fill(0), c = Array(7).fill(0);
+  estTs.forEach((t, i) => {
+    const w = new Date(t.slice(0, 10) + "T12:00:00Z").getUTCDay();
+    s[w] += kw[i] ?? 0; c[w]++;
+  });
+  return { days: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], avgs: s.map((v, i) => c[i] ? v / c[i] : 0) };
+}
+function filterWeatherEST(startDate, endDate) {
+  if (!WEATHER.enabled || !WEATHER.timestamps.length) return null;
+  const ts = [], temp = [], hum = [];
+  WEATHER.timestamps.forEach((t, i) => {
+    const ed = estDateOf(t);
+    if (ed >= startDate && ed <= endDate) {
+      ts.push(toEST(t));
+      temp.push(WEATHER.temperature_c[i]);
+      hum.push(WEATHER.humidity_pct[i]);
+    }
+  });
+  if (!ts.length) return null;
+  return { timestamps: ts, temperature_c: temp, humidity_pct: hum };
+}
+function weatherHourlyProfileTracesEST(wx) {
+  const traces = [];
+  const sT = Array(24).fill(0), sH = Array(24).fill(0), c = Array(24).fill(0);
+  wx.timestamps.forEach((t, i) => {
+    const h = estHourOf(t);
+    if (wx.temperature_c[i] != null) { sT[h] += wx.temperature_c[i]; c[h]++; }
+    if (wx.humidity_pct[i] != null) sH[h] += wx.humidity_pct[i];
+  });
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  if (WEATHER_OVERLAY.temperature) {
+    traces.push({
+      x: hours, y: hours.map(h => c[h] ? sT[h] / c[h] : null),
+      mode: "lines+markers", name: "Avg Temp",
+      line: { color: "#F97316", width: 1.5, dash: "dot", shape: "spline" },
+      marker: { size: 5, color: "#F97316" }, yaxis: "y2"
+    });
+  }
+  if (WEATHER_OVERLAY.humidity) {
+    traces.push({
+      x: hours, y: hours.map(h => c[h] ? sH[h] / c[h] : null),
+      mode: "lines+markers", name: "Avg Humidity",
+      line: { color: "#38BDF8", width: 1.5, dash: "dot", shape: "spline" },
+      marker: { size: 5, color: "#38BDF8" }, yaxis: "y3"
+    });
+  }
+  return traces;
+}
+
 function sparkSVG(vals, color) {
   if(!vals.length) return "";
   const w=200,h=32, mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
@@ -1450,21 +1526,25 @@ function renderComparison() {
     let tot = 0; active.forEach(p => { tot += (D.panel_series[p]||[])[i]||0; }); allKw.push(tot);
   }
 
-  const p1s=new Date(st.p1Start+"T00:00:00Z"), p1e=new Date(st.p1End+"T23:59:59Z");
-  const p2s=new Date(st.p2Start+"T00:00:00Z"), p2e=new Date(st.p2End+"T23:59:59Z");
-  if(isNaN(p1s)||isNaN(p1e)||isNaN(p2s)||isNaN(p2e)) return;
+  if (!st.p1Start || !st.p1End || !st.p2Start || !st.p2End) return;
 
-  // Prominent period date headers
-  const fmtD = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"});
+  // Prominent period date headers (format from date strings)
+  const fmtD = ds => {
+    const [y, m, d] = ds.split("-");
+    return new Date(+y, +m - 1, +d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
   document.getElementById("comp-period-headers").innerHTML =
-    `<div class="comp-period-hdr"><div class="comp-period-dot" style="background:${t.accent}"></div><div><div class="comp-period-hdr-label">Period 1</div><div class="comp-period-hdr-dates">${fmtD(p1s)} — ${fmtD(p1e)}</div></div></div>` +
-    `<div class="comp-period-hdr"><div class="comp-period-dot" style="background:${t.accentDark}"></div><div><div class="comp-period-hdr-label">Period 2</div><div class="comp-period-hdr-dates">${fmtD(p2s)} — ${fmtD(p2e)}</div></div></div>`;
+    `<div class="comp-period-hdr"><div class="comp-period-dot" style="background:${t.accent}"></div><div><div class="comp-period-hdr-label">Period 1</div><div class="comp-period-hdr-dates">${fmtD(st.p1Start)} — ${fmtD(st.p1End)}</div></div></div>` +
+    `<div class="comp-period-hdr"><div class="comp-period-dot" style="background:${t.accentDark}"></div><div><div class="comp-period-hdr-label">Period 2</div><div class="comp-period-hdr-dates">${fmtD(st.p2Start)} — ${fmtD(st.p2End)}</div></div></div>`;
 
-  const pd1={ts:[],kw:[]},pd2={ts:[],kw:[]};
-  allTs.forEach((ts,i)=>{ const d=new Date(ts);
-    if(d>=p1s&&d<=p1e){ pd1.ts.push(ts); pd1.kw.push(allKw[i]); }
-    if(d>=p2s&&d<=p2e){ pd2.ts.push(ts); pd2.kw.push(allKw[i]); }
-  });
+  // Filter by EST date and store EST-converted timestamps
+  const pd1={ts:[],kw:[]}, pd2={ts:[],kw:[]};
+  for (let i = 0; i < allTs.length; i++) {
+    const est = toEST(allTs[i]);
+    const ed = est.slice(0, 10);
+    if (ed >= st.p1Start && ed <= st.p1End) { pd1.ts.push(est); pd1.kw.push(allKw[i]); }
+    if (ed >= st.p2Start && ed <= st.p2End) { pd2.ts.push(est); pd2.kw.push(allKw[i]); }
+  }
   const m1=metrics(pd1.ts,pd1.kw), m2=metrics(pd2.ts,pd2.kw);
   const c1=m1.totalKwh*PRICE, c2=m2.totalKwh*PRICE;
   const lf1=m1.peakKw>0?m1.avgKw/m1.peakKw*100:0, lf2=m2.peakKw>0?m2.avgKw/m2.peakKw*100:0;
@@ -1488,9 +1568,12 @@ function renderComparison() {
   function setCC(id,cls) { document.getElementById("cc-"+id).className="comp-card "+cls; }
 
   // Update "Period 1" / "Period 2" labels in cards with short date ranges
-  const fmtS = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"});
-  const p1Label = `P1: ${fmtS(p1s)}–${fmtS(p1e)}`;
-  const p2Label = `P2: ${fmtS(p2s)}–${fmtS(p2e)}`;
+  const fmtS = ds => {
+    const [y, m, d] = ds.split("-");
+    return new Date(+y, +m - 1, +d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+  const p1Label = `P1: ${fmtS(st.p1Start)}\u2013${fmtS(st.p1End)}`;
+  const p2Label = `P2: ${fmtS(st.p2Start)}\u2013${fmtS(st.p2End)}`;
   document.querySelectorAll(".comp-card .comp-row").forEach((row, i) => {
     const span = row.querySelector(".comp-period");
     if (span) span.textContent = (i % 2 === 0) ? p1Label : p2Label;
@@ -1545,15 +1628,15 @@ function renderComparison() {
   ];
   const p2Layout={xaxis:xA({title:{text:"",font:{size:11}},type:"date"}),yaxis:sharedY};
   if (hasWeatherOverlay()) {
-    const wx1 = filterWeather(st.p1Start+"T00:00:00Z", st.p1End+"T23:59:59Z");
+    const wx1 = filterWeatherEST(st.p1Start, st.p1End);
     if (wx1) { p1Traces.push(...weatherTimeSeriesTraces(wx1,{dash:"dot"})); Object.assign(p1Layout, weatherAxesLayout()); }
-    const wx2 = filterWeather(st.p2Start+"T00:00:00Z", st.p2End+"T23:59:59Z");
+    const wx2 = filterWeatherEST(st.p2Start, st.p2End);
     if (wx2) { p2Traces.push(...weatherTimeSeriesTraces(wx2,{dash:"dot"})); Object.assign(p2Layout, weatherAxesLayout()); }
   }
   Plotly.newPlot("chart-comp-load-p1",p1Traces,pLayout(p1Layout),pCfg);
   Plotly.newPlot("chart-comp-load-p2",p2Traces,pLayout(p2Layout),pCfg);
 
-  const hp1=hourlyProfile(pd1.ts,pd1.kw),hp2=hourlyProfile(pd2.ts,pd2.kw);
+  const hp1=hourlyProfileEST(pd1.ts,pd1.kw),hp2=hourlyProfileEST(pd2.ts,pd2.kw);
   const compHourTraces=[
     {x:hp1.hours,y:hp1.avgs,mode:"lines+markers",name:"P1",line:{color:t.accent,width:2.5,shape:"spline"},marker:{size:7,color:t.accent}},
     {x:hp2.hours,y:hp2.avgs,mode:"lines+markers",name:"P2",line:{color:t.accentDark,width:2.5,shape:"spline"},marker:{size:7,color:t.accentDark}}
@@ -1563,15 +1646,14 @@ function renderComparison() {
     yaxis:yA({title:{text:"Avg kW",font:{size:12}}})
   };
   if (hasWeatherOverlay()) {
-    const wxAll = filterWeather(
-      new Date(Math.min(new Date(st.p1Start), new Date(st.p2Start))).toISOString(),
-      new Date(Math.max(new Date(st.p1End+"T23:59:59Z"), new Date(st.p2End+"T23:59:59Z"))).toISOString()
-    );
-    if (wxAll) { compHourTraces.push(...weatherHourlyProfileTraces(wxAll)); Object.assign(compHourLayout, weatherAxesLayout()); }
+    const wxAllStart = st.p1Start < st.p2Start ? st.p1Start : st.p2Start;
+    const wxAllEnd = st.p1End > st.p2End ? st.p1End : st.p2End;
+    const wxAll = filterWeatherEST(wxAllStart, wxAllEnd);
+    if (wxAll) { compHourTraces.push(...weatherHourlyProfileTracesEST(wxAll)); Object.assign(compHourLayout, weatherAxesLayout()); }
   }
   Plotly.newPlot("chart-comp-hourly",compHourTraces,pLayout(compHourLayout),pCfg);
 
-  const wp1=weekdayProfile(pd1.ts,pd1.kw),wp2=weekdayProfile(pd2.ts,pd2.kw);
+  const wp1=weekdayProfileEST(pd1.ts,pd1.kw),wp2=weekdayProfileEST(pd2.ts,pd2.kw);
   Plotly.newPlot("chart-comp-weekday",[
     {x:wp1.days,y:wp1.avgs,type:"bar",name:"P1",marker:{color:t.accent}},
     {x:wp2.days,y:wp2.avgs,type:"bar",name:"P2",marker:{color:t.accentDark}}
