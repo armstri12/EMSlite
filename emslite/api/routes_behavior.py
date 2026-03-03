@@ -8,7 +8,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
 from ..behavior import analyze_behavior, compute_phantom_rankings
-from ..core import load_csv, meter_columns
+from ..core import get_device_voltage_map, load_csv, meter_columns
 from .routes_data import _get_config, _get_master_path
 
 router = APIRouter(tags=["behavior"])
@@ -77,6 +77,7 @@ def get_behavior_rankings(
         price_per_kwh=float(cfg.get("price_per_kwh", 0.25)),
         carbon_kg_per_kwh=float(cfg.get("carbon_kg_per_kwh", 0.4)),
         display_names=display_names,
+        voltage_map=get_device_voltage_map(),
     )
 
 
@@ -125,6 +126,7 @@ def get_behavior(
         price_per_kwh=float(cfg.get("price_per_kwh", 0.25)),
         carbon_kg_per_kwh=float(cfg.get("carbon_kg_per_kwh", 0.4)),
         panel_display_name=display_name,
+        voltage_map=get_device_voltage_map(),
     )
 
     return result

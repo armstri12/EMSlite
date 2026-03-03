@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from ..core import amps_to_kw, load_csv, meter_columns, parse_window_to_hours
+from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns, parse_window_to_hours
 from ..metrics import compute_department_breakdown, compute_kpi, compute_panel_rankings
 
 router = APIRouter(tags=["data"])
@@ -46,6 +46,7 @@ def get_data(
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     rolling_hours = parse_window_to_hours(cfg.get("rolling_window", "1h"))
+    voltage_map = get_device_voltage_map()
 
     # Date filtering
     if start:
@@ -76,8 +77,9 @@ def get_data(
     panel_series = {}
     for col in all_panels:
         if col in df.columns:
+            v = voltage_map.get(col, line_voltage)
             panel_series[col] = amps_to_kw(
-                df[col].fillna(0), line_voltage, power_factor
+                df[col].fillna(0), v, power_factor
             ).fillna(0).round(3).tolist()
 
     # Total kW across selected panels
@@ -85,7 +87,8 @@ def get_data(
     total_kw_series = pd.Series(0.0, index=df.index)
     for col in all_panels:
         if col in df.columns:
-            total_kw_series += amps_to_kw(df[col].fillna(0), line_voltage, power_factor).fillna(0)
+            v = voltage_map.get(col, line_voltage)
+            total_kw_series += amps_to_kw(df[col].fillna(0), v, power_factor).fillna(0)
 
     # Build group (combo_columns) series — these are pre-computed kW columns
     combo_cols = cfg.get("combo_columns", {})
@@ -126,6 +129,7 @@ def get_metrics(
     power_factor = float(cfg.get("power_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
+    voltage_map = get_device_voltage_map()
 
     # Date filtering
     if start:
@@ -143,8 +147,8 @@ def get_metrics(
         if dept_panels is not None:
             all_panels = [p for p in all_panels if p in dept_panels]
 
-    kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, carbon_kg_per_kwh, all_panels)
-    rankings = compute_panel_rankings(df, line_voltage, power_factor, all_panels, top_n=10)
+    kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, carbon_kg_per_kwh, all_panels, voltage_map=voltage_map)
+    rankings = compute_panel_rankings(df, line_voltage, power_factor, all_panels, top_n=10, voltage_map=voltage_map)
 
     # Department breakdown.
     # When a department filter is active, return breakdown only for that department
@@ -165,6 +169,7 @@ def get_metrics(
         power_factor,
         price_per_kwh,
         carbon_kg_per_kwh,
+        voltage_map=voltage_map,
     )
 
     # Enrich rankings with display names

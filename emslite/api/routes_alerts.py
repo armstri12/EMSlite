@@ -93,7 +93,8 @@ def get_alerts(
                 continue
             configured_devices += 1
 
-            kw_series = amps_to_kw(df_window[panel].fillna(0), line_voltage, power_factor).fillna(0)
+            panel_voltage = device.voltage if device.voltage is not None else line_voltage
+            kw_series = amps_to_kw(df_window[panel].fillna(0), panel_voltage, power_factor).fillna(0)
             for idx, kw_val in kw_series.items():
                 ts = df_window.loc[idx, "Timestamp"]
                 amps_val = float(df_window.loc[idx, panel] or 0)

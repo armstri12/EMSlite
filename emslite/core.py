@@ -59,6 +59,19 @@ def load_csv(path: str | object) -> pd.DataFrame:
     return df
 
 
+def get_device_voltage_map() -> dict[str, float]:
+    """Return {device_id: voltage} for devices with a voltage override."""
+    from .database import get_session
+    from .models import Device
+
+    session = get_session()
+    try:
+        devices = session.query(Device).filter(Device.voltage.isnot(None)).all()
+        return {d.id: d.voltage for d in devices}
+    finally:
+        session.close()
+
+
 def normalize_rolling_window(window: str) -> str:
     return window.replace("H", "h")
 

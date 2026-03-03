@@ -16,6 +16,7 @@ def compute_kpi(
     price_per_kwh: float = 0.25,
     carbon_kg_per_kwh: float = 0.4,
     panel_cols: list[str] | None = None,
+    voltage_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Compute high-level KPI metrics from a wide-format dataframe.
 
@@ -24,12 +25,14 @@ def compute_kpi(
     """
     if panel_cols is None:
         panel_cols = meter_columns(df.columns)
+    vm = voltage_map or {}
 
     # Convert all panels from amps to kW and sum
     kw_df = pd.DataFrame()
     for col in panel_cols:
         if col in df.columns:
-            kw_df[col] = amps_to_kw(df[col].fillna(0), line_voltage, power_factor)
+            v = vm.get(col, line_voltage)
+            kw_df[col] = amps_to_kw(df[col].fillna(0), v, power_factor)
 
     if kw_df.empty:
         return _empty_kpi()
@@ -67,10 +70,12 @@ def compute_panel_rankings(
     power_factor: float = 1.0,
     panel_cols: list[str] | None = None,
     top_n: int = 10,
+    voltage_map: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Rank panels by total kWh consumption."""
     if panel_cols is None:
         panel_cols = meter_columns(df.columns)
+    vm = voltage_map or {}
 
     ts = df["Timestamp"]
     dt_hours = ts.diff().dt.total_seconds().fillna(0) / 3600.0
@@ -79,7 +84,8 @@ def compute_panel_rankings(
     for col in panel_cols:
         if col not in df.columns:
             continue
-        kw = amps_to_kw(df[col].fillna(0), line_voltage, power_factor)
+        v = vm.get(col, line_voltage)
+        kw = amps_to_kw(df[col].fillna(0), v, power_factor)
         kwh = float((kw * dt_hours).sum())
         peak = float(kw.max())
         rankings.append({
@@ -99,8 +105,10 @@ def compute_department_breakdown(
     power_factor: float = 1.0,
     price_per_kwh: float = 0.25,
     carbon_kg_per_kwh: float = 0.4,
+    voltage_map: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Compute energy/cost metrics grouped by department."""
+    vm = voltage_map or {}
     ts = df["Timestamp"]
     dt_hours = ts.diff().dt.total_seconds().fillna(0) / 3600.0
 
@@ -121,7 +129,8 @@ def compute_department_breakdown(
 
         kw_df = pd.DataFrame()
         for col in valid_panels:
-            kw_df[col] = amps_to_kw(df[col].fillna(0), line_voltage, power_factor)
+            v = vm.get(col, line_voltage)
+            kw_df[col] = amps_to_kw(df[col].fillna(0), v, power_factor)
 
         total_kw = kw_df.sum(axis=1)
         total_kwh = float((total_kw * dt_hours).sum())
