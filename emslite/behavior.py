@@ -288,6 +288,7 @@ def compute_phantom_rankings(
     price_per_kwh: float = 0.25,
     carbon_kg_per_kwh: float = 0.4,
     display_names: dict[str, str] | None = None,
+    voltage_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Rank all panels by phantom draw waste.
 
@@ -295,6 +296,7 @@ def compute_phantom_rankings(
     panel, then returns a sorted ranking (worst offenders first).
     """
     names = display_names or {}
+    vm = voltage_map or {}
     timestamps = df["Timestamp"]
     dt_hours = timestamps.diff().dt.total_seconds().fillna(0) / 3600.0
 
@@ -306,7 +308,8 @@ def compute_phantom_rankings(
     for col in panel_cols:
         if col not in df.columns:
             continue
-        kw = amps_to_kw(df[col].fillna(0), line_voltage, power_factor)
+        v = vm.get(col, line_voltage)
+        kw = amps_to_kw(df[col].fillna(0), v, power_factor)
 
         phantom = compute_phantom_draw(timestamps, kw)
         phantom_kw = phantom["phantom_kw"]
@@ -364,6 +367,7 @@ def analyze_behavior(
     price_per_kwh: float = 0.25,
     carbon_kg_per_kwh: float = 0.4,
     panel_display_name: str | None = None,
+    voltage_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Full behavior analysis for a single panel.
 
@@ -375,14 +379,17 @@ def analyze_behavior(
         price_per_kwh: Electricity cost rate.
         carbon_kg_per_kwh: Carbon intensity factor.
         panel_display_name: Human-friendly name (defaults to panel_col).
+        voltage_map: Per-device voltage overrides {device_id: voltage}.
 
     Returns:
         Complete analysis dict with all sub-results.
     """
     display_name = panel_display_name or panel_col
+    vm = voltage_map or {}
+    v = vm.get(panel_col, line_voltage)
 
     timestamps = df["Timestamp"]
-    kw = amps_to_kw(df[panel_col].fillna(0), line_voltage, power_factor)
+    kw = amps_to_kw(df[panel_col].fillna(0), v, power_factor)
 
     shift_class = classify_shift_hours(timestamps)
     hourly = compute_hourly_profile(timestamps, kw, shift_class)

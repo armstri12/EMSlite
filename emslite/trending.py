@@ -46,6 +46,7 @@ def compute_trending_snapshot(
     price_per_kwh: float = 0.25,
     carbon_kg_per_kwh: float = 0.4,
     display_names: dict[str, str] | None = None,
+    voltage_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Compute trend snapshot for all panels.
 
@@ -53,6 +54,7 @@ def compute_trending_snapshot(
     Returns per-panel trend metrics ranked by absolute change.
     """
     names = display_names or {}
+    vm = voltage_map or {}
     timestamps = df["Timestamp"]
 
     recent_df, prior_df = _split_periods(df, period_days)
@@ -68,18 +70,20 @@ def compute_trending_snapshot(
         if col not in df.columns:
             continue
 
+        v = vm.get(col, line_voltage)
+
         # Full period kW series
-        kw_full = amps_to_kw(df[col].fillna(0), line_voltage, power_factor)
+        kw_full = amps_to_kw(df[col].fillna(0), v, power_factor)
 
         # Recent period
-        kw_recent = amps_to_kw(recent_df[col].fillna(0), line_voltage, power_factor)
+        kw_recent = amps_to_kw(recent_df[col].fillna(0), v, power_factor)
         recent_kwh_series = _daily_kwh(recent_df["Timestamp"], kw_recent)
         recent_kwh = float(recent_kwh_series.sum())
         recent_avg_kw = float(kw_recent.mean()) if len(kw_recent) > 0 else 0.0
         recent_peak_kw = float(kw_recent.max()) if len(kw_recent) > 0 else 0.0
 
         # Prior period
-        kw_prior = amps_to_kw(prior_df[col].fillna(0), line_voltage, power_factor)
+        kw_prior = amps_to_kw(prior_df[col].fillna(0), v, power_factor)
         prior_kwh_series = _daily_kwh(prior_df["Timestamp"], kw_prior)
         prior_kwh = float(prior_kwh_series.sum())
         prior_avg_kw = float(kw_prior.mean()) if len(kw_prior) > 0 else 0.0
@@ -177,6 +181,7 @@ def compute_trending_detail(
     price_per_kwh: float = 0.25,
     carbon_kg_per_kwh: float = 0.4,
     panel_display_name: str | None = None,
+    voltage_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Full trending detail for a single panel.
 
@@ -184,12 +189,14 @@ def compute_trending_detail(
     recent and prior periods, and the raw time series for charting.
     """
     display_name = panel_display_name or panel_col
+    vm = voltage_map or {}
+    v = vm.get(panel_col, line_voltage)
     timestamps = df["Timestamp"]
-    kw = amps_to_kw(df[panel_col].fillna(0), line_voltage, power_factor)
+    kw = amps_to_kw(df[panel_col].fillna(0), v, power_factor)
 
     recent_df, prior_df = _split_periods(df, period_days)
-    kw_recent = amps_to_kw(recent_df[panel_col].fillna(0), line_voltage, power_factor)
-    kw_prior = amps_to_kw(prior_df[panel_col].fillna(0), line_voltage, power_factor)
+    kw_recent = amps_to_kw(recent_df[panel_col].fillna(0), v, power_factor)
+    kw_prior = amps_to_kw(prior_df[panel_col].fillna(0), v, power_factor)
 
     # --- Daily energy series (full dataset) ---
     daily = _daily_kwh(timestamps, kw)
