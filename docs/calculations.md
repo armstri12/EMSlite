@@ -2,6 +2,8 @@
 
 _Last reviewed: 2026-02-20_
 
+Diagram: `docs/calculation-flow.excalidraw` visualizes the end-to-end calculation pipeline and core formulas.
+
 This document defines every formula used in EMSlite, with units, assumptions, and worked examples. All code references are to `emslite/metrics.py`, `emslite/core.py`, `emslite/behavior.py`, and `emslite/trending.py`.
 
 ---
