@@ -15,12 +15,10 @@
 <!-- SIDEBAR -->
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-logo">
-    <div class="sidebar-logo-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-      </svg>
-    </div>
-    <span class="sidebar-wordmark">EMSlite</span>
+    <!-- Replace /static/logo.png with your logo file to display it here -->
+    <img id="site-logo" class="site-logo-img" src="/static/logo.png" alt="Logo"
+         onerror="this.style.display='none';document.getElementById('logo-placeholder').style.display='flex'">
+    <div id="logo-placeholder" class="logo-placeholder" style="display:none">Your Logo</div>
   </div>
   <nav class="sidebar-nav">
     <a class="nav-item active" data-tab="executive">
