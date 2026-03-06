@@ -158,6 +158,42 @@ const API = {
     return res.json();
   },
 
+  // ── Utility Bills ──
+  async getBills(meter) {
+    const q = new URLSearchParams();
+    if (meter) q.set("meter", meter);
+    const res = await fetch("/api/bills?" + q.toString());
+    return res.json();
+  },
+
+  async createBill(data) {
+    const res = await fetch("/api/bills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async updateBill(id, data) {
+    const res = await fetch("/api/bills/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteBill(id) {
+    const res = await fetch("/api/bills/" + id, { method: "DELETE" });
+    return res.json();
+  },
+
+  async getBillComparison(id) {
+    const res = await fetch("/api/bills/" + id + "/comparison");
+    return res.json();
+  },
+
   async getConfig() {
     const res = await fetch("/api/config");
     return res.json();

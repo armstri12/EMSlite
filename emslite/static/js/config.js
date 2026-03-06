@@ -4,16 +4,21 @@
 
 let devicesData = [];
 let departmentsData = [];
+let utilityMeters = [];
 let selectedDevices = new Set();
 
 async function renderDevicesTab() {
   try {
-    [devicesData, departmentsData] = await Promise.all([
+    let configData;
+    [devicesData, departmentsData, configData] = await Promise.all([
       API.getDevices(),
       API.getDepartments(),
+      API.getConfig(),
     ]);
+    utilityMeters = configData.utility_meters || [];
     renderDeviceTable();
     renderDepartmentSection();
+    renderBillsSection();
     renderFloorPlanList();
   } catch (err) {
     console.error("Failed to load device config:", err);
@@ -50,6 +55,7 @@ function renderDeviceTable() {
           <th>Display Name</th>
           <th>ID (CSV Column)</th>
           <th>Department</th>
+          <th>Meter</th>
           <th>Location</th>
           <th>Type</th>
           <th>Enabled</th>
@@ -61,6 +67,7 @@ function renderDeviceTable() {
             <td style="font-weight:600;color:var(--heading)">${d.display_name}</td>
             <td style="font-size:0.75rem;color:var(--muted)">${d.id}</td>
             <td>${d.department_name || '<span style="color:var(--muted)">Unassigned</span>'}</td>
+            <td>${d.meter_name || '<span style="color:var(--muted)">-</span>'}</td>
             <td>${d.location || '<span style="color:var(--muted)">-</span>'}</td>
             <td>${d.device_type}</td>
             <td>${d.enabled ? '<span style="color:var(--positive-text)">Yes</span>' : '<span style="color:var(--negative-text)">No</span>'}</td>
@@ -126,6 +133,13 @@ async function showDeviceEditPanel(deviceId) {
         </select>
       </div>
       <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Utility Meter</label>
+        <select class="filter-input" id="edit-meter-name" style="width:100%;margin-top:4px">
+          <option value="">Unassigned</option>
+          ${utilityMeters.map(m => `<option value="${m.name}" ${m.name === device.meter_name ? 'selected' : ''}>${m.name}</option>`).join("")}
+        </select>
+      </div>
+      <div>
         <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Location</label>
         <input type="text" class="filter-input" id="edit-location" value="${device.location || ''}" style="width:100%;margin-top:4px" placeholder="Building A, Room 2"/>
       </div>
@@ -188,6 +202,7 @@ async function showDeviceEditPanel(deviceId) {
     const data = {
       display_name: document.getElementById("edit-display-name").value,
       department_id: document.getElementById("edit-department").value || null,
+      meter_name: document.getElementById("edit-meter-name").value || null,
       location: document.getElementById("edit-location").value || null,
       device_type: document.getElementById("edit-device-type").value,
       rated_capacity: parseFloat(document.getElementById("edit-rated-capacity").value) || null,
@@ -227,6 +242,14 @@ function showBulkAssignModal() {
         </select>
       </div>
       <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Utility Meter</label>
+        <select class="filter-input" id="bulk-meter" style="width:100%;margin-top:4px">
+          <option value="">-- No change --</option>
+          <option value="__none__">Unassign</option>
+          ${utilityMeters.map(m => `<option value="${m.name}">${m.name}</option>`).join("")}
+        </select>
+      </div>
+      <div>
         <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Location</label>
         <input type="text" class="filter-input" id="bulk-location" style="width:100%;margin-top:4px" placeholder="Leave blank for no change"/>
       </div>
@@ -245,10 +268,13 @@ function showBulkAssignModal() {
 
   document.getElementById("bulk-apply").addEventListener("click", async () => {
     const deptVal = document.getElementById("bulk-department").value;
+    const meterVal = document.getElementById("bulk-meter").value;
     const locVal = document.getElementById("bulk-location").value;
     const payload = { device_ids: Array.from(selectedDevices) };
     if (deptVal === "__none__") payload.department_id = "";
     else if (deptVal) payload.department_id = deptVal;
+    if (meterVal === "__none__") payload.meter_name = "";
+    else if (meterVal) payload.meter_name = meterVal;
     if (locVal) payload.location = locVal;
     await API.bulkAssignDevices(payload);
     selectedDevices.clear();
@@ -666,4 +692,199 @@ async function openFloorPlanEditor(planId) {
   }
 
   render();
+}
+
+/* ═══════════════════════════════════════════════════════
+   UTILITY BILLS SECTION
+   ═══════════════════════════════════════════════════════ */
+let billsData = [];
+let billComparisons = {};
+
+async function renderBillsSection() {
+  const container = document.getElementById("bills-section");
+  if (!container) return;
+
+  try {
+    billsData = await API.getBills();
+  } catch (err) {
+    container.innerHTML = '<div style="color:var(--negative-text);padding:1rem">Failed to load bills.</div>';
+    return;
+  }
+
+  if (!utilityMeters.length) {
+    container.innerHTML = '<div style="color:var(--muted);padding:1rem;text-align:center">No utility meters configured. Add meters to visualization_config.json.</div>';
+    return;
+  }
+
+  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+    '<button class="btn btn-primary btn-sm" id="add-bill-btn">+ Add Bill</button></div>';
+
+  // Group bills by meter
+  for (const meter of utilityMeters) {
+    const meterBills = billsData.filter(b => b.meter_name === meter.name);
+    const assignedCount = devicesData.filter(d => d.meter_name === meter.name).length;
+
+    html += `<div style="margin-bottom:1.5rem">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="font-weight:700;color:var(--heading);font-size:0.95rem">${meter.name}</span>
+        <span style="font-size:0.75rem;color:var(--muted)">${assignedCount} device${assignedCount !== 1 ? 's' : ''} assigned</span>
+      </div>`;
+
+    if (!meterBills.length) {
+      html += '<div style="color:var(--muted);font-size:0.85rem;padding:4px 0">No bills recorded.</div>';
+    } else {
+      html += `<div class="data-table-wrap"><table class="data-table"><thead><tr>
+        <th>Period</th>
+        <th>Bill Date</th>
+        <th>Bill Amount</th>
+        <th>Calculated Cost</th>
+        <th>Difference</th>
+        <th>Actions</th>
+      </tr></thead><tbody>`;
+
+      for (const bill of meterBills) {
+        const comp = billComparisons[bill.id];
+        const calcCell = comp
+          ? `$${comp.calculated_cost.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+          : '<span class="btn btn-ghost btn-sm compare-bill-btn" data-id="' + bill.id + '">Calculate</span>';
+        const diffCell = comp
+          ? `<span style="color:${comp.difference >= 0 ? 'var(--positive-text,#16a34a)' : 'var(--negative-text,#dc2626)'};font-weight:600">` +
+            `${comp.difference >= 0 ? '+' : ''}$${comp.difference.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>`
+          : '-';
+
+        html += `<tr>
+          <td>${bill.period_start} to ${bill.period_end}</td>
+          <td>${bill.bill_date || '-'}</td>
+          <td style="font-weight:600">$${bill.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+          <td>${calcCell}</td>
+          <td>${diffCell}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm edit-bill-btn" data-id="${bill.id}">Edit</button>
+            <button class="btn btn-ghost btn-sm del-bill-btn" data-id="${bill.id}" style="color:var(--negative-text)">Del</button>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+
+  // Wire events
+  document.getElementById("add-bill-btn").addEventListener("click", () => showBillModal(null));
+
+  container.querySelectorAll(".edit-bill-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const bill = billsData.find(b => b.id === parseInt(btn.dataset.id));
+      if (bill) showBillModal(bill);
+    });
+  });
+
+  container.querySelectorAll(".del-bill-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      if (confirm("Delete this bill?")) {
+        await API.deleteBill(parseInt(btn.dataset.id));
+        delete billComparisons[parseInt(btn.dataset.id)];
+        renderBillsSection();
+      }
+    });
+  });
+
+  container.querySelectorAll(".compare-bill-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = parseInt(btn.dataset.id);
+      btn.textContent = "...";
+      const comp = await API.getBillComparison(id);
+      billComparisons[id] = comp;
+      renderBillsSection();
+    });
+  });
+
+  // Auto-fetch comparisons for bills that don't have one yet
+  for (const bill of billsData) {
+    if (!billComparisons[bill.id]) {
+      API.getBillComparison(bill.id).then(comp => {
+        billComparisons[bill.id] = comp;
+        renderBillsSection();
+      }).catch(() => {});
+      break; // fetch one at a time to avoid flooding
+    }
+  }
+}
+
+function showBillModal(bill) {
+  const isEdit = !!bill;
+  const overlay = document.createElement("div");
+  overlay.className = "sidebar-overlay active";
+  overlay.style.zIndex = "400";
+
+  const modal = document.createElement("div");
+  modal.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card-bg);z-index:401;border-radius:var(--card-radius);padding:2rem;min-width:400px;box-shadow:0 12px 48px rgba(0,0,0,0.2);";
+  modal.innerHTML = `
+    <h3 style="color:var(--heading);margin-bottom:1rem">${isEdit ? 'Edit' : 'Add'} Utility Bill</h3>
+    <div style="display:flex;flex-direction:column;gap:1rem">
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Meter</label>
+        <select class="filter-input" id="bill-meter" style="width:100%;margin-top:4px">
+          ${utilityMeters.map(m => `<option value="${m.name}" ${bill && bill.meter_name === m.name ? 'selected' : ''}>${m.name}</option>`).join("")}
+        </select>
+      </div>
+      <div style="display:flex;gap:1rem">
+        <div style="flex:1">
+          <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Period Start</label>
+          <input type="date" class="filter-input" id="bill-period-start" value="${bill ? bill.period_start : ''}" style="width:100%;margin-top:4px"/>
+        </div>
+        <div style="flex:1">
+          <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Period End</label>
+          <input type="date" class="filter-input" id="bill-period-end" value="${bill ? bill.period_end : ''}" style="width:100%;margin-top:4px"/>
+        </div>
+      </div>
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Bill Date</label>
+        <input type="date" class="filter-input" id="bill-date" value="${bill ? (bill.bill_date || '') : ''}" style="width:100%;margin-top:4px"/>
+      </div>
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Amount ($)</label>
+        <input type="number" step="0.01" class="filter-input" id="bill-amount" value="${bill ? bill.amount : ''}" style="width:100%;margin-top:4px" placeholder="0.00"/>
+      </div>
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Notes</label>
+        <input type="text" class="filter-input" id="bill-notes" value="${bill ? (bill.notes || '') : ''}" style="width:100%;margin-top:4px" placeholder="Optional"/>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:0.5rem">
+        <button class="btn btn-ghost" id="bill-cancel">Cancel</button>
+        <button class="btn btn-primary" id="bill-save">${isEdit ? 'Update' : 'Create'}</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+
+  function closeModal() { overlay.remove(); modal.remove(); }
+  overlay.addEventListener("click", closeModal);
+  document.getElementById("bill-cancel").addEventListener("click", closeModal);
+
+  document.getElementById("bill-save").addEventListener("click", async () => {
+    const data = {
+      meter_name: document.getElementById("bill-meter").value,
+      period_start: document.getElementById("bill-period-start").value,
+      period_end: document.getElementById("bill-period-end").value,
+      bill_date: document.getElementById("bill-date").value || null,
+      amount: parseFloat(document.getElementById("bill-amount").value) || 0,
+      notes: document.getElementById("bill-notes").value || null,
+    };
+    if (!data.period_start || !data.period_end || !data.amount) {
+      alert("Please fill in period dates and amount.");
+      return;
+    }
+    if (isEdit) {
+      await API.updateBill(bill.id, data);
+      delete billComparisons[bill.id];
+    } else {
+      await API.createBill(data);
+    }
+    closeModal();
+    renderBillsSection();
+  });
 }
