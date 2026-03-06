@@ -239,6 +239,14 @@ def generate_ytd_report_data(year: int | None = None) -> dict[str, Any]:
     )
     department_panels = _get_all_department_panels()
 
+    # Filter panel_cols to only enabled devices (meter_columns returns all
+    # CSV columns regardless of Device.enabled; department_panels is already
+    # filtered to enabled devices by _get_all_department_panels).
+    enabled_panels: set[str] = set()
+    for panels in department_panels.values():
+        enabled_panels.update(panels)
+    panel_cols = [p for p in panel_cols if p in enabled_panels]
+
     # --- Determine YTD window ---
     latest = df["Timestamp"].max()
     report_year = year or latest.year
