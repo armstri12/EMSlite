@@ -996,7 +996,6 @@ def render_ytd_report_html(data: dict) -> str:
 def _render_ytd_title_slide(data, start_dt, end_dt, year):
     """Slide 1: Title + facility KPI summary."""
     kpi = data["facility_kpi"]
-    dept_count = len([d for d in data["departments"] if d["total_kwh"] > 0])
     date_range = f"January 1 \u2013 {end_dt.strftime('%B %d, %Y')}"
 
     def _fmt_kwh(v):
@@ -1031,8 +1030,8 @@ def _render_ytd_title_slide(data, start_dt, end_dt, year):
       </td>
       <td width="33%" style="padding:0 0 0 8px;">
         <div style="background:rgba(255,255,255,0.08);border-radius:8px;padding:24px 20px;text-align:center;border:1px solid rgba(255,255,255,0.12);">
-          <div style="font-size:12px;color:#a0a8b4;text-transform:uppercase;letter-spacing:1px;">Departments</div>
-          <div style="font-size:36px;font-weight:700;color:#ffffff;margin:8px 0 4px;">{dept_count}</div>
+          <div style="font-size:12px;color:#a0a8b4;text-transform:uppercase;letter-spacing:1px;">Average Load</div>
+          <div style="font-size:36px;font-weight:700;color:#ffffff;margin:8px 0 4px;">{kpi["avg_kw"]:,.1f} kW</div>
         </div>
       </td>
     </tr>
@@ -1121,18 +1120,22 @@ def _render_ytd_share_bar(departments):
     if not active:
         return ""
 
-    # Build stacked bar segments
-    segments = ""
+    # Build stacked bar segments using a single-row table to prevent wrapping
+    segment_cells = ""
     for i, d in enumerate(active):
         pct = d["pct_of_total_cost"]
         color = _DEPT_COLORS[i % len(_DEPT_COLORS)]
-        # Only show label if segment is wide enough
         label = f"{pct:.0f}%" if pct >= 5 else ""
-        segments += (
-            f'<div style="display:inline-block;width:{pct}%;background:{color};'
-            f'height:48px;line-height:48px;text-align:center;color:#fff;font-size:13px;'
-            f'font-weight:600;overflow:hidden;vertical-align:top;">{label}</div>'
+        segment_cells += (
+            f'<td style="width:{pct}%;background:{color};height:48px;'
+            f'text-align:center;color:#fff;font-size:13px;font-weight:600;'
+            f'padding:0;">{label}</td>'
         )
+    segments = (
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
+        f' style="border-collapse:collapse;table-layout:fixed;">'
+        f'<tr>{segment_cells}</tr></table>'
+    )
 
     # Legend
     legend_items = ""
@@ -1152,7 +1155,7 @@ def _render_ytd_share_bar(departments):
 <td class="slide" style="padding:40px 56px;">
   <div style="font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:4px;">Cost Share by Department</div>
   <div style="font-size:13px;color:#7f8c8d;margin-bottom:20px;">Proportional share of total facility energy cost</div>
-  <div style="background:#e0e0e0;border-radius:6px;overflow:hidden;font-size:0;line-height:0;">
+  <div style="background:#e0e0e0;border-radius:6px;overflow:hidden;">
     {segments}
   </div>
   <div style="margin-top:16px;line-height:2;">
