@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
@@ -20,6 +20,18 @@ def init_db(db_path: str | Path = "emslite.db") -> None:
     _engine = create_engine(f"sqlite:///{p}", echo=False)
     _SessionLocal = sessionmaker(bind=_engine)
     Base.metadata.create_all(_engine)
+    _migrate(_engine)
+
+
+def _migrate(engine) -> None:
+    """Add columns that may be missing from older database schemas."""
+    insp = inspect(engine)
+    # Add meter_name to devices table if missing
+    if "devices" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("devices")}
+        if "meter_name" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE devices ADD COLUMN meter_name VARCHAR(128)"))
 
 
 def get_session() -> Session:
