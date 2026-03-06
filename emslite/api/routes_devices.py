@@ -17,6 +17,7 @@ router = APIRouter(tags=["devices"])
 class DeviceUpdate(BaseModel):
     display_name: str | None = None
     department_id: str | None = None
+    meter_name: str | None = None
     location: str | None = None
     device_type: str | None = None
     rated_capacity: float | None = None
@@ -33,6 +34,7 @@ class DeviceUpdate(BaseModel):
 class BulkAssign(BaseModel):
     device_ids: list[str]
     department_id: str | None = None
+    meter_name: str | None = None
     location: str | None = None
     tags: list[str] | None = None
 
@@ -109,6 +111,8 @@ def bulk_assign(body: BulkAssign) -> dict[str, Any]:
                 continue
             if body.department_id is not None:
                 device.department_id = body.department_id if body.department_id else None
+            if body.meter_name is not None:
+                device.meter_name = body.meter_name if body.meter_name else None
             if body.location is not None:
                 device.location = body.location if body.location else None
             if body.tags is not None:

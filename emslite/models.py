@@ -51,6 +51,7 @@ class Device(Base):
     department_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("departments.id", ondelete="SET NULL"), default=None
     )
+    meter_name: Mapped[str | None] = mapped_column(String(128), default=None)
     location: Mapped[str | None] = mapped_column(String(256), default=None)
     device_type: Mapped[str] = mapped_column(String(32), default="panel")
     rated_capacity: Mapped[float | None] = mapped_column(Float, default=None)
@@ -77,6 +78,7 @@ class Device(Base):
             "display_name": self.display_name,
             "department_id": self.department_id,
             "department_name": self.department.display_name if self.department else None,
+            "meter_name": self.meter_name,
             "location": self.location,
             "device_type": self.device_type,
             "rated_capacity": self.rated_capacity,
@@ -234,6 +236,33 @@ class WeatherCache(Base):
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
             "temperature_c": self.temperature_c,
             "humidity_pct": self.humidity_pct,
+        }
+
+
+class UtilityBill(Base):
+    """Utility bill records for tracking actual costs per meter."""
+
+    __tablename__ = "utility_bills"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    meter_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    bill_date: Mapped[date | None] = mapped_column(Date, default=None)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "meter_name": self.meter_name,
+            "period_start": self.period_start.isoformat() if self.period_start else None,
+            "period_end": self.period_end.isoformat() if self.period_end else None,
+            "bill_date": self.bill_date.isoformat() if self.bill_date else None,
+            "amount": self.amount,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

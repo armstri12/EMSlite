@@ -109,6 +109,7 @@ def get_data(
         "rolling_hours": rolling_hours,
         "price_per_kwh": price_per_kwh,
         "carbon_kg_per_kwh": carbon_kg_per_kwh,
+        "utility_meters": cfg.get("utility_meters", []),
     }
 
 

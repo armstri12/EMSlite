@@ -22,6 +22,7 @@ from .routes_alerts import router as alerts_router
 from .routes_weather import router as weather_router
 from .routes_behavior import router as behavior_router
 from .routes_trending import router as trending_router
+from .routes_bills import router as bills_router
 from .routes_reports import router as reports_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(weather_router, prefix="/api")
     app.include_router(behavior_router, prefix="/api")
     app.include_router(trending_router, prefix="/api")
+    app.include_router(bills_router, prefix="/api")
     app.include_router(reports_router, prefix="/api")
 
     # Serve static frontend files

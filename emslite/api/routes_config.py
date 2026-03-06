@@ -44,6 +44,7 @@ def get_config() -> dict[str, Any]:
         "drops_dir": cfg.get("drops_dir", "drops"),
         "data_dir": cfg.get("data_dir", "data"),
         "weather": cfg.get("weather", {}),
+        "utility_meters": cfg.get("utility_meters", []),
     }
 
 
