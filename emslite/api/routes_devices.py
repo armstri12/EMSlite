@@ -80,11 +80,21 @@ def update_device(device_id: str, body: DeviceUpdate) -> dict[str, Any]:
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
 
-        update_data = body.model_dump(exclude_none=True)
+        # Fields that can be explicitly set to None (reset to default)
+        nullable_fields = {
+            "voltage", "rated_capacity", "warning_kw", "critical_kw",
+            "department_id", "meter_name", "location", "device_type",
+            "phase", "install_date", "notes",
+        }
+
+        # Use exclude_unset so explicitly-sent null values are preserved
+        update_data = body.model_dump(exclude_unset=True)
         if "tags" in update_data:
             update_data["tags"] = json.dumps(update_data["tags"])
 
         for key, value in update_data.items():
+            if value is None and key not in nullable_fields:
+                continue
             setattr(device, key, value)
 
         session.commit()
