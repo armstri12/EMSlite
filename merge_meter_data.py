@@ -99,10 +99,17 @@ def parse_timestamps_to_tz(series: pd.Series) -> pd.Series:
         try_dt = pd.to_datetime(s[mask], errors="coerce", format="%m/%d/%y %I:%M %p")
         dt = dt.mask(mask, try_dt)
 
-    # 3) Fallback to dateutil (mixed leftovers)
+    # 3) ISO-style with offset written by ingest pipeline: '2026-01-23 14:30:00-0500'
+    #    Use utc=True to avoid "mixed timezones" error when EST/EDT offsets coexist.
     if dt.isna().any():
         mask = dt.isna()
-        try_dt = pd.to_datetime(s[mask], errors="coerce", format=None)
+        try_dt = pd.to_datetime(s[mask], errors="coerce", utc=True)
+        dt = dt.mask(mask, try_dt)
+
+    # 4) Fallback to dateutil (mixed leftovers)
+    if dt.isna().any():
+        mask = dt.isna()
+        try_dt = pd.to_datetime(s[mask], errors="coerce", format=None, utc=True)
         dt = dt.mask(mask, try_dt)
 
     # Ensure we ended with a datetime-like Series before using .dt
