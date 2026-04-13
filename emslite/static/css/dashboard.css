@@ -1405,11 +1405,37 @@ body {
 .drawflow-canvas,
 #drawflow {
   height: 600px;
-  background: var(--bg);
-  border: 1px solid var(--border, #e5e7eb);
+  background-color: var(--bg);
+  background-image: radial-gradient(
+    circle,
+    rgba(127, 127, 127, 0.35) 1px,
+    transparent 1px
+  );
+  background-size: 20px 20px;
+  border: 2px dashed var(--border, #cbd5e1);
   border-radius: 6px;
   position: relative;
   overflow: hidden;
+}
+.drawflow-canvas::before,
+#drawflow::before {
+  content: "Drag a node from the palette to begin";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--muted, #94a3b8);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Hide placeholder once Drawflow has placed at least one node. */
+.drawflow-canvas.parent-drawflow:has(.drawflow-node)::before,
+#drawflow.parent-drawflow:has(.drawflow-node)::before {
+  display: none;
 }
 
 .wf-node {
