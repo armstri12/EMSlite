@@ -28,6 +28,36 @@ DEFAULT_CONFIG: dict = {
         "station_id": None,
         "unit": "celsius",
     },
+    "production": {
+        "default_metrics": [
+            {
+                "id": "final_tests_per_day",
+                "display_name": "Final Tests / Day",
+                "unit": "tests",
+                "color": "#8BD435",
+                "sort_order": 10,
+            },
+            {
+                "id": "intermediate_tests_per_day",
+                "display_name": "Intermediate Tests / Day",
+                "unit": "tests",
+                "color": "#F5A623",
+                "sort_order": 20,
+            },
+            {
+                "id": "machine_hours",
+                "display_name": "Machine Hours",
+                "unit": "hours",
+                "color": "#4A90E2",
+                "sort_order": 30,
+            },
+        ],
+        "workflow_node_types": [
+            {"type": "step", "label": "Step", "color": "#8BD435"},
+            {"type": "input", "label": "Input", "color": "#4A90E2"},
+            {"type": "output", "label": "Output", "color": "#F5A623"},
+        ],
+    },
 }
 
 

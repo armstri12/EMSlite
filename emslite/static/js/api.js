@@ -285,4 +285,125 @@ const API = {
     if (!res.ok) throw new Error(`Trending detail failed: ${res.status}`);
     return res.json();
   },
+
+  // ─── Production metrics ───
+  async getMetricDefinitions() {
+    const res = await fetch("/api/metric-definitions");
+    return res.json();
+  },
+
+  async createMetricDefinition(data) {
+    const res = await fetch("/api/metric-definitions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`createMetricDefinition failed: ${res.status}`);
+    return res.json();
+  },
+
+  async updateMetricDefinition(id, data) {
+    const res = await fetch("/api/metric-definitions/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteMetricDefinition(id) {
+    const res = await fetch("/api/metric-definitions/" + encodeURIComponent(id), {
+      method: "DELETE",
+    });
+    return res.json();
+  },
+
+  async getDailyMetrics(params = {}) {
+    const q = new URLSearchParams();
+    if (params.metric_def_id) q.set("metric_def_id", params.metric_def_id);
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    const res = await fetch("/api/daily-metrics?" + q.toString());
+    return res.json();
+  },
+
+  async createDailyMetric(data) {
+    const res = await fetch("/api/daily-metrics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`createDailyMetric failed: ${res.status}`);
+    return res.json();
+  },
+
+  async updateDailyMetric(id, data) {
+    const res = await fetch("/api/daily-metrics/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteDailyMetric(id) {
+    const res = await fetch("/api/daily-metrics/" + id, { method: "DELETE" });
+    return res.json();
+  },
+
+  async bulkUploadDailyMetrics(data) {
+    const res = await fetch("/api/daily-metrics/bulk-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  // ─── Workflows ───
+  async getWorkflows() {
+    const res = await fetch("/api/workflows");
+    return res.json();
+  },
+
+  async getWorkflow(id) {
+    const res = await fetch("/api/workflows/" + id);
+    return res.json();
+  },
+
+  async createWorkflow(data) {
+    const res = await fetch("/api/workflows", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`createWorkflow failed: ${res.status}`);
+    return res.json();
+  },
+
+  async updateWorkflow(id, data) {
+    const res = await fetch("/api/workflows/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteWorkflow(id) {
+    const res = await fetch("/api/workflows/" + id, { method: "DELETE" });
+    return res.json();
+  },
+
+  async getProductionCorrelation(params = {}) {
+    const q = new URLSearchParams();
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    if (params.metric_def_ids && params.metric_def_ids.length)
+      q.set("metric_def_ids", params.metric_def_ids.join(","));
+    if (params.panels && params.panels.length)
+      q.set("panels", params.panels.join(","));
+    const res = await fetch("/api/production/correlation?" + q.toString());
+    return res.json();
+  },
 };

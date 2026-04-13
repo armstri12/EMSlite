@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+<link rel="stylesheet" href="/vendor/drawflow/drawflow.min.css"/>
+<script src="/vendor/drawflow/drawflow.min.js"></script>
 <link rel="stylesheet" href="/css/dashboard.css"/>
 </head>
 <body>
@@ -60,6 +62,10 @@
     <a class="nav-item" data-tab="trending">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
       <span class="nav-label">Trending</span>
+    </a>
+    <a class="nav-item" data-tab="production">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V10l6 4V10l6 4V6l4 3v11"/></svg>
+      <span class="nav-label">Production</span>
     </a>
   </nav>
   <div class="sidebar-footer">
@@ -328,6 +334,87 @@
         </div>
       </div>
       <div id="bh-narrative-detail"></div>
+    </div>
+
+    <!-- PRODUCTION TAB -->
+    <div class="tab-content" id="tab-production">
+      <div class="production-subtabs">
+        <button type="button" class="psub-btn active" data-psub="metrics">Daily Metrics</button>
+        <button type="button" class="psub-btn" data-psub="workflow">Workflow Builder</button>
+        <button type="button" class="psub-btn" data-psub="correlation">Correlation</button>
+      </div>
+
+      <!-- Metrics sub-tab -->
+      <section class="psub-section" id="psub-metrics">
+        <div class="panel">
+          <div class="panel-title">Metric Definitions</div>
+          <div id="metric-defs-list"></div>
+          <div class="metric-def-form">
+            <input type="text" id="mdef-name" placeholder="Display name (e.g. Boxes Shipped)"/>
+            <input type="text" id="mdef-unit" placeholder="Unit (tests, hours, …)" value="count"/>
+            <input type="color" id="mdef-color" value="#8BD435"/>
+            <button type="button" id="mdef-add">Add metric</button>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top:1rem">
+          <div class="panel-title">Daily Entries</div>
+          <div class="metric-entry-form">
+            <select id="metric-entry-select"></select>
+            <input type="date" id="metric-entry-date"/>
+            <input type="number" step="any" id="metric-entry-value" placeholder="Value"/>
+            <button type="button" id="metric-entry-add">Add / Update</button>
+          </div>
+          <details class="metric-bulk-block">
+            <summary>Bulk paste CSV (date,value — one row per line)</summary>
+            <textarea id="metric-bulk-csv" rows="6" placeholder="2026-04-01,42&#10;2026-04-02,37"></textarea>
+            <button type="button" id="metric-bulk-upload">Upload</button>
+            <span id="metric-bulk-status" class="hint"></span>
+          </details>
+          <div id="metric-entries-table-wrap"></div>
+        </div>
+      </section>
+
+      <!-- Workflow sub-tab -->
+      <section class="psub-section" id="psub-workflow" style="display:none">
+        <div class="panel">
+          <div class="panel-title">Production Workflow Builder</div>
+          <div class="workflow-toolbar">
+            <select id="workflow-select"><option value="">— New workflow —</option></select>
+            <input type="text" id="workflow-name" placeholder="Workflow name"/>
+            <button type="button" id="workflow-new">New</button>
+            <button type="button" id="workflow-save">Save</button>
+            <button type="button" id="workflow-delete">Delete</button>
+            <span class="hint">Drag a node from the palette onto the canvas, then connect outputs to inputs.</span>
+          </div>
+          <div class="workflow-layout">
+            <aside id="workflow-palette">
+              <div class="palette-title">Palette</div>
+              <div class="palette-node" draggable="true" data-node-type="input">Input</div>
+              <div class="palette-node" draggable="true" data-node-type="step">Step</div>
+              <div class="palette-node" draggable="true" data-node-type="output">Output</div>
+              <div class="palette-hint">Tip: double-click a node on the canvas to remove it.</div>
+            </aside>
+            <div id="drawflow" class="drawflow-canvas"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Correlation sub-tab -->
+      <section class="psub-section" id="psub-correlation" style="display:none">
+        <div class="panel">
+          <div class="panel-title">Energy vs. Production Correlation</div>
+          <div class="correlation-controls">
+            <label>Start <input type="date" id="corr-start"/></label>
+            <label>End <input type="date" id="corr-end"/></label>
+            <label>Metrics<br><select id="corr-metric-select" multiple size="4"></select></label>
+            <label>Panels<br><select id="corr-panel-select" multiple size="4"></select></label>
+            <button type="button" id="corr-run">Update</button>
+          </div>
+          <div id="corr-chart" style="height:480px"></div>
+          <div id="corr-summary" class="hint"></div>
+        </div>
+      </section>
     </div>
 
   </div>
