@@ -2831,16 +2831,38 @@ async function ensureMetricDefsLoaded() {
 
 function initDrawflow() {
   const el = document.getElementById("drawflow");
-  if (!el || PROD_STATE.wfEditor) return;
-  if (typeof Drawflow === "undefined") {
-    el.innerHTML = '<div class="hint">Drawflow library failed to load.</div>';
+  if (!el) {
+    console.error("[workflow] #drawflow element not found");
     return;
   }
-  const editor = new Drawflow(el);
-  editor.reroute = true;
-  editor.reroute_fix_curvature = true;
-  editor.start();
-  PROD_STATE.wfEditor = editor;
+  if (PROD_STATE.wfEditor) {
+    console.log("[workflow] editor already initialized");
+    return;
+  }
+  if (typeof Drawflow === "undefined") {
+    console.error("[workflow] Drawflow library is not loaded (check /vendor/drawflow/drawflow.min.js)");
+    el.innerHTML =
+      '<div style="padding:2rem;text-align:center;color:var(--negative-text,#dc2626);font-weight:600">' +
+      'Drawflow library failed to load.<br>' +
+      '<span style="font-weight:400;font-size:12px;color:var(--muted)">Check the browser console and reload with Ctrl+Shift+R.</span>' +
+      '</div>';
+    return;
+  }
+  try {
+    const editor = new Drawflow(el);
+    editor.reroute = true;
+    editor.reroute_fix_curvature = true;
+    editor.start();
+    PROD_STATE.wfEditor = editor;
+    console.log("[workflow] Drawflow editor initialized, canvas size:",
+      el.offsetWidth + "x" + el.offsetHeight);
+  } catch (err) {
+    console.error("[workflow] Drawflow init failed:", err);
+    el.innerHTML =
+      '<div style="padding:2rem;text-align:center;color:var(--negative-text,#dc2626);font-weight:600">' +
+      'Workflow editor failed to start: ' + escapeHtml(err.message) + '</div>';
+    return;
+  }
 
   // Drag from palette → add node at drop location
   el.addEventListener("dragover", (ev) => ev.preventDefault());
