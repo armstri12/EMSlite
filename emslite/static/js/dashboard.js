@@ -2623,11 +2623,13 @@ let PROD_STATE = {
 
 function prodSwitchSub(subKey) {
   PROD_STATE.activeSub = subKey;
-  document.querySelectorAll(".psub-btn").forEach((b) => {
+  const root = document.getElementById("tab-production");
+  if (!root) return;
+  root.querySelectorAll(".psub-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.psub === subKey);
   });
-  document.querySelectorAll(".psub-section").forEach((s) => {
-    s.style.display = s.id === "psub-" + subKey ? "" : "none";
+  root.querySelectorAll(".psub-section").forEach((s) => {
+    s.style.display = s.id === "psub-" + subKey ? "block" : "none";
   });
   if (subKey === "metrics") renderMetricsSubTab();
   else if (subKey === "workflow") renderWorkflowSubTab();
@@ -2640,8 +2642,13 @@ async function renderProductionTab() {
 
   if (!container.dataset.wired) {
     container.dataset.wired = "1";
-    container.querySelectorAll(".psub-btn").forEach((b) => {
-      b.addEventListener("click", () => prodSwitchSub(b.dataset.psub));
+    // Event delegation — survives re-renders and is immune to listener leaks.
+    container.addEventListener("click", (ev) => {
+      const btn = ev.target.closest(".psub-btn");
+      if (btn && container.contains(btn) && btn.dataset.psub) {
+        ev.preventDefault();
+        prodSwitchSub(btn.dataset.psub);
+      }
     });
   }
   prodSwitchSub(PROD_STATE.activeSub || "metrics");
