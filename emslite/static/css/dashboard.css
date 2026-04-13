@@ -1243,3 +1243,241 @@ body {
 @media (max-width: 900px) {
   .tr-spark { display: none; }
 }
+
+/* ─── Production tab ─── */
+.production-subtabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.production-subtabs .psub-btn {
+  background: none;
+  border: none;
+  color: var(--muted, #6b7280);
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.production-subtabs .psub-btn.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent, #C41230);
+}
+
+.metric-def-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+}
+.metric-def-color {
+  width: 14px; height: 14px; border-radius: 4px; display: inline-block;
+}
+.metric-def-name { font-weight: 600; color: var(--ink); }
+.metric-def-unit { color: var(--muted); font-size: 12px; }
+.metric-def-id { margin-left: auto; font-size: 11px; font-family: monospace; }
+.metric-def-row .btn-mini { margin-left: 8px; }
+
+.metric-def-form, .metric-entry-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  align-items: center;
+}
+.metric-def-form input, .metric-entry-form input, .metric-entry-form select {
+  padding: 6px 10px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--ink);
+}
+.metric-def-form button, .metric-entry-form button,
+.workflow-toolbar button, .correlation-controls button,
+.metric-bulk-block button {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  background: var(--accent, #C41230);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-mini {
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--border, #d1d5db);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.metric-bulk-block {
+  margin-top: 12px;
+  padding: 8px 0;
+}
+.metric-bulk-block textarea {
+  width: 100%;
+  max-width: 520px;
+  display: block;
+  margin: 8px 0;
+  padding: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--ink);
+}
+
+.metric-entries-table {
+  width: 100%;
+  max-width: 520px;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+.metric-entries-table th, .metric-entries-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  text-align: left;
+  color: var(--ink);
+}
+.metric-entries-table th { font-size: 11px; text-transform: uppercase; color: var(--muted); }
+
+/* Workflow builder */
+.workflow-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.workflow-toolbar input, .workflow-toolbar select {
+  padding: 6px 10px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--ink);
+}
+.workflow-layout {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  min-height: 600px;
+}
+#workflow-palette {
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+}
+.palette-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.palette-node {
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: var(--bg);
+  border: 2px solid var(--accent, #C41230);
+  border-radius: 6px;
+  cursor: grab;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: center;
+  user-select: none;
+}
+.palette-node:active { cursor: grabbing; }
+.palette-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.drawflow-canvas,
+#drawflow {
+  height: 600px;
+  background: var(--bg);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.wf-node {
+  padding: 8px 10px;
+  min-width: 180px;
+  color: var(--ink);
+}
+.wf-node-title input {
+  width: 100%;
+  font-weight: 700;
+  padding: 4px 6px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 3px;
+  background: var(--card);
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.wf-node-field {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 4px 0;
+}
+.wf-node-field select {
+  display: block;
+  width: 100%;
+  font-size: 11px;
+  padding: 2px 4px;
+  margin-top: 2px;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 3px;
+}
+.drawflow .drawflow-node {
+  background: var(--card);
+  border: 2px solid var(--accent, #C41230);
+  border-radius: 6px;
+  padding: 0;
+}
+.drawflow .drawflow-node.wf-input  { border-color: #4A90E2; }
+.drawflow .drawflow-node.wf-output { border-color: #F5A623; }
+.drawflow .drawflow-node.wf-step   { border-color: #8BD435; }
+
+/* Correlation */
+.correlation-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+.correlation-controls label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.correlation-controls input,
+.correlation-controls select {
+  padding: 6px 10px;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--ink);
+  min-width: 140px;
+}
+.hint { color: var(--muted); font-size: 12px; }

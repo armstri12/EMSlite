@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -264,6 +265,109 @@ class UtilityBill(Base):
             "notes": self.notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class MetricDefinition(Base):
+    """A user-defined daily output metric (e.g. "final tests per day")."""
+
+    __tablename__ = "metric_definitions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # slug
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), default="count")
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    color: Mapped[str] = mapped_column(String(7), default="#8BD435")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    entries: Mapped[list[DailyMetricEntry]] = relationship(
+        back_populates="definition", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "display_name": self.display_name,
+            "unit": self.unit,
+            "description": self.description,
+            "color": self.color,
+            "sort_order": self.sort_order,
+        }
+
+
+class DailyMetricEntry(Base):
+    """A single per-day value for a MetricDefinition."""
+
+    __tablename__ = "daily_metric_entries"
+    __table_args__ = (
+        UniqueConstraint("metric_def_id", "entry_date", name="uq_metric_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    metric_def_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("metric_definitions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    value: Mapped[float] = mapped_column(Float, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    definition: Mapped[MetricDefinition] = relationship(back_populates="entries")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "metric_def_id": self.metric_def_id,
+            "entry_date": self.entry_date.isoformat() if self.entry_date else None,
+            "value": self.value,
+            "notes": self.notes,
+        }
+
+
+class Workflow(Base):
+    """A production workflow graph built in the drag-and-drop editor.
+
+    The node/edge graph is stored as JSON in ``graph_json``. Canonical shape:
+
+        {
+          "nodes": [{"id", "label", "x", "y", "type",
+                     "panel_ids": [...], "metric_def_ids": [...]}],
+          "edges": [{"id", "from", "to"}]
+        }
+    """
+
+    __tablename__ = "workflows"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, default=None)
+    graph_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    def to_dict(self, include_graph: bool = True) -> dict:
+        import json as _json
+
+        out = {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+        if include_graph:
+            try:
+                out["graph"] = _json.loads(self.graph_json) if self.graph_json else {"nodes": [], "edges": []}
+            except Exception:
+                out["graph"] = {"nodes": [], "edges": []}
+        return out
 
 
 class AlertEvent(Base):

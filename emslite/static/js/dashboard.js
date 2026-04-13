@@ -1724,6 +1724,7 @@ function renderTab(tabKey) {
   else if (tabKey === "health")     renderHealthTab();
   else if (tabKey === "behavior")   renderBehaviorTab();
   else if (tabKey === "trending")   renderTrendingTab();
+  else if (tabKey === "production") renderProductionTab();
 }
 
 
@@ -2605,6 +2606,471 @@ async function renderTrendingDetailView() {
       '<div style="text-align:center;color:var(--negative-text,#dc2626);padding:2rem">' +
       '<h3>Detail Failed</h3><p>' + err.message + '</p></div>';
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   PRODUCTION TAB — Daily metrics, workflow builder, correlation
+   ═══════════════════════════════════════════════════════ */
+let PROD_STATE = {
+  activeSub: "metrics",
+  defs: [],
+  entries: [],
+  wfEditor: null,
+  wfList: [],
+  currentWfId: null,
+  selectedMetricId: null,
+};
+
+function prodSwitchSub(subKey) {
+  PROD_STATE.activeSub = subKey;
+  document.querySelectorAll(".psub-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.psub === subKey);
+  });
+  document.querySelectorAll(".psub-section").forEach((s) => {
+    s.style.display = s.id === "psub-" + subKey ? "" : "none";
+  });
+  if (subKey === "metrics") renderMetricsSubTab();
+  else if (subKey === "workflow") renderWorkflowSubTab();
+  else if (subKey === "correlation") renderCorrelationSubTab();
+}
+
+async function renderProductionTab() {
+  const container = document.getElementById("tab-production");
+  if (!container) return;
+
+  if (!container.dataset.wired) {
+    container.dataset.wired = "1";
+    container.querySelectorAll(".psub-btn").forEach((b) => {
+      b.addEventListener("click", () => prodSwitchSub(b.dataset.psub));
+    });
+  }
+  prodSwitchSub(PROD_STATE.activeSub || "metrics");
+}
+
+/* ─── Metrics sub-tab ─── */
+async function renderMetricsSubTab() {
+  try {
+    PROD_STATE.defs = await API.getMetricDefinitions();
+  } catch (err) {
+    console.error("Failed to load metric definitions:", err);
+    PROD_STATE.defs = [];
+  }
+  renderMetricDefsList();
+  populateMetricEntrySelect();
+  wireMetricForms();
+  await refreshMetricEntries();
+}
+
+function renderMetricDefsList() {
+  const wrap = document.getElementById("metric-defs-list");
+  if (!wrap) return;
+  if (!PROD_STATE.defs.length) {
+    wrap.innerHTML = '<div class="hint">No metrics defined yet. Add one below.</div>';
+    return;
+  }
+  const rows = PROD_STATE.defs.map((d) => `
+    <div class="metric-def-row" data-id="${d.id}">
+      <span class="metric-def-color" style="background:${d.color}"></span>
+      <span class="metric-def-name">${escapeHtml(d.display_name)}</span>
+      <span class="metric-def-unit">${escapeHtml(d.unit || "")}</span>
+      <span class="metric-def-id hint">${escapeHtml(d.id)}</span>
+      <button class="btn-mini metric-def-del" data-id="${d.id}">Delete</button>
+    </div>
+  `).join("");
+  wrap.innerHTML = rows;
+  wrap.querySelectorAll(".metric-def-del").forEach((b) => {
+    b.addEventListener("click", async () => {
+      if (!confirm(`Delete metric "${b.dataset.id}" and all its daily entries?`)) return;
+      await API.deleteMetricDefinition(b.dataset.id);
+      await renderMetricsSubTab();
+    });
+  });
+}
+
+function populateMetricEntrySelect() {
+  const sel = document.getElementById("metric-entry-select");
+  if (!sel) return;
+  const prev = sel.value || PROD_STATE.selectedMetricId;
+  sel.innerHTML = PROD_STATE.defs
+    .map((d) => `<option value="${d.id}">${escapeHtml(d.display_name)} (${escapeHtml(d.unit || "")})</option>`)
+    .join("");
+  if (prev && PROD_STATE.defs.some((d) => d.id === prev)) sel.value = prev;
+  PROD_STATE.selectedMetricId = sel.value || null;
+  sel.addEventListener("change", async () => {
+    PROD_STATE.selectedMetricId = sel.value;
+    await refreshMetricEntries();
+  }, { once: false });
+}
+
+function wireMetricForms() {
+  const addBtn = document.getElementById("mdef-add");
+  if (addBtn && !addBtn.dataset.wired) {
+    addBtn.dataset.wired = "1";
+    addBtn.addEventListener("click", async () => {
+      const name = document.getElementById("mdef-name").value.trim();
+      const unit = document.getElementById("mdef-unit").value.trim() || "count";
+      const color = document.getElementById("mdef-color").value || "#8BD435";
+      if (!name) { alert("Metric display name required"); return; }
+      try {
+        await API.createMetricDefinition({ display_name: name, unit, color });
+        document.getElementById("mdef-name").value = "";
+        await renderMetricsSubTab();
+      } catch (e) { alert("Failed: " + e.message); }
+    });
+  }
+
+  const entryAdd = document.getElementById("metric-entry-add");
+  if (entryAdd && !entryAdd.dataset.wired) {
+    entryAdd.dataset.wired = "1";
+    entryAdd.addEventListener("click", async () => {
+      const metric_def_id = document.getElementById("metric-entry-select").value;
+      const entry_date = document.getElementById("metric-entry-date").value;
+      const valueStr = document.getElementById("metric-entry-value").value;
+      if (!metric_def_id || !entry_date || valueStr === "") {
+        alert("Metric, date, and value are all required"); return;
+      }
+      try {
+        await API.createDailyMetric({
+          metric_def_id, entry_date, value: parseFloat(valueStr),
+        });
+        document.getElementById("metric-entry-value").value = "";
+        await refreshMetricEntries();
+      } catch (e) { alert("Failed: " + e.message); }
+    });
+  }
+
+  const bulkBtn = document.getElementById("metric-bulk-upload");
+  if (bulkBtn && !bulkBtn.dataset.wired) {
+    bulkBtn.dataset.wired = "1";
+    bulkBtn.addEventListener("click", async () => {
+      const metric_def_id = document.getElementById("metric-entry-select").value;
+      const csv = document.getElementById("metric-bulk-csv").value;
+      const status = document.getElementById("metric-bulk-status");
+      if (!metric_def_id || !csv.trim()) {
+        status.textContent = "Pick a metric and paste CSV rows first"; return;
+      }
+      try {
+        const res = await API.bulkUploadDailyMetrics({ metric_def_id, csv });
+        status.textContent = `Inserted ${res.inserted}, updated ${res.updated}` +
+          (res.errors && res.errors.length ? `, ${res.errors.length} errors` : "");
+        document.getElementById("metric-bulk-csv").value = "";
+        await refreshMetricEntries();
+      } catch (e) { status.textContent = "Failed: " + e.message; }
+    });
+  }
+}
+
+async function refreshMetricEntries() {
+  const wrap = document.getElementById("metric-entries-table-wrap");
+  if (!wrap) return;
+  const mid = PROD_STATE.selectedMetricId ||
+    document.getElementById("metric-entry-select")?.value;
+  if (!mid) { wrap.innerHTML = '<div class="hint">Pick a metric above.</div>'; return; }
+  try {
+    PROD_STATE.entries = await API.getDailyMetrics({ metric_def_id: mid });
+  } catch (err) { PROD_STATE.entries = []; }
+  if (!PROD_STATE.entries.length) {
+    wrap.innerHTML = '<div class="hint">No entries yet for this metric.</div>';
+    return;
+  }
+  const rows = PROD_STATE.entries.slice().reverse().map((e) => `
+    <tr>
+      <td>${e.entry_date}</td>
+      <td>${e.value}</td>
+      <td><button class="btn-mini entry-del" data-id="${e.id}">Delete</button></td>
+    </tr>
+  `).join("");
+  wrap.innerHTML = `
+    <table class="metric-entries-table">
+      <thead><tr><th>Date</th><th>Value</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  wrap.querySelectorAll(".entry-del").forEach((b) => {
+    b.addEventListener("click", async () => {
+      await API.deleteDailyMetric(b.dataset.id);
+      await refreshMetricEntries();
+    });
+  });
+}
+
+/* ─── Workflow sub-tab ─── */
+async function renderWorkflowSubTab() {
+  await ensureMetricDefsLoaded();
+  try {
+    PROD_STATE.wfList = await API.getWorkflows();
+  } catch (err) { PROD_STATE.wfList = []; }
+
+  const sel = document.getElementById("workflow-select");
+  if (sel) {
+    sel.innerHTML = '<option value="">— New workflow —</option>' +
+      PROD_STATE.wfList.map((w) => `<option value="${w.id}">${escapeHtml(w.name)}</option>`).join("");
+    if (PROD_STATE.currentWfId) sel.value = String(PROD_STATE.currentWfId);
+  }
+
+  wireWorkflowToolbar();
+  initDrawflow();
+
+  if (PROD_STATE.currentWfId) {
+    await loadWorkflowIntoEditor(PROD_STATE.currentWfId);
+  }
+}
+
+async function ensureMetricDefsLoaded() {
+  if (!PROD_STATE.defs || !PROD_STATE.defs.length) {
+    try { PROD_STATE.defs = await API.getMetricDefinitions(); }
+    catch { PROD_STATE.defs = []; }
+  }
+}
+
+function initDrawflow() {
+  const el = document.getElementById("drawflow");
+  if (!el || PROD_STATE.wfEditor) return;
+  if (typeof Drawflow === "undefined") {
+    el.innerHTML = '<div class="hint">Drawflow library failed to load.</div>';
+    return;
+  }
+  const editor = new Drawflow(el);
+  editor.reroute = true;
+  editor.reroute_fix_curvature = true;
+  editor.start();
+  PROD_STATE.wfEditor = editor;
+
+  // Drag from palette → add node at drop location
+  el.addEventListener("dragover", (ev) => ev.preventDefault());
+  el.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    const nodeType = ev.dataTransfer.getData("node-type");
+    if (!nodeType) return;
+    const rect = el.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const y = ev.clientY - rect.top;
+    addWorkflowNode(nodeType, x, y);
+  });
+  document.querySelectorAll(".palette-node").forEach((p) => {
+    p.addEventListener("dragstart", (ev) => {
+      ev.dataTransfer.setData("node-type", p.dataset.nodeType);
+    });
+  });
+}
+
+function buildNodeHtml(nodeType, label, selectedPanels, selectedMetrics) {
+  const panelOptions = ALL_PANELS.map((p) => {
+    const sel = (selectedPanels || []).includes(p) ? " selected" : "";
+    return `<option value="${escapeHtml(p)}"${sel}>${escapeHtml(p)}</option>`;
+  }).join("");
+  const metricOptions = (PROD_STATE.defs || []).map((m) => {
+    const sel = (selectedMetrics || []).includes(m.id) ? " selected" : "";
+    return `<option value="${escapeHtml(m.id)}"${sel}>${escapeHtml(m.display_name)}</option>`;
+  }).join("");
+  return `
+    <div class="wf-node wf-node-${nodeType}">
+      <div class="wf-node-title">
+        <input type="text" df-label value="${escapeHtml(label || nodeType)}" placeholder="Label"/>
+      </div>
+      <label class="wf-node-field">Panels
+        <select multiple size="3" df-panel_ids>${panelOptions}</select>
+      </label>
+      <label class="wf-node-field">Metrics
+        <select multiple size="3" df-metric_def_ids>${metricOptions}</select>
+      </label>
+    </div>`;
+}
+
+function addWorkflowNode(nodeType, x, y, data) {
+  const editor = PROD_STATE.wfEditor;
+  if (!editor) return;
+  const inputs = nodeType === "input" ? 0 : 1;
+  const outputs = nodeType === "output" ? 0 : 1;
+  const nodeData = data || { label: nodeType, panel_ids: [], metric_def_ids: [] };
+  const html = buildNodeHtml(nodeType, nodeData.label, nodeData.panel_ids, nodeData.metric_def_ids);
+  // editor.addNode(name, inputs, outputs, posX, posY, className, data, html)
+  editor.addNode(nodeType, inputs, outputs, x, y, "wf-" + nodeType, nodeData, html);
+}
+
+async function loadWorkflowIntoEditor(id) {
+  const editor = PROD_STATE.wfEditor;
+  if (!editor) return;
+  try {
+    const wf = await API.getWorkflow(id);
+    editor.clear();
+    // Prefer direct Drawflow import if the stored graph already has the
+    // native drawflow shape; otherwise rebuild from our canonical nodes/edges.
+    if (wf.graph && wf.graph.drawflow) {
+      editor.import(wf.graph);
+    } else if (wf.graph && Array.isArray(wf.graph.nodes)) {
+      for (const n of wf.graph.nodes) {
+        addWorkflowNode(n.type || "step", n.x || 50, n.y || 50, {
+          label: n.label || "",
+          panel_ids: n.panel_ids || [],
+          metric_def_ids: n.metric_def_ids || [],
+        });
+      }
+    }
+    document.getElementById("workflow-name").value = wf.name || "";
+    PROD_STATE.currentWfId = wf.id;
+  } catch (err) {
+    console.error("Failed to load workflow:", err);
+  }
+}
+
+function wireWorkflowToolbar() {
+  const sel = document.getElementById("workflow-select");
+  const newBtn = document.getElementById("workflow-new");
+  const saveBtn = document.getElementById("workflow-save");
+  const delBtn = document.getElementById("workflow-delete");
+
+  if (sel && !sel.dataset.wired) {
+    sel.dataset.wired = "1";
+    sel.addEventListener("change", async () => {
+      const id = sel.value ? parseInt(sel.value, 10) : null;
+      PROD_STATE.currentWfId = id;
+      if (id) {
+        await loadWorkflowIntoEditor(id);
+      } else {
+        PROD_STATE.wfEditor && PROD_STATE.wfEditor.clear();
+        document.getElementById("workflow-name").value = "";
+      }
+    });
+  }
+  if (newBtn && !newBtn.dataset.wired) {
+    newBtn.dataset.wired = "1";
+    newBtn.addEventListener("click", () => {
+      PROD_STATE.currentWfId = null;
+      PROD_STATE.wfEditor && PROD_STATE.wfEditor.clear();
+      document.getElementById("workflow-name").value = "";
+      if (sel) sel.value = "";
+    });
+  }
+  if (saveBtn && !saveBtn.dataset.wired) {
+    saveBtn.dataset.wired = "1";
+    saveBtn.addEventListener("click", async () => {
+      const name = document.getElementById("workflow-name").value.trim();
+      if (!name) { alert("Workflow name required"); return; }
+      if (!PROD_STATE.wfEditor) { alert("Editor not ready"); return; }
+      const graph = PROD_STATE.wfEditor.export();
+      try {
+        if (PROD_STATE.currentWfId) {
+          await API.updateWorkflow(PROD_STATE.currentWfId, { name, graph });
+        } else {
+          const created = await API.createWorkflow({ name, graph });
+          PROD_STATE.currentWfId = created.id;
+        }
+        await renderWorkflowSubTab();
+        alert("Workflow saved");
+      } catch (e) { alert("Save failed: " + e.message); }
+    });
+  }
+  if (delBtn && !delBtn.dataset.wired) {
+    delBtn.dataset.wired = "1";
+    delBtn.addEventListener("click", async () => {
+      if (!PROD_STATE.currentWfId) return;
+      if (!confirm("Delete this workflow?")) return;
+      await API.deleteWorkflow(PROD_STATE.currentWfId);
+      PROD_STATE.currentWfId = null;
+      PROD_STATE.wfEditor && PROD_STATE.wfEditor.clear();
+      await renderWorkflowSubTab();
+    });
+  }
+}
+
+/* ─── Correlation sub-tab ─── */
+async function renderCorrelationSubTab() {
+  await ensureMetricDefsLoaded();
+
+  const metricSel = document.getElementById("corr-metric-select");
+  const panelSel = document.getElementById("corr-panel-select");
+  if (metricSel) {
+    metricSel.innerHTML = PROD_STATE.defs
+      .map((d) => `<option value="${d.id}">${escapeHtml(d.display_name)}</option>`)
+      .join("");
+  }
+  if (panelSel) {
+    panelSel.innerHTML = ALL_PANELS
+      .map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`)
+      .join("");
+  }
+  const startEl = document.getElementById("corr-start");
+  const endEl = document.getElementById("corr-end");
+  if (startEl && !startEl.value && DATE_MIN) startEl.value = DATE_MIN;
+  if (endEl && !endEl.value && DATE_MAX) endEl.value = DATE_MAX;
+
+  const runBtn = document.getElementById("corr-run");
+  if (runBtn && !runBtn.dataset.wired) {
+    runBtn.dataset.wired = "1";
+    runBtn.addEventListener("click", runCorrelation);
+  }
+  runCorrelation();
+}
+
+async function runCorrelation() {
+  const start = document.getElementById("corr-start").value || undefined;
+  const end = document.getElementById("corr-end").value || undefined;
+  const metric_def_ids = Array.from(
+    document.getElementById("corr-metric-select").selectedOptions
+  ).map((o) => o.value);
+  const panels = Array.from(
+    document.getElementById("corr-panel-select").selectedOptions
+  ).map((o) => o.value);
+
+  const summary = document.getElementById("corr-summary");
+  try {
+    const data = await API.getProductionCorrelation({ start, end, metric_def_ids, panels });
+    const t = T();
+    const traces = [];
+    const panelIds = Object.keys(data.kwh_by_panel || {});
+    panelIds.forEach((pid, i) => {
+      traces.push({
+        type: "bar",
+        x: data.dates, y: data.kwh_by_panel[pid],
+        name: pid + " kWh",
+        marker: { color: t.series[i % t.series.length] },
+        yaxis: "y",
+      });
+    });
+    Object.entries(data.metrics || {}).forEach(([mid, m]) => {
+      traces.push({
+        type: "scatter",
+        mode: "lines+markers",
+        x: data.dates, y: m.values,
+        name: `${m.display_name} (${m.unit})`,
+        line: { color: m.color, width: 3 },
+        marker: { color: m.color, size: 7 },
+        yaxis: "y2",
+      });
+    });
+    const layout = {
+      barmode: "stack",
+      paper_bgcolor: t.card, plot_bgcolor: t.card,
+      font: { color: t.ink, family: "Inter, sans-serif" },
+      margin: { l: 60, r: 60, t: 30, b: 50 },
+      xaxis: { type: "date", gridcolor: t.grid, title: { text: "Date" } },
+      yaxis: { title: { text: "kWh / day" }, gridcolor: t.grid },
+      yaxis2: {
+        title: { text: "Production units" },
+        overlaying: "y", side: "right", showgrid: false,
+      },
+      legend: { orientation: "h", y: -0.2 },
+    };
+    Plotly.newPlot("corr-chart", traces, layout, { responsive: true, displaylogo: false });
+
+    if (summary) {
+      const totalKwh = (data.kwh_total || []).reduce((a, b) => (a + (b || 0)), 0);
+      const metricCount = Object.keys(data.metrics || {}).length;
+      summary.textContent = `${data.dates.length} days · ${panelIds.length} panels · `
+        + `${totalKwh.toFixed(1)} kWh total · ${metricCount} metric series`;
+    }
+  } catch (err) {
+    console.error("Correlation failed:", err);
+    if (summary) summary.textContent = "Correlation failed: " + err.message;
+  }
+}
+
+/* ─── Small utility ─── */
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /* ─── Boot ─── */

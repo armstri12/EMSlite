@@ -23,6 +23,8 @@ from .routes_weather import router as weather_router
 from .routes_behavior import router as behavior_router
 from .routes_trending import router as trending_router
 from .routes_bills import router as bills_router
+from .routes_production import router as production_router
+from .routes_production import seed_default_metric_definitions
 from .routes_reports import router as reports_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -52,6 +54,9 @@ async def lifespan(app: FastAPI):
     # Initialize database
     db_path = root / "emslite.db"
     init_db(db_path)
+
+    # Seed default production metric definitions on first startup (idempotent).
+    seed_default_metric_definitions(_app_config)
 
     # Ensure directories exist
     drops_dir = root / _app_config.get("drops_dir", "drops")
@@ -104,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(trending_router, prefix="/api")
     app.include_router(bills_router, prefix="/api")
     app.include_router(reports_router, prefix="/api")
+    app.include_router(production_router, prefix="/api")
 
     # Serve static frontend files
     static_dir = Path(__file__).resolve().parent.parent / "static"
