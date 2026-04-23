@@ -89,6 +89,8 @@ async function initDashboard() {
     buildFilterBar("dt-filter-bar", "data",       "daterange");
     buildBehaviorFilterBar();
     buildTrendingFilterBar();
+    buildFilterBar("iso-filter-bar", "iso50001", "daterange");
+    wireISO50001BaselineBar();
     setupTableControls();
     renderCurrentTab();
     await refreshAlerts(true);
@@ -109,7 +111,8 @@ const tabState = {
   comparison: { panels: new Set(), p1Start: "", p1End: "", p2Start: "", p2End: "", department: "" },
   data:       { panels: new Set(), startDate: "", endDate: "", department: "" },
   behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" },
-  trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" }
+  trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" },
+  iso50001:   { panels: new Set(), startDate: "", endDate: "", department: "", baselineStart: "", baselineEnd: "" }
 };
 
 function initTabState() {
@@ -128,6 +131,9 @@ function initTabState() {
   tabState.trending.startDate = DATE_MIN;
   tabState.trending.endDate = DATE_MAX;
   tabState.trending.panel = ALL_PANELS.length ? ALL_PANELS[0] : "";
+  tabState.iso50001.panels    = new Set(ALL_PANELS);
+  tabState.iso50001.startDate = DATE_MIN;
+  tabState.iso50001.endDate   = DATE_MAX;
 
   // Auto-init comparison periods (EST-aware)
   const estMin = D.timestamps.length ? estDateOf(D.timestamps[0]) : DATE_MIN;
@@ -1822,6 +1828,7 @@ function renderTab(tabKey) {
   else if (tabKey === "behavior")   renderBehaviorTab();
   else if (tabKey === "trending")   renderTrendingTab();
   else if (tabKey === "production") renderProductionTab();
+  else if (tabKey === "iso50001")   renderISO50001();
 }
 
 
@@ -3167,6 +3174,396 @@ async function runCorrelation() {
     console.error("Correlation failed:", err);
     if (summary) summary.textContent = "Correlation failed: " + err.message;
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   ISO 50001 TAB
+   ═══════════════════════════════════════════════════════ */
+
+function wireISO50001BaselineBar() {
+  const bar = document.getElementById("iso-baseline-bar");
+  if (!bar || bar.dataset.wired) return;
+  bar.dataset.wired = "1";
+  const st = tabState.iso50001;
+  document.getElementById("iso-bl-apply").addEventListener("click", () => {
+    const s = document.getElementById("iso-bl-start").value;
+    const e = document.getElementById("iso-bl-end").value;
+    if (!s || !e) return;
+    st.baselineStart = s;
+    st.baselineEnd   = e;
+    syncISO50001BaselineBar();
+    renderISO50001();
+  });
+  document.getElementById("iso-bl-clear").addEventListener("click", () => {
+    st.baselineStart = "";
+    st.baselineEnd   = "";
+    document.getElementById("iso-bl-start").value = "";
+    document.getElementById("iso-bl-end").value   = "";
+    syncISO50001BaselineBar();
+    renderISO50001();
+  });
+}
+
+function syncISO50001BaselineBar() {
+  const st   = tabState.iso50001;
+  const bar  = document.getElementById("iso-baseline-bar");
+  const hint = document.getElementById("iso-bl-hint");
+  if (!bar || !hint) return;
+  if (st.baselineStart && st.baselineEnd) {
+    bar.classList.add("has-baseline");
+    hint.textContent = "Baseline: " + st.baselineStart + " → " + st.baselineEnd;
+  } else {
+    bar.classList.remove("has-baseline");
+    hint.textContent = "No baseline set — EnB comparisons will be skipped.";
+  }
+}
+
+async function renderISO50001() {
+  const st  = tabState.iso50001;
+  const t   = T();
+  const data = filterForTab("iso50001");
+  const { timestamps: ts, totalKw: kw, panelSeries } = data;
+
+  const fmtKwh  = v => v >= 10000 ? (v/1000).toFixed(1) + " MWh" : v.toFixed(0) + " kWh";
+  const fmtKw   = v => v >= 1000  ? (v/1000).toFixed(2) + " MW"  : v.toFixed(1) + " kW";
+  const fmtCost = v => v >= 10000 ? "$" + (v/1000).toFixed(1) + "k" : "$" + v.toFixed(0);
+  const fmtPct  = v => v.toFixed(1) + "%";
+  const carbonFactor = D.carbon_kg_per_kwh || 0.4;
+
+  /* ── Core metrics ── */
+  const m          = metrics(ts, kw);
+  const totalKwh   = m.totalKwh;
+  const avgKw      = m.avgKw;
+  const peakKw     = m.peakKw;
+  const loadFactor = peakKw > 0 ? (avgKw / peakKw * 100) : 0;
+  const totalCost  = totalKwh * PRICE;
+  const carbonKg   = totalKwh * carbonFactor;
+  const dayCount   = ts.length >= 2
+    ? Math.max(1, Math.round((new Date(ts[ts.length-1]) - new Date(ts[0])) / 86400000) + 1)
+    : 1;
+  const dailyAvg = dayCount > 0 ? totalKwh / dayCount : 0;
+
+  /* ── SEU Pareto ── */
+  const activeP = st.panels.size ? Array.from(st.panels) : ALL_PANELS;
+  const panelKwh = {};
+  activeP.forEach(p => {
+    let kwh = 0;
+    const series = panelSeries[p] || [];
+    for (let i = 0; i < ts.length - 1; i++) {
+      const h = Math.max(0, (new Date(ts[i+1]) - new Date(ts[i])) / 3600000);
+      kwh += (series[i] ?? 0) * h;
+    }
+    panelKwh[p] = kwh;
+  });
+  const sorted     = Object.entries(panelKwh).sort((a,b) => b[1]-a[1]).filter(([,v]) => v > 0);
+  const grandTotal = sorted.reduce((s,[,v]) => s+v, 0) || 1;
+  let cumulative   = 0;
+  const seuRows    = sorted.map(([panel, kwh], rank) => {
+    const pct  = (kwh / grandTotal) * 100;
+    const wasBelow80 = cumulative < 80;
+    cumulative += pct;
+    return { rank: rank+1, panel, kwh, pct, cumulative, isSEU: wasBelow80 };
+  });
+
+  /* ── SEU Pareto Chart ── */
+  if (seuRows.length) {
+    const barColors = seuRows.map(r => r.isSEU ? t.accent : t.muted + "66");
+    Plotly.newPlot("chart-iso-pareto", [
+      { x: seuRows.map(r=>r.panel), y: seuRows.map(r=>r.kwh),
+        type:"bar", name:"kWh", marker:{color:barColors}, yaxis:"y1",
+        hovertemplate:"<b>%{x}</b><br>%{y:.1f} kWh<extra></extra>" },
+      { x: seuRows.map(r=>r.panel), y: seuRows.map(r=>r.cumulative),
+        mode:"lines+markers", name:"Cumulative %",
+        line:{color:t.accentDark, width:2.5}, marker:{size:7, color:t.accentDark, line:{color:t.card, width:2}},
+        yaxis:"y2", hovertemplate:"%{y:.1f}%<extra>Cumulative</extra>" }
+    ], pLayout({
+      xaxis: xA({title:{text:"Panel",font:{size:12}}}),
+      yaxis: yA({title:{text:"kWh",font:{size:12}}}),
+      yaxis2: { title:{text:"Cumulative %",font:{size:12}}, overlaying:"y", side:"right",
+                showgrid:false, zeroline:false, range:[0,105], ticksuffix:"%" },
+      shapes: [{ type:"line", xref:"paper", yref:"y2", x0:0, x1:1, y0:80, y1:80,
+                 line:{color:"#F97316", width:2, dash:"dash"} }],
+      annotations: [{ x:1, y:80, xref:"paper", yref:"y2", text:"80% threshold",
+                      showarrow:false, xanchor:"right", font:{size:11,color:"#F97316"}, yanchor:"bottom" }],
+      legend:{orientation:"h",y:-0.2}, bargap:0.2
+    }), pCfg);
+  }
+
+  /* ── SEU Status Table ── */
+  const seuTableEl = document.getElementById("iso-seu-table");
+  if (seuTableEl) {
+    if (!seuRows.length) {
+      seuTableEl.innerHTML = '<div style="color:var(--muted);padding:1rem">No panel data for the selected period.</div>';
+    } else {
+      const rows = seuRows.map(r => {
+        const cumW = Math.min(100, r.cumulative).toFixed(1);
+        const fillCls = r.cumulative > 80 ? "above80" : "";
+        return `<tr>
+          <td style="font-weight:700;color:var(--muted)">${r.rank}</td>
+          <td style="font-weight:600;color:var(--heading)">${r.panel}</td>
+          <td>${r.kwh.toFixed(0)} kWh</td>
+          <td>${fmtPct(r.pct)}</td>
+          <td>
+            <span class="iso-cumul-bar-wrap"><span class="iso-cumul-bar-fill ${fillCls}" style="width:${cumW}%"></span></span>
+            ${fmtPct(r.cumulative)}
+          </td>
+          <td><span class="iso-seu-badge ${r.isSEU ? "seu" : "non-seu"}">${r.isSEU ? "SEU" : "Non-SEU"}</span></td>
+        </tr>`;
+      }).join("");
+      seuTableEl.innerHTML = `<div class="data-table-wrap"><table class="data-table">
+        <thead><tr><th>#</th><th>Panel</th><th>Energy (kWh)</th><th>% of Total</th><th>Cumulative %</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+    }
+  }
+
+  /* ── Baseline Computation ── */
+  let baselineAvgKwhPerDay = null;
+  let baselineLabel        = "";
+  if (st.baselineStart && st.baselineEnd) {
+    const blS = new Date(st.baselineStart + "T00:00:00Z");
+    const blE = new Date(st.baselineEnd   + "T23:59:59Z");
+    const blTs = [], blKw = [];
+    const activePSet = new Set(activeP);
+    D.timestamps.forEach((ts_i, i) => {
+      const d = new Date(ts_i);
+      if (d < blS || d > blE) return;
+      blTs.push(ts_i);
+      let tot = 0;
+      activePSet.forEach(p => { tot += (D.panel_series[p]||[])[i] || 0; });
+      blKw.push(tot);
+    });
+    if (blTs.length >= 2) {
+      const blM = metrics(blTs, blKw);
+      const blDays = Math.max(1, Math.round(
+        (new Date(blTs[blTs.length-1]) - new Date(blTs[0])) / 86400000) + 1);
+      baselineAvgKwhPerDay = blM.totalKwh / blDays;
+      baselineLabel = st.baselineStart + " → " + st.baselineEnd;
+    }
+  }
+
+  /* ── EnB Chart: Actual vs Baseline ── */
+  const { dates: dailyDates, values: dailyValues } = dailyEnergy(ts, kw);
+  const enbTraces = [{
+    x:dailyDates, y:dailyValues, mode:"lines+markers", name:"Actual kWh/day",
+    line:{color:t.accent, width:2.5, shape:"spline"},
+    marker:{size:6, color:t.accent, line:{color:t.card, width:1.5}},
+    fill:"tozeroy", fillcolor:t.accent+"15",
+    hovertemplate:"%{x}<br><b>%{y:.1f} kWh</b><extra>Actual</extra>"
+  }];
+  if (baselineAvgKwhPerDay !== null && dailyDates.length) {
+    enbTraces.push({
+      x:[dailyDates[0], dailyDates[dailyDates.length-1]],
+      y:[baselineAvgKwhPerDay, baselineAvgKwhPerDay],
+      mode:"lines", name:"Baseline Avg (" + baselineLabel + ")",
+      line:{color:"#059669", width:2.5, dash:"dash"},
+      hovertemplate:baselineAvgKwhPerDay.toFixed(1) + " kWh/day (baseline)<extra></extra>"
+    });
+  }
+  Plotly.newPlot("chart-iso-baseline", enbTraces, pLayout({
+    xaxis:xA({type:"date", title:{text:"Date",font:{size:12}}}),
+    yaxis:yA({title:{text:"kWh",font:{size:12}}}),
+    shapes:weekendShapes(ts), legend:{orientation:"h",y:-0.2}
+  }), pCfg);
+
+  /* ── EnPI Chart 1: Daily kWh/day Trend ── */
+  if (dailyDates.length) {
+    const enpiTraces = [{
+      x:dailyDates, y:dailyValues, type:"bar", name:"kWh/day",
+      marker:{color:t.series[1]},
+      hovertemplate:"%{x}<br>%{y:.1f} kWh<extra></extra>"
+    }];
+    if (baselineAvgKwhPerDay !== null) {
+      enpiTraces.push({
+        x:[dailyDates[0], dailyDates[dailyDates.length-1]],
+        y:[baselineAvgKwhPerDay, baselineAvgKwhPerDay],
+        mode:"lines", name:"Baseline Avg", line:{color:"#059669", width:2, dash:"dot"}
+      });
+    }
+    Plotly.newPlot("chart-iso-enpi-daily", enpiTraces, pLayout({
+      xaxis:xA({type:"date", title:{text:"Date",font:{size:12}}}),
+      yaxis:yA({title:{text:"kWh/day",font:{size:12}}}),
+      bargap:0.15, legend:{orientation:"h",y:-0.2}
+    }), pCfg);
+  }
+
+  /* ── EnPI Chart 2: Rolling Load Factor Trend ── */
+  const lfByDay = {};
+  ts.forEach((ts_i, i) => {
+    const dk = new Date(ts_i).toISOString().slice(0,10);
+    if (!lfByDay[dk]) lfByDay[dk] = { sum:0, count:0, peak:0 };
+    const v = kw[i] ?? 0;
+    lfByDay[dk].sum   += v;
+    lfByDay[dk].count += 1;
+    if (v > lfByDay[dk].peak) lfByDay[dk].peak = v;
+  });
+  const lfDates  = Object.keys(lfByDay).sort();
+  const lfValues = lfDates.map(d => {
+    const e = lfByDay[d];
+    const avg = e.count > 0 ? e.sum / e.count : 0;
+    return e.peak > 0 ? (avg / e.peak * 100) : 0;
+  });
+  if (lfDates.length) {
+    Plotly.newPlot("chart-iso-enpi-lf", [
+      { x:lfDates, y:lfValues, mode:"lines+markers", name:"Daily Load Factor %",
+        line:{color:t.series[2], width:2.5, shape:"spline"}, marker:{size:5, color:t.series[2]},
+        fill:"tozeroy", fillcolor:t.series[2]+"15",
+        hovertemplate:"%{x}<br><b>%{y:.1f}%</b><extra>Load Factor</extra>" },
+      { x:[lfDates[0], lfDates[lfDates.length-1]], y:[loadFactor, loadFactor],
+        mode:"lines", name:"Period Avg (" + loadFactor.toFixed(1) + "%)",
+        line:{color:t.muted, width:1.5, dash:"dot"} }
+    ], pLayout({
+      xaxis:xA({type:"date", title:{text:"Date",font:{size:12}}}),
+      yaxis:yA({title:{text:"Load Factor %",font:{size:12}}, ticksuffix:"%"}),
+      legend:{orientation:"h",y:-0.2}
+    }), pCfg);
+  }
+
+  /* ── EnPI Chart 3: Production Correlation (async) ── */
+  const corrPanel = document.getElementById("iso-correlation-panel");
+  try {
+    const metricDefs = await API.getMetricDefinitions();
+    if (metricDefs && metricDefs.length && corrPanel && dailyDates.length) {
+      corrPanel.style.display = "";
+      const corrTraces = [{
+        x:dailyDates, y:dailyValues, type:"bar", name:"Energy (kWh/day)",
+        marker:{color:t.accent+"99"}, yaxis:"y1"
+      }];
+      for (const mdef of metricDefs.slice(0,4)) {
+        try {
+          const entries = await API.getDailyMetrics({
+            metric_def_id: mdef.id,
+            start: st.startDate ? st.startDate + "T00:00:00Z" : undefined,
+            end:   st.endDate   ? st.endDate   + "T23:59:59Z" : undefined
+          });
+          const mDates  = entries.map(e => e.entry_date || e.date);
+          const mValues = entries.map(e => e.value);
+          if (mDates.length) {
+            corrTraces.push({
+              x:mDates, y:mValues, mode:"lines+markers",
+              name:mdef.display_name + " (" + (mdef.unit||"units") + ")",
+              line:{color:mdef.color||t.series[2], width:2.5, shape:"spline"},
+              marker:{size:6, color:mdef.color||t.series[2]}, yaxis:"y2"
+            });
+          }
+        } catch(_e) { /* skip failed metric */ }
+      }
+      Plotly.newPlot("chart-iso-correlation", corrTraces, pLayout({
+        xaxis:xA({type:"date", title:{text:"Date",font:{size:12}}}),
+        yaxis:yA({title:{text:"kWh/day",font:{size:12}}}),
+        yaxis2:{ title:{text:"Production",font:{size:11}}, overlaying:"y", side:"right", showgrid:false, zeroline:false },
+        legend:{orientation:"h",y:-0.2}, barmode:"overlay"
+      }), pCfg);
+    } else if (corrPanel) { corrPanel.style.display = "none"; }
+  } catch(_e) { if (corrPanel) corrPanel.style.display = "none"; }
+
+  /* ── Summary KPI Cards ── */
+  const cardsEl = document.getElementById("iso-kpi-cards");
+  if (cardsEl) {
+    const card = (label, val, sub) =>
+      `<div class="comp-card">
+        <div class="comp-card-label">${label}</div>
+        <div class="an-metric-main">${val}</div>
+        ${sub ? `<div style="font-size:0.75rem;color:var(--muted);margin-top:4px">${sub}</div>` : ""}
+      </div>`;
+    cardsEl.innerHTML =
+      card("Total Energy",    fmtKwh(totalKwh),              dayCount + " day period") +
+      card("Total Cost",      fmtCost(totalCost),            "@ $" + PRICE.toFixed(3) + "/kWh") +
+      card("Carbon Footprint", carbonKg.toFixed(0) + " kg CO₂", (carbonFactor*1000).toFixed(0) + " g/kWh factor") +
+      card("Load Factor",     fmtPct(loadFactor),            "avg " + fmtKw(avgKw) + " / peak " + fmtKw(peakKw)) +
+      card("Peak Demand",     fmtKw(peakKw),                 "facility maximum") +
+      card("Daily Average",   fmtKwh(dailyAvg) + "/day",     "over " + dayCount + " days");
+  }
+
+  /* ── Performance Banner ── */
+  const bannerEl = document.getElementById("iso-banner");
+  if (bannerEl) {
+    if (baselineAvgKwhPerDay === null || dailyAvg === 0) {
+      bannerEl.innerHTML = `
+        <div class="savings-banner iso-neutral" style="margin-bottom:var(--card-gap)">
+          <h3>ISO 50001 Energy Performance Summary</h3>
+          <div class="savings-grid">
+            <div class="sav-item"><div class="sav-label">Total Energy</div><div class="sav-value">${fmtKwh(totalKwh)}</div></div>
+            <div class="sav-item"><div class="sav-label">Carbon Footprint</div><div class="sav-value">${carbonKg.toFixed(0)} kg CO₂</div></div>
+            <div class="sav-item"><div class="sav-label">Load Factor</div><div class="sav-value">${fmtPct(loadFactor)}</div></div>
+            <div class="sav-item"><div class="sav-label">Baseline</div><div class="sav-value" style="font-size:0.9rem;font-weight:600">↑ Set baseline above to compare</div></div>
+          </div>
+        </div>`;
+    } else {
+      const deltaKwh    = totalKwh - (baselineAvgKwhPerDay * dayCount);
+      const deltaPct    = (dailyAvg - baselineAvgKwhPerDay) / baselineAvgKwhPerDay * 100;
+      const deltaCost   = deltaKwh * PRICE;
+      const deltaCarbon = deltaKwh * carbonFactor;
+      const improved    = deltaPct <= 0;
+      const sign        = deltaPct > 0 ? "+" : "";
+      bannerEl.innerHTML = `
+        <div class="savings-banner ${improved ? "positive" : "negative"}" style="margin-bottom:var(--card-gap)">
+          <h3>ISO 50001 Performance: ${sign}${deltaPct.toFixed(1)}% vs. Baseline — ${improved ? "improvement" : "action needed"}</h3>
+          <div class="savings-grid">
+            <div class="sav-item"><div class="sav-label">Energy Delta</div><div class="sav-value">${sign}${fmtKwh(Math.abs(deltaKwh))}</div></div>
+            <div class="sav-item"><div class="sav-label">Cost Delta</div><div class="sav-value">${sign}${fmtCost(Math.abs(deltaCost))}</div></div>
+            <div class="sav-item"><div class="sav-label">Carbon Delta</div><div class="sav-value">${sign}${Math.abs(deltaCarbon).toFixed(0)} kg CO₂</div></div>
+            <div class="sav-item"><div class="sav-label">Baseline Avg</div><div class="sav-value">${baselineAvgKwhPerDay.toFixed(1)} kWh/day</div></div>
+          </div>
+        </div>`;
+    }
+  }
+
+  /* ── Department Breakdown ── */
+  const deptHdr    = document.getElementById("iso-dept-section-header");
+  const deptCharts = document.getElementById("iso-dept-charts");
+  if (DEPARTMENTS.length > 0) {
+    const activePSet = new Set(activeP);
+    const deptEntries = DEPARTMENTS.map((dept, idx) => {
+      const deptPanels = (DEPT_DEVICE_MAP[dept.id]||[]).filter(p => activePSet.has(p));
+      let kwh = 0;
+      deptPanels.forEach(p => {
+        const series = panelSeries[p] || [];
+        for (let i = 0; i < ts.length-1; i++) {
+          const h = Math.max(0, (new Date(ts[i+1]) - new Date(ts[i])) / 3600000);
+          kwh += (series[i] ?? 0) * h;
+        }
+      });
+      return { kwh, name:dept.display_name, color:dept.color||t.series[idx % t.series.length] };
+    }).filter(d => d.kwh > 0).sort((a,b) => b.kwh-a.kwh);
+
+    if (deptEntries.length) {
+      if (deptHdr)    deptHdr.style.display    = "";
+      if (deptCharts) deptCharts.style.display = "";
+      Plotly.newPlot("chart-iso-dept-pie", [{
+        values:deptEntries.map(d=>d.kwh), labels:deptEntries.map(d=>d.name),
+        type:"pie", hole:0.5, marker:{colors:deptEntries.map(d=>d.color)},
+        textinfo:"percent", textfont:{size:13,color:"#fff"},
+        hovertemplate:"<b>%{label}</b><br>%{value:.0f} kWh<br>%{percent}<extra></extra>"
+      }], pLayout({
+        annotations:[{text:"Dept<br>Split",font:{size:14,color:t.ink},showarrow:false,x:0.5,y:0.5}],
+        legend:{orientation:"h",y:-0.15}
+      }), pCfg);
+      Plotly.newPlot("chart-iso-dept-bar", [{
+        x:deptEntries.map(d=>d.kwh), y:deptEntries.map(d=>d.name),
+        type:"bar", orientation:"h", marker:{color:deptEntries.map(d=>d.color)},
+        text:deptEntries.map(d=>fmtKwh(d.kwh)), textposition:"outside",
+        textfont:{size:11,color:t.ink},
+        hovertemplate:"<b>%{y}</b><br>%{x:.0f} kWh<extra></extra>"
+      }], pLayout({
+        xaxis:xA({title:{text:"kWh",font:{size:12}}}),
+        yaxis:{autorange:"reversed", showgrid:false, zeroline:false, tickfont:{size:12}},
+        bargap:0.25, margin:{t:16,l:140,r:80,b:45}
+      }), pCfg);
+    } else {
+      if (deptHdr)    deptHdr.style.display    = "none";
+      if (deptCharts) deptCharts.style.display = "none";
+    }
+  } else {
+    if (deptHdr)    deptHdr.style.display    = "none";
+    if (deptCharts) deptCharts.style.display = "none";
+  }
+
+  /* ── Sync baseline bar state ── */
+  syncISO50001BaselineBar();
+  const blStartEl = document.getElementById("iso-bl-start");
+  const blEndEl   = document.getElementById("iso-bl-end");
+  if (blStartEl && st.baselineStart) blStartEl.value = st.baselineStart;
+  if (blEndEl   && st.baselineEnd)   blEndEl.value   = st.baselineEnd;
 }
 
 /* ─── Small utility ─── */

@@ -67,6 +67,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V10l6 4V10l6 4V6l4 3v11"/></svg>
       <span class="nav-label">Production</span>
     </a>
+    <a class="nav-item" data-tab="iso50001">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      <span class="nav-label">ISO 50001</span>
+    </a>
   </nav>
   <div class="sidebar-footer">
     <a class="nav-item" style="cursor:default;opacity:0.5">
@@ -417,6 +421,104 @@
           <div id="corr-summary" class="hint"></div>
         </div>
       </section>
+    </div>
+
+    <!-- ISO 50001 TAB -->
+    <div class="tab-content" id="tab-iso50001">
+
+      <!-- Auto-generated filter bar: dept + panels + date range + apply/reset -->
+      <div class="filter-bar" id="iso-filter-bar"></div>
+
+      <!-- Baseline configuration bar -->
+      <div class="iso-baseline-bar" id="iso-baseline-bar">
+        <span class="iso-baseline-label">Baseline Period</span>
+        <div class="filter-group">
+          <label>From</label>
+          <input type="date" id="iso-bl-start" class="filter-input"/>
+        </div>
+        <div class="filter-group">
+          <label>To</label>
+          <input type="date" id="iso-bl-end" class="filter-input"/>
+        </div>
+        <button class="btn btn-primary btn-sm" id="iso-bl-apply">Set Baseline</button>
+        <button class="btn btn-ghost btn-sm" id="iso-bl-clear">Clear</button>
+        <span class="iso-baseline-hint" id="iso-bl-hint">No baseline set — EnB comparisons will be skipped.</span>
+      </div>
+
+      <!-- Performance Banner -->
+      <div id="iso-banner"></div>
+
+      <!-- Summary KPI Cards -->
+      <div class="comp-grid" id="iso-kpi-cards"></div>
+
+      <!-- Section: SEUs -->
+      <div class="iso-section-header">
+        <span class="iso-section-icon">&#9650;</span>
+        Significant Energy Uses (SEUs)
+        <span class="iso-section-sub">Pareto analysis — panels contributing ≥80% of total energy</span>
+      </div>
+      <div class="charts-grid">
+        <div class="panel panel-12">
+          <div class="panel-title">SEU Pareto — Panel Energy Consumption</div>
+          <div class="chart-area" id="chart-iso-pareto"></div>
+        </div>
+      </div>
+      <div class="panel" id="iso-seu-table-wrap" style="margin-bottom:var(--card-gap)">
+        <div class="panel-title">SEU Status Table</div>
+        <div id="iso-seu-table"></div>
+      </div>
+
+      <!-- Section: EnBs -->
+      <div class="iso-section-header">
+        <span class="iso-section-icon">&#9644;</span>
+        Energy Baselines (EnBs)
+        <span class="iso-section-sub">Actual daily energy vs. baseline average</span>
+      </div>
+      <div class="charts-grid">
+        <div class="panel panel-12">
+          <div class="panel-title">Daily Energy: Actual vs. Baseline</div>
+          <div class="chart-area" id="chart-iso-baseline"></div>
+        </div>
+      </div>
+
+      <!-- Section: EnPIs -->
+      <div class="iso-section-header">
+        <span class="iso-section-icon">&#128200;</span>
+        Energy Performance Indicators (EnPIs)
+        <span class="iso-section-sub">Daily kWh/day trend and rolling load factor</span>
+      </div>
+      <div class="charts-grid">
+        <div class="panel panel-6">
+          <div class="panel-title">Daily Energy Trend (kWh/day)</div>
+          <div class="chart-area" id="chart-iso-enpi-daily"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Rolling Load Factor Trend</div>
+          <div class="chart-area" id="chart-iso-enpi-lf"></div>
+        </div>
+        <div class="panel panel-12" id="iso-correlation-panel" style="display:none">
+          <div class="panel-title">Energy vs. Production Correlation (EnPI)</div>
+          <div class="chart-area" id="chart-iso-correlation"></div>
+        </div>
+      </div>
+
+      <!-- Section: Department Breakdown -->
+      <div class="iso-section-header" id="iso-dept-section-header" style="display:none">
+        <span class="iso-section-icon">&#9632;</span>
+        Department Energy Breakdown
+        <span class="iso-section-sub">Energy distribution by organizational unit</span>
+      </div>
+      <div class="charts-grid" id="iso-dept-charts" style="display:none">
+        <div class="panel panel-6">
+          <div class="panel-title">Energy by Department</div>
+          <div class="chart-area" id="chart-iso-dept-pie"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Department Comparison (kWh)</div>
+          <div class="chart-area" id="chart-iso-dept-bar"></div>
+        </div>
+      </div>
+
     </div>
 
   </div>
