@@ -1409,6 +1409,103 @@ function renderAnalytics() {
   const st = tabState.analytics;
   const t=T();
 
+  // ── Analytics summary cards ──────────────────────────────
+  const fmtKwh = v => v >= 10000 ? (v/1000).toFixed(1) + " MWh" : v.toFixed(0) + " kWh";
+  const fmtKw  = v => v >= 1000  ? (v/1000).toFixed(2) + " MW"  : v.toFixed(1) + " kW";
+
+  const ts = data.timestamps, kw = data.totalKw;
+  const fullM = metrics(ts, kw);
+  const totalCost = fullM.totalKwh * PRICE;
+  const loadFactor = fullM.peakKw > 0 ? (fullM.avgKw / fullM.peakKw * 100) : 0;
+  const dayCount = ts.length >= 2
+    ? Math.max(1, Math.round((new Date(ts[ts.length-1]) - new Date(ts[0])) / 86400000) + 1)
+    : 1;
+  const dailyAvg = fullM.totalKwh / dayCount;
+
+  function halfMetrics(timestamps, kwArr) {
+    const n = timestamps.length;
+    if (n < 4) return null;
+    const mid = Math.floor(n / 2);
+    return { first: metrics(timestamps.slice(0, mid), kwArr.slice(0, mid)),
+             second: metrics(timestamps.slice(mid),   kwArr.slice(mid)), mid };
+  }
+  function pctChange(first, second) {
+    if (!first || first === 0) return null;
+    return (second - first) / Math.abs(first) * 100;
+  }
+  function trendHtml(pct, lowerIsBetter) {
+    if (pct === null) return '<span class="delta-val" style="color:var(--muted)">—</span>';
+    const good = lowerIsBetter ? pct < 0 : pct > 0;
+    const cls  = good ? "pos" : "neg";
+    const arrow = pct > 0 ? "▲" : (pct < 0 ? "▼" : "→");
+    return `<span class="delta-val ${cls}">${arrow} ${Math.abs(pct).toFixed(1)}%</span>`;
+  }
+
+  const halves = halfMetrics(ts, kw);
+  const h1 = halves ? halves.first  : null;
+  const h2 = halves ? halves.second : null;
+  const hMid = halves ? halves.mid : 0;
+
+  const energyPct = halves ? pctChange(h1.totalKwh, h2.totalKwh) : null;
+  const avgPct    = halves ? pctChange(h1.avgKw,    h2.avgKw)    : null;
+  const peakPct   = halves ? pctChange(h1.peakKw,   h2.peakKw)   : null;
+  const lf1 = (h1 && h1.peakKw > 0) ? h1.avgKw / h1.peakKw * 100 : null;
+  const lf2 = (h2 && h2.peakKw > 0) ? h2.avgKw / h2.peakKw * 100 : null;
+  const lfPct = (lf1 !== null && lf2 !== null) ? pctChange(lf1, lf2) : null;
+  const hFirstDays  = (h1 && hMid >= 1)
+    ? Math.max(1, Math.round((new Date(ts[hMid-1]) - new Date(ts[0])) / 86400000) + 1) : 1;
+  const hSecondDays = (h2 && ts.length > hMid)
+    ? Math.max(1, Math.round((new Date(ts[ts.length-1]) - new Date(ts[hMid])) / 86400000) + 1) : 1;
+  const dailyPct = halves
+    ? pctChange(h1.totalKwh / hFirstDays, h2.totalKwh / hSecondDays) : null;
+
+  // Context header
+  const ctxEl = document.getElementById("an-context-header");
+  if (ctxEl) {
+    const panelList = st.panels.size && st.panels.size < ALL_PANELS.length
+      ? Array.from(st.panels).join(", ")
+      : "All Panels";
+    const fmtD = ds => {
+      if (!ds) return "—";
+      const [y, m, d] = ds.split("-");
+      return new Date(+y, +m-1, +d).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+    };
+    const dateRange = (st.startDate || st.endDate)
+      ? fmtD(st.startDate) + " — " + fmtD(st.endDate)
+      : "Full dataset";
+    ctxEl.className = "an-context-header";
+    ctxEl.innerHTML = ts.length === 0
+      ? "<span>No data for the selected filters.</span>"
+      : `<span>Analyzing: <strong>${panelList}</strong></span>`
+      + `<span>Date range: <strong>${dateRange}</strong></span>`
+      + `<span>${ts.length.toLocaleString()} readings &bull; ${dayCount} day${dayCount !== 1 ? "s" : ""}</span>`;
+  }
+
+  // Six metric cards
+  const cardsEl = document.getElementById("an-metric-cards");
+  if (cardsEl) {
+    if (ts.length === 0) { cardsEl.innerHTML = ""; }
+    else {
+      const card = (label, val, trendStr) =>
+        `<div class="comp-card">
+          <div class="comp-card-label">${label}</div>
+          <div class="an-metric-main">${val}</div>
+          <div class="comp-delta">
+            <span class="delta-label">Recent Trend</span>
+            ${trendStr}
+          </div>
+        </div>`;
+      cardsEl.innerHTML =
+        card("Total Energy",  fmtKwh(fullM.totalKwh),      trendHtml(energyPct, true))  +
+        card("Total Cost",    "$" + totalCost.toFixed(0),   trendHtml(energyPct, true))  +
+        card("Average Load",  fmtKw(fullM.avgKw),           trendHtml(avgPct,    true))  +
+        card("Peak Load",     fmtKw(fullM.peakKw),          trendHtml(peakPct,   true))  +
+        card("Load Factor",   loadFactor.toFixed(1) + "%",  trendHtml(lfPct,     false)) +
+        card("Daily Average", fmtKwh(dailyAvg) + "/day",    trendHtml(dailyPct,  true));
+    }
+  }
+  // ────────────────────────────────────────────────────────
+
   const bk={};
   data.timestamps.forEach((ts,i)=>{ const d=new Date(ts),dk=d.toISOString().slice(0,10),h=d.getUTCHours();
     if(!bk[dk])bk[dk]={}; if(!bk[dk][h])bk[dk][h]={s:0,c:0}; bk[dk][h].s+=data.totalKw[i]??0; bk[dk][h].c++; });

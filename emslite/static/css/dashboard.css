@@ -871,6 +871,33 @@ body {
 .dark .delta-val.pos { color: #4ADE80; }
 .delta-val.neg { color: var(--warning); }
 
+/* Analytics context header */
+.an-context-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--shadow-card);
+  margin-bottom: var(--card-gap);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.an-context-header strong { color: var(--heading); font-weight: 600; }
+
+/* Single large primary value inside each analytics card */
+.an-metric-main {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--heading);
+  margin: 8px 0 4px;
+  line-height: 1;
+}
+
 /* ═══════════════════════════════════════════════════════
    DATA TABLE TAB
    ═══════════════════════════════════════════════════════ */
