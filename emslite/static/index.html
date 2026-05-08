@@ -71,6 +71,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
       <span class="nav-label">ISO 50001</span>
     </a>
+    <a class="nav-item" data-tab="sensors">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
+      <span class="nav-label">Sensors</span>
+    </a>
   </nav>
   <div class="sidebar-footer">
     <a class="nav-item" style="cursor:default;opacity:0.5">
@@ -421,6 +425,26 @@
           <div id="corr-summary" class="hint"></div>
         </div>
       </section>
+    </div>
+
+    <!-- WIRELESS SENSORS TAB -->
+    <div class="tab-content" id="tab-sensors">
+      <div id="sensors-status-banner"></div>
+      <div class="charts-grid" style="margin-top:1rem">
+        <div class="panel panel-12">
+          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+            Wireless Sensors
+            <button class="btn btn-ghost btn-sm" id="sensors-refresh">Refresh</button>
+          </div>
+          <div id="sensors-table-wrap"></div>
+        </div>
+      </div>
+      <div class="charts-grid" id="sensors-chart-grid" style="display:none">
+        <div class="panel panel-12">
+          <div class="panel-title" id="sensors-chart-title">Sensor Readings</div>
+          <div class="chart-area" id="chart-sensor-readings"></div>
+        </div>
+      </div>
     </div>
 
     <!-- ISO 50001 TAB -->

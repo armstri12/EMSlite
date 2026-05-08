@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -390,4 +391,97 @@ class AlertEvent(Base):
             "event_ts": self.event_ts.isoformat() if self.event_ts else None,
             "acknowledged": self.acknowledged,
             "acknowledged_at": self.acknowledged_at.isoformat() if self.acknowledged_at else None,
+        }
+
+
+class WirelessGateway(Base):
+    """A Monnit Alta Ethernet Gateway that pushes sensor data over TCP."""
+
+    __tablename__ = "wireless_gateways"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # gatewayID / networkID
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    sensors: Mapped[list[WirelessSensor]] = relationship(
+        back_populates="gateway", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "display_name": self.display_name,
+            "last_seen": self.last_seen.isoformat() if self.last_seen else None,
+            "enabled": self.enabled,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class WirelessSensor(Base):
+    """A Monnit Alta wireless sensor registered via TCP auto-discovery."""
+
+    __tablename__ = "wireless_sensors"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # sensorID as string
+    gateway_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("wireless_gateways.id", ondelete="CASCADE"), nullable=False
+    )
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    sensor_type: Mapped[str] = mapped_column(String(64), nullable=False)  # e.g. temperature, humidity
+    unit: Mapped[str | None] = mapped_column(String(32), default=None)  # user-configured unit label
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+    tags: Mapped[str | None] = mapped_column(Text, default=None)  # JSON array string
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    gateway: Mapped[WirelessGateway] = relationship(back_populates="sensors")
+    readings: Mapped[list[SensorReading]] = relationship(
+        back_populates="sensor", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        import json as _json
+
+        return {
+            "id": self.id,
+            "gateway_id": self.gateway_id,
+            "display_name": self.display_name,
+            "sensor_type": self.sensor_type,
+            "unit": self.unit,
+            "enabled": self.enabled,
+            "notes": self.notes,
+            "tags": _json.loads(self.tags) if self.tags else [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SensorReading(Base):
+    """A single time-stamped reading from a wireless sensor."""
+
+    __tablename__ = "sensor_readings"
+    __table_args__ = (
+        Index("ix_sensor_readings_sensor_ts", "sensor_id", "timestamp"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    sensor_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("wireless_sensors.id", ondelete="CASCADE"), nullable=False
+    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    value: Mapped[float | None] = mapped_column(Float, default=None)
+    signal_strength: Mapped[int | None] = mapped_column(Integer, default=None)
+    battery_level: Mapped[int | None] = mapped_column(Integer, default=None)
+
+    sensor: Mapped[WirelessSensor] = relationship(back_populates="readings")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "sensor_id": self.sensor_id,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+            "value": self.value,
+            "signal_strength": self.signal_strength,
+            "battery_level": self.battery_level,
         }

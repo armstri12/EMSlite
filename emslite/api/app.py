@@ -26,6 +26,7 @@ from .routes_bills import router as bills_router
 from .routes_production import router as production_router
 from .routes_production import seed_default_metric_definitions
 from .routes_reports import router as reports_router
+from .routes_wireless import router as wireless_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -51,9 +52,20 @@ async def lifespan(app: FastAPI):
     config_path = root / "visualization_config.json"
     _app_config = load_config(config_path if config_path.exists() else None)
 
-    # Initialize database
+    # Initialize database first so wireless listener can write on first connection
     db_path = root / "emslite.db"
     init_db(db_path)
+
+    # Start wireless TCP listener if enabled (after DB is ready)
+    _wireless_enabled = False
+    wireless_cfg = _app_config.get("wireless", {})
+    if wireless_cfg.get("enabled", False):
+        from ..wireless import start_listener
+        _wireless_enabled = True
+        await start_listener(
+            int(wireless_cfg.get("tcp_port", 4950)),
+            bool(wireless_cfg.get("auto_discover", True)),
+        )
 
     # Seed default production metric definitions on first startup (idempotent).
     seed_default_metric_definitions(_app_config)
@@ -81,7 +93,12 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
+    # Shutdown wireless listener
+    if _wireless_enabled:
+        from ..wireless import stop_listener
+        await stop_listener()
+
+    # Shutdown file watcher
     if _observer:
         _observer.stop()
         _observer.join(timeout=5)
@@ -110,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(bills_router, prefix="/api")
     app.include_router(reports_router, prefix="/api")
     app.include_router(production_router, prefix="/api")
+    app.include_router(wireless_router, prefix="/api")
 
     # Serve static frontend files
     static_dir = Path(__file__).resolve().parent.parent / "static"
