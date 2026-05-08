@@ -450,11 +450,13 @@ const API = {
     return res.json();
   },
 
-  getEmailSummaryUrl(panels, start, end, download = false) {
+  getEmailSummaryUrl(panels, start, end, priorStart, priorEnd, download = false) {
     const q = new URLSearchParams();
     if (panels && panels.length) q.set("panels", panels.join(","));
     if (start) q.set("start", start);
     if (end) q.set("end", end);
+    if (priorStart) q.set("prior_start", priorStart);
+    if (priorEnd) q.set("prior_end", priorEnd);
     if (download) q.set("download", "true");
     return "/api/reports/email-summary?" + q.toString();
   },
