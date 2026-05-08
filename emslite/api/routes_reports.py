@@ -104,11 +104,16 @@ def email_summary_report(
     panels: str | None = Query(None, description="Comma-separated panel IDs; omit for all panels"),
     start: str | None = Query(None, description="Start date (ISO, e.g. 2024-01-01)"),
     end: str | None = Query(None, description="End date (ISO, e.g. 2024-01-07)"),
+    prior_start: str | None = Query(None, description="Comparison period start date (ISO)"),
+    prior_end: str | None = Query(None, description="Comparison period end date (ISO)"),
     download: bool = Query(False, description="If true, return as downloadable attachment"),
 ) -> Response:
     """Generate an Outlook-ready email summary HTML for selected panels."""
     panel_list = [p.strip() for p in panels.split(",") if p.strip()] if panels else None
-    data = generate_email_summary_data(panels=panel_list, start=start, end=end)
+    data = generate_email_summary_data(
+        panels=panel_list, start=start, end=end,
+        prior_start=prior_start, prior_end=prior_end,
+    )
     html = render_email_summary_html(data)
 
     if download:

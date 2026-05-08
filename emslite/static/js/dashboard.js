@@ -113,7 +113,7 @@ const tabState = {
   behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" },
   trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" },
   iso50001:   { panels: new Set(), startDate: "", endDate: "", department: "", baselineStart: "", baselineEnd: "" },
-  "email-summary": { panels: new Set(), startDate: "", endDate: "" },
+  "email-summary": { panels: new Set(), startDate: "", endDate: "", priorStart: "", priorEnd: "" },
 };
 
 function initTabState() {
@@ -3772,6 +3772,9 @@ function renderEmailSummaryTab() {
   toolbar.className = "filter-bar";
   toolbar.innerHTML = `
     <div class="filter-group">
+      <label style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);">Current Period</label>
+    </div>
+    <div class="filter-group">
       <label>From</label>
       <input type="date" id="es-start" class="filter-input"
              value="${st.startDate}" min="${DATE_MIN}" max="${DATE_MAX}"/>
@@ -3780,10 +3783,25 @@ function renderEmailSummaryTab() {
       <label>To</label>
       <input type="date" id="es-end" class="filter-input"
              value="${st.endDate}" min="${DATE_MIN}" max="${DATE_MAX}"/>
+    </div>
+    <div class="filter-group" style="margin-left:16px;">
+      <label style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.4px;color:var(--muted);">Compare To</label>
+    </div>
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="es-prior-start" class="filter-input"
+             value="${st.priorStart}" min="${DATE_MIN}" max="${DATE_MAX}"/>
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="es-prior-end" class="filter-input"
+             value="${st.priorEnd}" min="${DATE_MIN}" max="${DATE_MAX}"/>
     </div>`;
 
   document.getElementById("es-start").addEventListener("change", e => { st.startDate = e.target.value; });
   document.getElementById("es-end").addEventListener("change", e => { st.endDate = e.target.value; });
+  document.getElementById("es-prior-start").addEventListener("change", e => { st.priorStart = e.target.value; });
+  document.getElementById("es-prior-end").addEventListener("change", e => { st.priorEnd = e.target.value; });
 
   // ── Panel Selection ───────────────────────────────────────────────────────
   const hasDepts = DEPARTMENTS.length > 0;
@@ -3914,7 +3932,10 @@ function renderEmailSummaryTab() {
       alert("Select at least one panel before generating the summary.");
       return null;
     }
-    return API.getEmailSummaryUrl(Array.from(st.panels), st.startDate, st.endDate, download);
+    return API.getEmailSummaryUrl(
+      Array.from(st.panels), st.startDate, st.endDate,
+      st.priorStart, st.priorEnd, download
+    );
   }
 
   document.getElementById("es-download").addEventListener("click", () => {

@@ -205,11 +205,15 @@ def generate_email_summary_data(
     panels: list[str] | None,
     start: str | None,
     end: str | None,
+    prior_start: str | None = None,
+    prior_end: str | None = None,
 ) -> dict[str, Any]:
     """Assemble KPI and per-panel data for a stakeholder email summary.
 
     Accepts an optional panel filter list and optional ISO date range.
-    Computes current-period KPIs plus a prior period of equal duration.
+    If prior_start/prior_end are provided they define the comparison period;
+    otherwise the comparison period is auto-calculated as an equal-duration
+    window immediately before the current period.
     """
     from .api.routes_data import (
         _get_all_department_panels,
@@ -245,7 +249,7 @@ def generate_email_summary_data(
     if not panel_cols:
         return {"error": "No matching panels found"}
 
-    # Date filtering
+    # Current period date filtering
     df_filtered = df.copy()
     if start:
         start_dt = pd.to_datetime(start, utc=True)
@@ -258,13 +262,18 @@ def generate_email_summary_data(
 
     df_current = df_filtered.copy()
 
-    # Prior period of equal duration
+    # Prior period — user-defined if both bounds provided, else auto-calc
     df_prior: pd.DataFrame
-    if len(df_current) > 1:
+    if prior_start and prior_end:
+        ps_dt = pd.to_datetime(prior_start, utc=True)
+        pe_dt = pd.to_datetime(prior_end, utc=True)
+        pe_dt = pe_dt + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df_prior = df[(df["Timestamp"] >= ps_dt) & (df["Timestamp"] <= pe_dt)].copy()
+    elif len(df_current) > 1:
         duration = df_current["Timestamp"].max() - df_current["Timestamp"].min()
-        prior_end = df_current["Timestamp"].min()
-        prior_start = prior_end - duration
-        df_prior = df[(df["Timestamp"] >= prior_start) & (df["Timestamp"] < prior_end)].copy()
+        auto_prior_end = df_current["Timestamp"].min()
+        auto_prior_start = auto_prior_end - duration
+        df_prior = df[(df["Timestamp"] >= auto_prior_start) & (df["Timestamp"] < auto_prior_end)].copy()
     else:
         df_prior = pd.DataFrame()
 
@@ -319,9 +328,13 @@ def generate_email_summary_data(
     period_start = df_current["Timestamp"].min().isoformat() if len(df_current) > 0 else (start or "")
     period_end = df_current["Timestamp"].max().isoformat() if len(df_current) > 0 else (end or "")
 
+    prior_period_start = df_prior["Timestamp"].min().isoformat() if len(df_prior) > 0 else ""
+    prior_period_end = df_prior["Timestamp"].max().isoformat() if len(df_prior) > 0 else ""
+
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "period": {"start": period_start, "end": period_end},
+        "prior_period": {"start": prior_period_start, "end": prior_period_end},
         "facility_name": cfg.get("facility_name", "Facility"),
         "facility_kpi": kpi,
         "prior_kpi": kpi_prior,
@@ -409,6 +422,7 @@ def render_email_summary_html(data: dict) -> str:
 
     narrative = _build_email_summary_narrative(data)
     period = data["period"]
+    prior_period = data.get("prior_period", {})
     kpi = data["facility_kpi"]
     prior_kpi = data["prior_kpi"]
     wow = data["wow"]
@@ -417,6 +431,16 @@ def render_email_summary_html(data: dict) -> str:
     start_dt = pd.Timestamp(period["start"])
     end_dt = pd.Timestamp(period["end"])
     date_range = f"{start_dt.strftime('%b %d')} – {end_dt.strftime('%b %d, %Y')}"
+
+    # Prior period label for the comparison table header
+    prior_label = "Prior Period"
+    if prior_period.get("start") and prior_period.get("end"):
+        try:
+            ps = pd.Timestamp(prior_period["start"])
+            pe = pd.Timestamp(prior_period["end"])
+            prior_label = f"{ps.strftime('%b %d')} – {pe.strftime('%b %d, %Y')}"
+        except Exception:
+            pass
 
     def arrow(val: float, invert: bool = False) -> str:
         if val > 0:
@@ -480,7 +504,7 @@ def render_email_summary_html(data: dict) -> str:
   <tr style="background:#f8f9fa;">
     <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;"></td>
     <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">This Period</td>
-    <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Prior Period</td>
+    <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">{prior_label}</td>
     <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Change</td>
   </tr>
   <tr style="background:#ffffff;">
