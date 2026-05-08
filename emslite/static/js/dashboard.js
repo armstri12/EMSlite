@@ -112,7 +112,8 @@ const tabState = {
   data:       { panels: new Set(), startDate: "", endDate: "", department: "" },
   behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" },
   trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" },
-  iso50001:   { panels: new Set(), startDate: "", endDate: "", department: "", baselineStart: "", baselineEnd: "" }
+  iso50001:   { panels: new Set(), startDate: "", endDate: "", department: "", baselineStart: "", baselineEnd: "" },
+  "email-summary": { panels: new Set(), startDate: "", endDate: "" },
 };
 
 function initTabState() {
@@ -134,6 +135,10 @@ function initTabState() {
   tabState.iso50001.panels    = new Set(ALL_PANELS);
   tabState.iso50001.startDate = DATE_MIN;
   tabState.iso50001.endDate   = DATE_MAX;
+
+  tabState["email-summary"].panels    = new Set(ALL_PANELS);
+  tabState["email-summary"].startDate = DATE_MIN;
+  tabState["email-summary"].endDate   = DATE_MAX;
 
   // Auto-init comparison periods (EST-aware)
   const estMin = D.timestamps.length ? estDateOf(D.timestamps[0]) : DATE_MIN;
@@ -1828,8 +1833,9 @@ function renderTab(tabKey) {
   else if (tabKey === "behavior")   renderBehaviorTab();
   else if (tabKey === "trending")   renderTrendingTab();
   else if (tabKey === "production") renderProductionTab();
-  else if (tabKey === "iso50001")   renderISO50001();
-  else if (tabKey === "sensors")    renderSensorsTab();
+  else if (tabKey === "iso50001")      renderISO50001();
+  else if (tabKey === "sensors")       renderSensorsTab();
+  else if (tabKey === "email-summary") renderEmailSummaryTab();
 }
 
 
@@ -3748,6 +3754,184 @@ async function loadSensorChart(sensorId, sensors) {
     yaxis: yA({ title: unit || "Value" }),
     title: { text: label, font: { color: t.ink, size: 13 } },
   }), pCfg);
+}
+
+/* ═══════════════════════════════════════════════════════
+   EMAIL SUMMARY TAB
+   ═══════════════════════════════════════════════════════ */
+
+function renderEmailSummaryTab() {
+  const toolbar    = document.getElementById("email-summary-toolbar");
+  const panelSel   = document.getElementById("email-summary-panel-select");
+  const actionsDiv = document.getElementById("email-summary-actions");
+  if (!toolbar || !panelSel || !actionsDiv) return;
+
+  const st = tabState["email-summary"];
+
+  // ── Toolbar: date pickers ─────────────────────────────────────────────────
+  toolbar.className = "filter-bar";
+  toolbar.innerHTML = `
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="es-start" class="filter-input"
+             value="${st.startDate}" min="${DATE_MIN}" max="${DATE_MAX}"/>
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="es-end" class="filter-input"
+             value="${st.endDate}" min="${DATE_MIN}" max="${DATE_MAX}"/>
+    </div>`;
+
+  document.getElementById("es-start").addEventListener("change", e => { st.startDate = e.target.value; });
+  document.getElementById("es-end").addEventListener("change", e => { st.endDate = e.target.value; });
+
+  // ── Panel Selection ───────────────────────────────────────────────────────
+  const hasDepts = DEPARTMENTS.length > 0;
+
+  // Build dept filter button HTML
+  let deptFilterHtml = "";
+  if (hasDepts) {
+    deptFilterHtml = `
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">Filter by Dept:</span>
+        <button class="btn btn-ghost btn-sm es-dept-filter active" data-dept="">All</button>
+        ${DEPARTMENTS.map(d => `<button class="btn btn-ghost btn-sm es-dept-filter" data-dept="${escapeHtml(d.id)}">${escapeHtml(d.display_name)}</button>`).join("")}
+      </div>`;
+  }
+
+  // Build panel checklist grouped by department
+  let checklistHtml = "";
+  if (hasDepts) {
+    const assignedPanels = new Set();
+    for (const dept of DEPARTMENTS) {
+      const panelIds = (DEPT_DEVICE_MAP[dept.id] || []).filter(p => ALL_PANELS.includes(p));
+      if (!panelIds.length) continue;
+      panelIds.forEach(p => assignedPanels.add(p));
+      checklistHtml += `<div class="es-dept-group" data-dept="${escapeHtml(dept.id)}" style="margin-bottom:12px;">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;padding:4px 0;border-bottom:1px solid var(--card-border);margin-bottom:6px;">${escapeHtml(dept.display_name)}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 16px;">`;
+      for (const panelId of panelIds) {
+        const dev = ALL_DEVICES.find(d => d.id === panelId);
+        const label = dev ? dev.display_name : panelId;
+        const checked = st.panels.has(panelId) ? "checked" : "";
+        checklistHtml += `<label class="dd-item" style="min-width:200px;"><input type="checkbox" class="es-panel-cb" value="${escapeHtml(panelId)}" ${checked}/><span>${escapeHtml(label)}</span></label>`;
+      }
+      checklistHtml += `</div></div>`;
+    }
+    // Unassigned panels
+    const unassigned = ALL_PANELS.filter(p => !assignedPanels.has(p));
+    if (unassigned.length) {
+      checklistHtml += `<div class="es-dept-group" data-dept="__unassigned__" style="margin-bottom:12px;">
+        <div style="font-size:0.75rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;padding:4px 0;border-bottom:1px solid var(--card-border);margin-bottom:6px;">Unassigned</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px 16px;">`;
+      for (const panelId of unassigned) {
+        const dev = ALL_DEVICES.find(d => d.id === panelId);
+        const label = dev ? dev.display_name : panelId;
+        const checked = st.panels.has(panelId) ? "checked" : "";
+        checklistHtml += `<label class="dd-item" style="min-width:200px;"><input type="checkbox" class="es-panel-cb" value="${escapeHtml(panelId)}" ${checked}/><span>${escapeHtml(label)}</span></label>`;
+      }
+      checklistHtml += `</div></div>`;
+    }
+  } else {
+    // Flat list — no departments
+    checklistHtml = `<div style="display:flex;flex-wrap:wrap;gap:4px 16px;">`;
+    for (const panelId of ALL_PANELS) {
+      const dev = ALL_DEVICES.find(d => d.id === panelId);
+      const label = dev ? dev.display_name : panelId;
+      const checked = st.panels.has(panelId) ? "checked" : "";
+      checklistHtml += `<label class="dd-item" style="min-width:200px;"><input type="checkbox" class="es-panel-cb" value="${escapeHtml(panelId)}" ${checked}/><span>${escapeHtml(label)}</span></label>`;
+    }
+    checklistHtml += `</div>`;
+  }
+
+  panelSel.className = "panel";
+  panelSel.style.marginBottom = "var(--card-gap, 16px)";
+  panelSel.innerHTML = `
+    <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between;">
+      Panel Selection
+      <span style="font-size:0.75rem;color:var(--muted);font-weight:400;" id="es-count">${st.panels.size} of ${ALL_PANELS.length} selected</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button class="btn btn-ghost btn-sm" id="es-select-all">Select All</button>
+      <button class="btn btn-ghost btn-sm" id="es-clear">Clear</button>
+    </div>
+    ${deptFilterHtml}
+    <div id="es-checklist">${checklistHtml}</div>`;
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+  actionsDiv.style.marginBottom = "var(--card-gap, 16px)";
+  actionsDiv.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-primary" id="es-download">Download HTML</button>
+      <button class="btn btn-ghost" id="es-preview">Preview in New Tab</button>
+      <span style="font-size:0.8rem;color:var(--muted);">
+        Tip: Open the downloaded file in a browser, select all (Ctrl+A), then paste into a new Outlook email.
+      </span>
+    </div>`;
+
+  // ── Wire checkbox events ──────────────────────────────────────────────────
+  function updateCount() {
+    const el = document.getElementById("es-count");
+    if (el) el.textContent = `${st.panels.size} of ${ALL_PANELS.length} selected`;
+  }
+
+  panelSel.querySelectorAll(".es-panel-cb").forEach(cb => {
+    cb.addEventListener("change", () => {
+      cb.checked ? st.panels.add(cb.value) : st.panels.delete(cb.value);
+      updateCount();
+    });
+  });
+
+  document.getElementById("es-select-all").addEventListener("click", () => {
+    st.panels = new Set(ALL_PANELS);
+    panelSel.querySelectorAll(".es-panel-cb").forEach(cb => { cb.checked = true; });
+    updateCount();
+  });
+
+  document.getElementById("es-clear").addEventListener("click", () => {
+    st.panels.clear();
+    panelSel.querySelectorAll(".es-panel-cb").forEach(cb => { cb.checked = false; });
+    updateCount();
+  });
+
+  // ── Dept filter buttons ───────────────────────────────────────────────────
+  if (hasDepts) {
+    panelSel.querySelectorAll(".es-dept-filter").forEach(btn => {
+      btn.addEventListener("click", () => {
+        panelSel.querySelectorAll(".es-dept-filter").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const deptId = btn.dataset.dept;
+        panelSel.querySelectorAll(".es-dept-group").forEach(grp => {
+          grp.style.display = (!deptId || grp.dataset.dept === deptId) ? "" : "none";
+        });
+      });
+    });
+  }
+
+  // ── Download / Preview ────────────────────────────────────────────────────
+  function buildUrl(download) {
+    if (st.panels.size === 0) {
+      alert("Select at least one panel before generating the summary.");
+      return null;
+    }
+    return API.getEmailSummaryUrl(Array.from(st.panels), st.startDate, st.endDate, download);
+  }
+
+  document.getElementById("es-download").addEventListener("click", () => {
+    const url = buildUrl(true);
+    if (!url) return;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  document.getElementById("es-preview").addEventListener("click", () => {
+    const url = buildUrl(false);
+    if (url) window.open(url, "_blank");
+  });
 }
 
 /* ─── Boot ─── */

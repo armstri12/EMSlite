@@ -198,6 +198,395 @@ def _zero_kpi() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Email Summary Report — data assembly and rendering
+# ---------------------------------------------------------------------------
+
+def generate_email_summary_data(
+    panels: list[str] | None,
+    start: str | None,
+    end: str | None,
+) -> dict[str, Any]:
+    """Assemble KPI and per-panel data for a stakeholder email summary.
+
+    Accepts an optional panel filter list and optional ISO date range.
+    Computes current-period KPIs plus a prior period of equal duration.
+    """
+    from .api.routes_data import (
+        _get_all_department_panels,
+        _get_config,
+        _get_device_display_names,
+        _get_master_path,
+    )
+
+    master = _get_master_path()
+    if not master.exists():
+        return {"error": "No data file found"}
+
+    cfg = _get_config()
+    df = load_csv(master)
+    if df.empty:
+        return {"error": "Data file is empty"}
+
+    line_voltage = float(cfg.get("line_voltage", 480.0))
+    power_factor = float(cfg.get("power_factor", 1.0))
+    price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
+    carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
+    voltage_map = get_device_voltage_map()
+
+    all_panel_cols = meter_columns(
+        df.columns, exclude=set(cfg.get("combo_columns", {}).keys())
+    )
+
+    if panels:
+        panel_cols = [p for p in all_panel_cols if p in panels]
+    else:
+        panel_cols = all_panel_cols
+
+    if not panel_cols:
+        return {"error": "No matching panels found"}
+
+    # Date filtering
+    df_filtered = df.copy()
+    if start:
+        start_dt = pd.to_datetime(start, utc=True)
+        df_filtered = df_filtered[df_filtered["Timestamp"] >= start_dt]
+    if end:
+        end_dt = pd.to_datetime(end, utc=True)
+        # include the full end day
+        end_dt = end_dt + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+        df_filtered = df_filtered[df_filtered["Timestamp"] <= end_dt]
+
+    df_current = df_filtered.copy()
+
+    # Prior period of equal duration
+    df_prior: pd.DataFrame
+    if len(df_current) > 1:
+        duration = df_current["Timestamp"].max() - df_current["Timestamp"].min()
+        prior_end = df_current["Timestamp"].min()
+        prior_start = prior_end - duration
+        df_prior = df[(df["Timestamp"] >= prior_start) & (df["Timestamp"] < prior_end)].copy()
+    else:
+        df_prior = pd.DataFrame()
+
+    common = dict(
+        line_voltage=line_voltage,
+        power_factor=power_factor,
+        price_per_kwh=price_per_kwh,
+        carbon_kg_per_kwh=carbon_kg_per_kwh,
+        panel_cols=panel_cols,
+        voltage_map=voltage_map,
+    )
+
+    kpi = compute_kpi(df_current, **common) if len(df_current) > 1 else _zero_kpi()
+    kpi_prior = compute_kpi(df_prior, **common) if len(df_prior) > 1 else _zero_kpi()
+
+    rankings = compute_panel_rankings(
+        df_current,
+        line_voltage=line_voltage,
+        power_factor=power_factor,
+        panel_cols=panel_cols,
+        top_n=len(panel_cols),
+        voltage_map=voltage_map,
+    ) if len(df_current) > 1 else []
+
+    # Enrich rankings with display names, dept, cost, pct, avg_kw
+    display_names = _get_device_display_names()
+    department_panels = _get_all_department_panels()
+    panel_to_dept: dict[str, str] = {}
+    for dept_name, panel_list in department_panels.items():
+        for p in panel_list:
+            panel_to_dept[p] = dept_name
+
+    days = kpi["date_range_days"] or 1
+    for r in rankings:
+        r["display_name"] = display_names.get(r["panel_id"], r["panel_id"])
+        r["department"] = panel_to_dept.get(r["panel_id"], "")
+        r["cost"] = round(r["total_kwh"] * price_per_kwh, 2)
+        r["pct_of_total"] = round(r["total_kwh"] / kpi["total_kwh"] * 100, 1) if kpi["total_kwh"] else 0.0
+        r["avg_kw"] = round(r["total_kwh"] / days / 24, 2)
+
+    def _delta(curr: float, prev: float) -> dict[str, float]:
+        diff = curr - prev
+        pct = (diff / prev * 100) if prev else 0.0
+        return {"value": round(diff, 2), "pct": round(pct, 1)}
+
+    wow = {
+        "kwh": _delta(kpi["total_kwh"], kpi_prior["total_kwh"]),
+        "cost": _delta(kpi["total_cost"], kpi_prior["total_cost"]),
+        "carbon_kg": _delta(kpi["total_carbon_kg"], kpi_prior["total_carbon_kg"]),
+    }
+
+    period_start = df_current["Timestamp"].min().isoformat() if len(df_current) > 0 else (start or "")
+    period_end = df_current["Timestamp"].max().isoformat() if len(df_current) > 0 else (end or "")
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "period": {"start": period_start, "end": period_end},
+        "facility_name": cfg.get("facility_name", "Facility"),
+        "facility_kpi": kpi,
+        "prior_kpi": kpi_prior,
+        "wow": wow,
+        "panels": rankings,
+        "panel_count": len(panel_cols),
+        "config": {"price_per_kwh": price_per_kwh, "carbon_kg_per_kwh": carbon_kg_per_kwh},
+    }
+
+
+def _build_email_summary_narrative(data: dict) -> str:
+    """Build a 2-sentence executive summary for the email."""
+    kpi = data["facility_kpi"]
+    wow = data["wow"]
+    panel_count = data["panel_count"]
+    kwh = kpi["total_kwh"]
+    cost = kpi["total_cost"]
+    carbon_kg = kpi["total_carbon_kg"]
+    carbon_t = kpi["total_carbon_tonnes"]
+    wow_pct = wow["kwh"]["pct"]
+
+    panel_word = "panel" if panel_count == 1 else "panels"
+
+    if wow_pct > 1:
+        s1 = (f"Energy consumption across the selected {panel_count} {panel_word} totaled "
+              f"{kwh:,.0f} kWh (${cost:,.2f}), up {wow_pct:.1f}% vs. the prior period.")
+    elif wow_pct < -1:
+        s1 = (f"Energy consumption across the selected {panel_count} {panel_word} totaled "
+              f"{kwh:,.0f} kWh (${cost:,.2f}), down {abs(wow_pct):.1f}% vs. the prior period.")
+    else:
+        s1 = (f"Energy consumption across the selected {panel_count} {panel_word} totaled "
+              f"{kwh:,.0f} kWh (${cost:,.2f}), in line with the prior period.")
+
+    s2 = f"Estimated CO₂ emissions: {carbon_kg:,.0f} kg ({carbon_t:.2f} tCO₂)."
+    return f"{s1} {s2}"
+
+
+def _render_email_panel_table(panels: list[dict]) -> str:
+    """Render per-panel breakdown table for email summary."""
+    if not panels:
+        return '<div style="font-size:13px;color:#95a5a6;">No panel data available.</div>'
+
+    has_dept = any(p.get("department") for p in panels)
+
+    dept_col_header = '<td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;">Department</td>' if has_dept else ""
+
+    header = f"""\
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+       style="border-collapse:collapse;font-size:13px;">
+<tr style="background:#f8f9fa;">
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;width:30px;">#</td>
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;">Panel</td>
+  {dept_col_header}
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">kWh</td>
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Peak kW</td>
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Avg kW</td>
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Cost ($)</td>
+  <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">% of Total</td>
+</tr>"""
+
+    rows = ""
+    for i, r in enumerate(panels):
+        bg = "#ffffff" if i % 2 == 0 else "#f8f9fa"
+        name = r.get("display_name", r["panel_id"])
+        dept_cell = f'<td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#7f8c8d;">{r.get("department", "")}</td>' if has_dept else ""
+        rows += f"""\
+<tr style="background:{bg};">
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:700;color:#3498db;">{i+1}</td>
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;">{name}</td>
+  {dept_cell}
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{r['total_kwh']:,.0f}</td>
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{r['peak_kw']:,.1f}</td>
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{r['avg_kw']:,.1f}</td>
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">${r['cost']:,.2f}</td>
+  <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{r['pct_of_total']:.1f}%</td>
+</tr>"""
+
+    return header + rows + "</table>"
+
+
+def render_email_summary_html(data: dict) -> str:
+    """Render a stakeholder email summary as self-contained Outlook-safe HTML."""
+    if "error" in data:
+        return _render_error_html(data["error"])
+
+    narrative = _build_email_summary_narrative(data)
+    period = data["period"]
+    kpi = data["facility_kpi"]
+    prior_kpi = data["prior_kpi"]
+    wow = data["wow"]
+    facility_name = data.get("facility_name", "Facility")
+
+    start_dt = pd.Timestamp(period["start"])
+    end_dt = pd.Timestamp(period["end"])
+    date_range = f"{start_dt.strftime('%b %d')} – {end_dt.strftime('%b %d, %Y')}"
+
+    def arrow(val: float, invert: bool = False) -> str:
+        if val > 0:
+            color = "#e74c3c" if not invert else "#27ae60"
+            return f'<span style="color:{color}">&#9650; +{val:.1f}%</span>'
+        elif val < 0:
+            color = "#27ae60" if not invert else "#e74c3c"
+            return f'<span style="color:{color}">&#9660; {val:.1f}%</span>'
+        return '<span style="color:#7f8c8d">— 0%</span>'
+
+    def fmt_kwh(v: float) -> str:
+        if v >= 10000:
+            return f"{v/1000:,.1f} MWh"
+        return f"{v:,.0f} kWh"
+
+    def fmt_dollars(v: float) -> str:
+        return f"${v:,.2f}"
+
+    def fmt_carbon(v: float) -> str:
+        if v >= 1000:
+            return f"{v/1000:,.2f} tCO₂"
+        return f"{v:,.0f} kg CO₂"
+
+    # KPI cards (2×3, no WoW arrows — clean summary format)
+    kpi_cards_data = [
+        ("Total Energy", fmt_kwh(kpi["total_kwh"])),
+        ("Total Cost", fmt_dollars(kpi["total_cost"])),
+        ("CO₂ Emissions", fmt_carbon(kpi["total_carbon_kg"])),
+        ("Peak Demand", f"{kpi['peak_kw']:,.1f} kW"),
+        ("Average Load", f"{kpi['avg_kw']:,.1f} kW"),
+        ("Load Factor", f"{kpi['load_factor']:.1f}%"),
+    ]
+    kpi_rows_html = ""
+    for i in range(0, len(kpi_cards_data), 3):
+        cells = ""
+        for label, value in kpi_cards_data[i:i+3]:
+            cells += f"""\
+<td width="33%" style="padding:8px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+         style="background:#f8f9fa;border-radius:6px;border:1px solid #eee;">
+  <tr><td style="padding:12px 14px;">
+    <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.3px;">{label}</div>
+    <div style="font-size:20px;font-weight:700;color:#2c3e50;margin:4px 0;">{value}</div>
+  </td></tr>
+  </table>
+</td>"""
+        kpi_rows_html += f"<tr>{cells}</tr>"
+    kpi_cards = f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0">{kpi_rows_html}</table>'
+
+    # Panel breakdown table
+    panel_table = _render_email_panel_table(data.get("panels", []))
+
+    # Prior period comparison (only if prior data exists)
+    prior_section = ""
+    if prior_kpi["total_kwh"] > 0:
+        prior_section = f"""\
+<tr>
+<td style="padding:16px 32px;">
+  <div style="font-size:13px;font-weight:700;color:#2c3e50;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Period Comparison</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+  <tr style="background:#f8f9fa;">
+    <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;"></td>
+    <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">This Period</td>
+    <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Prior Period</td>
+    <td style="padding:8px 12px;font-weight:700;border-bottom:2px solid #e0e0e0;text-align:right;">Change</td>
+  </tr>
+  <tr style="background:#ffffff;">
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600;">Energy</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{fmt_kwh(kpi['total_kwh'])}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{fmt_kwh(prior_kpi['total_kwh'])}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{arrow(wow['kwh']['pct'])}</td>
+  </tr>
+  <tr style="background:#f8f9fa;">
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600;">Cost</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{fmt_dollars(kpi['total_cost'])}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{fmt_dollars(prior_kpi['total_cost'])}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{arrow(wow['cost']['pct'])}</td>
+  </tr>
+  <tr style="background:#ffffff;">
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600;">CO&#8322; Emissions</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{fmt_carbon(kpi['total_carbon_kg'])}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{fmt_carbon(prior_kpi['total_carbon_kg'])}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;">{arrow(wow['carbon_kg']['pct'], invert=True)}</td>
+  </tr>
+  </table>
+</td>
+</tr>"""
+
+    html = f"""\
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Energy Summary — {date_range}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:Calibri,Arial,sans-serif;color:#2c3e50;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;">
+<tr><td align="center" style="padding:24px 16px;">
+
+<!-- Main container -->
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0;">
+
+<!-- Header -->
+<tr>
+<td style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:28px 32px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+  <tr>
+    <td>
+      <div style="font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">Energy Summary</div>
+      <div style="font-size:14px;color:#8bd435;margin-top:6px;font-weight:600;">{date_range}</div>
+      <div style="font-size:12px;color:#a0a8b4;margin-top:4px;">{facility_name}</div>
+    </td>
+    <td align="right" style="vertical-align:top;">
+      <div style="font-size:11px;color:#a0a8b4;">EMSlite</div>
+    </td>
+  </tr>
+  </table>
+</td>
+</tr>
+
+<!-- Executive narrative -->
+<tr>
+<td style="padding:24px 32px 16px;">
+  <div style="background:#f0f7e6;border-left:4px solid #8bd435;padding:16px 20px;border-radius:4px;">
+    <div style="font-size:13px;font-weight:700;color:#2c3e50;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Summary</div>
+    <div style="font-size:14px;color:#34495e;line-height:1.6;">{narrative}</div>
+  </div>
+</td>
+</tr>
+
+<!-- KPI Scorecards -->
+<tr>
+<td style="padding:8px 32px 16px;">
+  <div style="font-size:13px;font-weight:700;color:#2c3e50;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Performance Snapshot</div>
+  {kpi_cards}
+</td>
+</tr>
+
+<!-- Panel Breakdown -->
+<tr>
+<td style="padding:16px 32px;">
+  <div style="font-size:13px;font-weight:700;color:#2c3e50;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Panel Breakdown ({data['panel_count']} panels)</div>
+  {panel_table}
+</td>
+</tr>
+
+{prior_section}
+
+<!-- Footer -->
+<tr>
+<td style="background:#f8f9fa;padding:20px 32px;border-top:1px solid #e0e0e0;">
+  <div style="font-size:11px;color:#95a5a6;text-align:center;">
+    Generated by EMSlite &middot; {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+    &middot; Report covers {date_range}
+  </div>
+</td>
+</tr>
+
+</table>
+<!-- /Main container -->
+
+</td></tr>
+</table>
+</body>
+</html>"""
+    return html
+
+
+# ---------------------------------------------------------------------------
 # YTD Cost Allocation Report — data assembly
 # ---------------------------------------------------------------------------
 
