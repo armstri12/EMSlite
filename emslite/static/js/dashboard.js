@@ -1829,6 +1829,7 @@ function renderTab(tabKey) {
   else if (tabKey === "trending")   renderTrendingTab();
   else if (tabKey === "production") renderProductionTab();
   else if (tabKey === "iso50001")   renderISO50001();
+  else if (tabKey === "sensors")    renderSensorsTab();
 }
 
 
@@ -3572,6 +3573,181 @@ function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/* ═══════════════════════════════════════════════════════
+   WIRELESS SENSORS TAB
+   ═══════════════════════════════════════════════════════ */
+
+let _sensorsSelectedId = null;
+
+async function renderSensorsTab() {
+  const banner   = document.getElementById("sensors-status-banner");
+  const tableWrap = document.getElementById("sensors-table-wrap");
+  const refreshBtn = document.getElementById("sensors-refresh");
+  if (!banner || !tableWrap) return;
+
+  if (refreshBtn && !refreshBtn.dataset.wired) {
+    refreshBtn.dataset.wired = "1";
+    refreshBtn.addEventListener("click", () => renderSensorsTab());
+  }
+
+  // Fetch status and sensors in parallel
+  let status, sensors;
+  try {
+    [status, sensors] = await Promise.all([
+      API.getWirelessStatus(),
+      API.getWirelessSensors(),
+    ]);
+  } catch (e) {
+    banner.innerHTML = `<div class="exec-card" style="color:var(--muted);padding:1rem">Failed to load wireless sensor data.</div>`;
+    return;
+  }
+
+  const t = T();
+  const runColor   = status.running ? "#16A34A" : "#C41230";
+  const runLabel   = status.running ? "Running" : "Stopped";
+  const lastMsg    = status.last_message_at
+    ? new Date(status.last_message_at).toLocaleString()
+    : "Never";
+
+  banner.innerHTML = `
+    <div class="exec-cards-grid cols-4" style="margin-bottom:0">
+      <div class="exec-card">
+        <div class="exec-metric-label">TCP Listener</div>
+        <div class="exec-metric-value" style="color:${runColor}">${runLabel}</div>
+        ${status.port ? `<div class="exec-metric-sub">Port ${status.port}</div>` : ""}
+      </div>
+      <div class="exec-card">
+        <div class="exec-metric-label">Connected Gateways</div>
+        <div class="exec-metric-value">${status.connected_gateways}</div>
+      </div>
+      <div class="exec-card">
+        <div class="exec-metric-label">Last Message</div>
+        <div class="exec-metric-value" style="font-size:1rem">${lastMsg}</div>
+      </div>
+      <div class="exec-card">
+        <div class="exec-metric-label">Registered Sensors</div>
+        <div class="exec-metric-value">${sensors.length}</div>
+      </div>
+    </div>`;
+
+  if (!sensors.length) {
+    tableWrap.innerHTML = `<div style="padding:2rem;text-align:center;color:var(--muted)">
+      No sensors registered yet. Point your Monnit gateway TCP output to this host
+      ${status.port ? `on port <strong>${status.port}</strong>` : ""} and enable
+      <code>wireless.enabled</code> in <code>visualization_config.json</code>.
+    </div>`;
+    document.getElementById("sensors-chart-grid").style.display = "none";
+    return;
+  }
+
+  // Build sensor table
+  let rows = "";
+  for (const s of sensors) {
+    const lr = s.latest_reading;
+    const val   = lr && lr.value != null ? lr.value.toFixed(2) : "—";
+    const unit  = s.unit || "";
+    const ts    = lr ? new Date(lr.timestamp).toLocaleString() : "—";
+    const sig   = lr && lr.signal_strength != null ? lr.signal_strength + " dBm" : "—";
+    const bat   = lr && lr.battery_level != null ? lr.battery_level + "%" : "—";
+    const isSelected = s.id === _sensorsSelectedId;
+    rows += `<tr class="${isSelected ? "row-selected" : ""}" style="cursor:pointer" data-sensor-id="${escapeHtml(s.id)}">
+      <td>${escapeHtml(s.display_name)}</td>
+      <td>${escapeHtml(s.sensor_type)}</td>
+      <td>${escapeHtml(unit)}</td>
+      <td><strong>${val}</strong>${unit ? " " + escapeHtml(unit) : ""}</td>
+      <td style="color:var(--muted);font-size:0.85em">${ts}</td>
+      <td>${sig}</td>
+      <td>${bat}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm sensors-edit-btn" data-sensor-id="${escapeHtml(s.id)}"
+                data-display-name="${escapeHtml(s.display_name)}" data-unit="${escapeHtml(unit)}">
+          Edit
+        </button>
+      </td>
+    </tr>`;
+  }
+
+  tableWrap.innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>Name</th><th>Type</th><th>Unit</th><th>Latest Value</th>
+        <th>Last Reading</th><th>Signal</th><th>Battery</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  // Wire row clicks → show chart
+  tableWrap.querySelectorAll("tr[data-sensor-id]").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button")) return;
+      _sensorsSelectedId = row.dataset.sensorId;
+      renderSensorsTab();
+      loadSensorChart(_sensorsSelectedId, sensors);
+    });
+  });
+
+  // Wire edit buttons
+  tableWrap.querySelectorAll(".sensors-edit-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sid = btn.dataset.sensorId;
+      const newName = prompt("Display name:", btn.dataset.displayName);
+      if (newName === null) return;
+      const newUnit = prompt("Unit label (e.g. °C, %, V, A):", btn.dataset.unit);
+      if (newUnit === null) return;
+      API.updateWirelessSensor(sid, { display_name: newName, unit: newUnit })
+        .then(() => renderSensorsTab());
+    });
+  });
+
+  // Auto-load chart for selected sensor
+  if (_sensorsSelectedId) {
+    loadSensorChart(_sensorsSelectedId, sensors);
+  } else {
+    document.getElementById("sensors-chart-grid").style.display = "none";
+  }
+}
+
+async function loadSensorChart(sensorId, sensors) {
+  const chartGrid  = document.getElementById("sensors-chart-grid");
+  const chartTitle = document.getElementById("sensors-chart-title");
+  const chartEl    = document.getElementById("chart-sensor-readings");
+  if (!chartGrid || !chartEl) return;
+
+  const sensor = (sensors || []).find(s => s.id === sensorId);
+  const label  = sensor ? sensor.display_name : sensorId;
+  const unit   = sensor ? (sensor.unit || "") : "";
+
+  if (chartTitle) chartTitle.textContent = `Readings — ${label}`;
+  chartGrid.style.display = "";
+
+  let readings;
+  try {
+    readings = await API.getWirelessReadings({ sensor_id: sensorId, limit: 2000 });
+  } catch (e) {
+    chartEl.innerHTML = `<div style="padding:1rem;color:var(--muted)">Failed to load readings.</div>`;
+    return;
+  }
+
+  if (!readings.length) {
+    chartEl.innerHTML = `<div style="padding:1rem;color:var(--muted)">No readings recorded yet for this sensor.</div>`;
+    return;
+  }
+
+  const t  = T();
+  const xs = readings.map(r => r.timestamp);
+  const ys = readings.map(r => r.value);
+
+  Plotly.newPlot(chartEl, [{
+    x: xs, y: ys, mode: "lines", type: "scatter",
+    name: label,
+    line: { color: t.series[0], width: 1.5 },
+  }], pLayout({
+    xaxis: xA({}),
+    yaxis: yA({ title: unit || "Value" }),
+    title: { text: label, font: { color: t.ink, size: 13 } },
+  }), pCfg);
 }
 
 /* ─── Boot ─── */

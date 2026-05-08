@@ -58,6 +58,11 @@ DEFAULT_CONFIG: dict = {
             {"type": "output", "label": "Output", "color": "#F5A623"},
         ],
     },
+    "wireless": {
+        "enabled": False,
+        "tcp_port": 4950,
+        "auto_discover": True,
+    },
 }
 
 

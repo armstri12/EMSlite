@@ -406,4 +406,47 @@ const API = {
     const res = await fetch("/api/production/correlation?" + q.toString());
     return res.json();
   },
+
+  // ── Wireless Sensors ──
+  async getWirelessStatus() {
+    const res = await fetch("/api/wireless/status");
+    return res.json();
+  },
+
+  async getWirelessGateways() {
+    const res = await fetch("/api/wireless/gateways");
+    return res.json();
+  },
+
+  async getWirelessSensors(params = {}) {
+    const q = new URLSearchParams();
+    if (params.gateway_id) q.set("gateway_id", params.gateway_id);
+    if (params.enabled_only) q.set("enabled_only", "true");
+    const res = await fetch("/api/wireless/sensors?" + q.toString());
+    return res.json();
+  },
+
+  async getWirelessSensor(id) {
+    const res = await fetch("/api/wireless/sensors/" + encodeURIComponent(id));
+    return res.json();
+  },
+
+  async updateWirelessSensor(id, data) {
+    const res = await fetch("/api/wireless/sensors/" + encodeURIComponent(id), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async getWirelessReadings(params = {}) {
+    const q = new URLSearchParams();
+    if (params.sensor_id) q.set("sensor_id", params.sensor_id);
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    if (params.limit) q.set("limit", String(params.limit));
+    const res = await fetch("/api/wireless/readings?" + q.toString());
+    return res.json();
+  },
 };
