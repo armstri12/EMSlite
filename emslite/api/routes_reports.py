@@ -6,8 +6,10 @@ from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, Response
 
 from ..report import (
+    generate_email_summary_data,
     generate_report_data,
     generate_ytd_report_data,
+    render_email_summary_html,
     render_report_html,
     render_ytd_report_html,
 )
@@ -90,3 +92,38 @@ def ytd_report_data(
 ) -> dict:
     """Return raw YTD report data as JSON."""
     return generate_ytd_report_data(year=year)
+
+
+# ---------------------------------------------------------------------------
+# Email Summary Report
+# ---------------------------------------------------------------------------
+
+
+@router.get("/reports/email-summary")
+def email_summary_report(
+    panels: str | None = Query(None, description="Comma-separated panel IDs; omit for all panels"),
+    start: str | None = Query(None, description="Start date (ISO, e.g. 2024-01-01)"),
+    end: str | None = Query(None, description="End date (ISO, e.g. 2024-01-07)"),
+    download: bool = Query(False, description="If true, return as downloadable attachment"),
+) -> Response:
+    """Generate an Outlook-ready email summary HTML for selected panels."""
+    panel_list = [p.strip() for p in panels.split(",") if p.strip()] if panels else None
+    data = generate_email_summary_data(panels=panel_list, start=start, end=end)
+    html = render_email_summary_html(data)
+
+    if download:
+        period = data.get("period", {})
+        try:
+            import pandas as pd
+            start_dt = pd.Timestamp(period.get("start", ""))
+            end_dt = pd.Timestamp(period.get("end", ""))
+            filename = f"email_summary_{start_dt.strftime('%Y%m%d')}_{end_dt.strftime('%Y%m%d')}.html"
+        except Exception:
+            filename = "email_summary.html"
+        return Response(
+            content=html,
+            media_type="text/html",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    return HTMLResponse(content=html)
