@@ -63,6 +63,7 @@ DEFAULT_CONFIG: dict = {
         "tcp_port": 4950,
         "auto_discover": True,
     },
+    "admin_password": "admin",
 }
 
 

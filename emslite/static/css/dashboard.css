@@ -1652,3 +1652,80 @@ body {
   min-width: 140px;
 }
 .hint { color: var(--muted); font-size: 12px; }
+
+/* ─── Admin Tab Access ─── */
+.nav-admin-hidden { display: none !important; }
+
+/* ─── Login Modal ─── */
+.login-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(3px);
+}
+.login-modal-card {
+  background: var(--card);
+  border: 1px solid var(--card-border, rgba(0,0,0,0.08));
+  border-radius: 14px;
+  padding: 2rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.login-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--heading, var(--ink));
+  margin-bottom: 0.4rem;
+}
+.login-modal-sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0 0 1.25rem;
+}
+.login-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.login-modal-field label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.login-modal-field input {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border, #d1d5db);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.login-modal-field input:focus {
+  outline: none;
+  border-color: var(--accent, #8bd435);
+}
+.login-modal-error {
+  min-height: 1.1rem;
+  font-size: 0.8rem;
+  color: #e53e3e;
+  margin-bottom: 0.75rem;
+}
+.login-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
