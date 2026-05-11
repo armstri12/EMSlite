@@ -54,7 +54,10 @@ async function initDashboard() {
       API.getDepartments(),
     ]);
     let devices = [];
-    try { devices = await API.getDevices(); } catch (_) {}
+    try {
+      const result = await API.getDevices();
+      if (Array.isArray(result)) devices = result;
+    } catch (_) {}
     D = data;
     PRICE = data.price_per_kwh || 0.25;
     ALL_PANELS = data.panel_names || [];
