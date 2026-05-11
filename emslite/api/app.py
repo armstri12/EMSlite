@@ -15,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from ..config import load_config
 from ..database import init_db
 from ..ingest import ingest_existing, start_watcher, sync_devices_from_master
+from . import app_state
 from .routes_auth import router as auth_router
 from .routes_config import router as config_router
 from .routes_data import router as data_router
@@ -35,26 +36,24 @@ from .routes_wireless import router as wireless_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Global config and watcher references
-_app_config: dict = {}
 _observer = None
 
 
 def get_app_config() -> dict:
-    return _app_config
+    return app_state.get_app_config()
 
 
 def get_project_root() -> Path:
-    return Path(__file__).resolve().parent.parent.parent
+    return app_state.get_project_root()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _app_config, _observer
+    global _observer
 
     root = get_project_root()
     config_path = root / "visualization_config.json"
-    _app_config = load_config(config_path if config_path.exists() else None)
+    app_state._app_config = load_config(config_path if config_path.exists() else None)
 
     # Initialize database first so wireless listener can write on first connection
     db_path = root / "emslite.db"
@@ -62,7 +61,7 @@ async def lifespan(app: FastAPI):
 
     # Start wireless TCP listener if enabled (after DB is ready)
     _wireless_enabled = False
-    wireless_cfg = _app_config.get("wireless", {})
+    wireless_cfg = app_state._app_config.get("wireless", {})
     if wireless_cfg.get("enabled", False):
         from ..wireless import start_listener
         _wireless_enabled = True
@@ -72,16 +71,16 @@ async def lifespan(app: FastAPI):
         )
 
     # Seed default production metric definitions on first startup (idempotent).
-    seed_default_metric_definitions(_app_config)
+    seed_default_metric_definitions(app_state._app_config)
 
     # Ensure directories exist
-    drops_dir = root / _app_config.get("drops_dir", "drops")
-    data_dir = root / _app_config.get("data_dir", "data")
+    drops_dir = root / app_state._app_config.get("drops_dir", "drops")
+    data_dir = root / app_state._app_config.get("data_dir", "data")
     drops_dir.mkdir(parents=True, exist_ok=True)
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    master_path = data_dir / _app_config.get("master_filename", "RawPanelUsageHistory.csv")
-    glob_pattern = _app_config.get("glob_pattern", "Meter*_SystemCurrent.csv")
+    master_path = data_dir / app_state._app_config.get("master_filename", "RawPanelUsageHistory.csv")
+    glob_pattern = app_state._app_config.get("glob_pattern", "Meter*_SystemCurrent.csv")
 
     # Sync devices from existing master CSV (handles direct CSV placement)
     sync_devices_from_master(master_path)
@@ -96,7 +95,7 @@ async def lifespan(app: FastAPI):
     logger.info("EMSlite started. Dashboard at http://localhost:8000")
 
     # Warn if admin password is still the insecure default
-    admin_pw = os.environ.get("ADMIN_PASSWORD") or _app_config.get("admin_password", "admin")
+    admin_pw = os.environ.get("ADMIN_PASSWORD") or app_state._app_config.get("admin_password", "admin")
     if admin_pw == "admin":
         logger.warning(
             "SECURITY WARNING: Admin password is set to 'admin'. "
