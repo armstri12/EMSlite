@@ -8,7 +8,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from .app import get_app_config
+from .app_state import get_app_config
 
 router = APIRouter(tags=["auth"])
 
