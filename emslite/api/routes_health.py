@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from .routes_auth import require_admin
 
 from ..core import load_csv, meter_columns
 from ..database import get_session
 from ..models import IngestLog
 from .routes_data import _get_master_path, _get_config
 
-router = APIRouter(tags=["data-health"])
+router = APIRouter(tags=["data-health"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/data-health")

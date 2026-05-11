@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import logging
+import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from ..config import load_config
 from ..database import init_db
 from ..ingest import ingest_existing, start_watcher, sync_devices_from_master
+from .routes_auth import router as auth_router
 from .routes_config import router as config_router
 from .routes_data import router as data_router
 from .routes_departments import router as departments_router
@@ -91,6 +95,15 @@ async def lifespan(app: FastAPI):
     _observer = start_watcher(drops_dir, master_path, glob_pattern)
     logger.info("EMSlite started. Dashboard at http://localhost:8000")
 
+    # Warn if admin password is still the insecure default
+    admin_pw = os.environ.get("ADMIN_PASSWORD") or _app_config.get("admin_password", "admin")
+    if admin_pw == "admin":
+        logger.warning(
+            "SECURITY WARNING: Admin password is set to 'admin'. "
+            "Set the ADMIN_PASSWORD environment variable or update "
+            "'admin_password' in visualization_config.json before deploying."
+        )
+
     yield
 
     # Shutdown wireless listener
@@ -113,7 +126,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(SessionMiddleware, secret_key=secrets.token_hex(32))
+
     # API routes
+    app.include_router(auth_router, prefix="/api")
     app.include_router(data_router, prefix="/api")
     app.include_router(devices_router, prefix="/api")
     app.include_router(departments_router, prefix="/api")

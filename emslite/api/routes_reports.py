@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse, Response
+from .routes_auth import require_admin
 
 from ..report import (
     generate_email_summary_data,
@@ -99,7 +100,7 @@ def ytd_report_data(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/reports/email-summary")
+@router.get("/reports/email-summary", dependencies=[Depends(require_admin)])
 def email_summary_report(
     panels: str | None = Query(None, description="Comma-separated panel IDs; omit for all panels"),
     start: str | None = Query(None, description="Start date (ISO, e.g. 2024-01-01)"),

@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from .routes_auth import require_admin
 from pydantic import BaseModel
 
 from ..database import get_session
 from ..models import Device
 
-router = APIRouter(tags=["devices"])
+router = APIRouter(tags=["devices"], dependencies=[Depends(require_admin)])
 
 
 class DeviceUpdate(BaseModel):

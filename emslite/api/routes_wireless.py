@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from .routes_auth import require_admin
 from pydantic import BaseModel
 
 from ..database import get_session
 from ..models import SensorReading, WirelessGateway, WirelessSensor
 
-router = APIRouter(tags=["wireless"])
+router = APIRouter(tags=["wireless"], dependencies=[Depends(require_admin)])
 
 
 class SensorUpdate(BaseModel):

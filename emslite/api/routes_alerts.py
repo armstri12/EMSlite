@@ -6,7 +6,8 @@ from datetime import datetime
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from .routes_auth import require_admin
 from pydantic import BaseModel
 
 from ..core import amps_to_kw, load_csv, meter_columns
@@ -14,7 +15,7 @@ from ..database import get_session
 from ..models import AlertEvent, Device
 from .routes_data import _get_config, _get_master_path
 
-router = APIRouter(tags=["alerts"])
+router = APIRouter(tags=["alerts"], dependencies=[Depends(require_admin)])
 
 
 class AlertAckBody(BaseModel):

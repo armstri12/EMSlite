@@ -25,6 +25,11 @@ let ALERTS_WINDOW_HOURS = 24;
 let WEATHER = { enabled: false, timestamps: [], temperature_c: [], humidity_pct: [], unit: "celsius" };
 let WEATHER_OVERLAY = { temperature: false, humidity: false };
 
+/* ─── Admin Auth State ─── */
+const ADMIN_TABS = new Set(["data","devices","alerts","health","sensors","email-summary"]);
+let isAdmin = false;
+let pendingAdminTab = null;
+
 /* ─── Theme Palettes — Edwards brand ─── */
 const lightC = {
   ink:"#3A424D", muted:"#9BA5B0", card:"#ffffff", bg:"#F8FAFB",
@@ -42,12 +47,14 @@ function T() { return isDark ? darkC : lightC; }
 
 /* ─── Init ─── */
 async function initDashboard() {
+  await checkAuth();
   try {
-    const [data, departments, devices] = await Promise.all([
+    const [data, departments] = await Promise.all([
       API.getData(),
       API.getDepartments(),
-      API.getDevices(),
     ]);
+    let devices = [];
+    try { devices = await API.getDevices(); } catch (_) {}
     D = data;
     PRICE = data.price_per_kwh || 0.25;
     ALL_PANELS = data.panel_names || [];
@@ -270,6 +277,10 @@ function showNotificationsPanel() {
 }
 
 function switchTab(tabId) {
+  if (ADMIN_TABS.has(tabId) && !isAdmin) {
+    showLoginModal(tabId);
+    return;
+  }
   activeTab = tabId;
   document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
   document.querySelectorAll(".nav-item[data-tab]").forEach(n => n.classList.remove("active"));
@@ -3955,5 +3966,123 @@ function renderEmailSummaryTab() {
   });
 }
 
+/* ═══════════════════════════════════════════════════════
+   ADMIN AUTH
+   ═══════════════════════════════════════════════════════ */
+
+async function checkAuth() {
+  try {
+    const res = await fetch("/api/auth/me");
+    if (res.ok) {
+      const json = await res.json();
+      isAdmin = json.authenticated;
+    }
+  } catch (_) {
+    isAdmin = false;
+  }
+  applyAdminVisibility();
+  _updateAuthNavLabel();
+}
+
+function applyAdminVisibility() {
+  document.querySelectorAll(".nav-item[data-tab]").forEach(el => {
+    const tab = el.getAttribute("data-tab");
+    if (ADMIN_TABS.has(tab)) {
+      el.classList.toggle("nav-admin-hidden", !isAdmin);
+    }
+  });
+  if (!isAdmin && ADMIN_TABS.has(activeTab)) {
+    activeTab = "executive";
+    document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+    document.querySelectorAll(".nav-item[data-tab]").forEach(n => n.classList.remove("active"));
+    const tabEl = document.getElementById("tab-executive");
+    if (tabEl) tabEl.classList.add("active");
+    document.querySelectorAll('.nav-item[data-tab="executive"]').forEach(n => n.classList.add("active"));
+  }
+}
+
+function _updateAuthNavLabel() {
+  const label = document.getElementById("auth-nav-label");
+  if (label) label.textContent = isAdmin ? "Logout" : "Admin Login";
+}
+
+function showLoginModal(targetTab) {
+  pendingAdminTab = targetTab;
+  const modal = document.getElementById("login-modal");
+  const input = document.getElementById("login-password-input");
+  if (!modal) return;
+  input.value = "";
+  document.getElementById("login-error").textContent = "";
+  modal.style.display = "flex";
+  setTimeout(() => input.focus(), 50);
+}
+
+function hideLoginModal() {
+  const modal = document.getElementById("login-modal");
+  if (modal) modal.style.display = "none";
+  pendingAdminTab = null;
+}
+
+async function submitLogin() {
+  const pw = document.getElementById("login-password-input").value;
+  const errEl = document.getElementById("login-error");
+  const btn = document.getElementById("login-submit-btn");
+  btn.disabled = true;
+  errEl.textContent = "";
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (res.ok) {
+      isAdmin = true;
+      applyAdminVisibility();
+      _updateAuthNavLabel();
+      const target = pendingAdminTab;
+      hideLoginModal();
+      if (target) switchTab(target);
+    } else {
+      errEl.textContent = "Incorrect password. Please try again.";
+    }
+  } catch (_) {
+    errEl.textContent = "Login failed. Please check your connection.";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function setupAuthUI() {
+  const loginBtn = document.getElementById("login-btn");
+  if (loginBtn) {
+    loginBtn.addEventListener("click", async () => {
+      if (isAdmin) {
+        try { await fetch("/api/auth/logout", { method: "POST" }); } catch (_) {}
+        isAdmin = false;
+        applyAdminVisibility();
+        _updateAuthNavLabel();
+        switchTab("executive");
+      } else {
+        showLoginModal(null);
+      }
+    });
+  }
+
+  const submitBtn = document.getElementById("login-submit-btn");
+  if (submitBtn) submitBtn.addEventListener("click", submitLogin);
+
+  const cancelBtn = document.getElementById("login-cancel-btn");
+  if (cancelBtn) cancelBtn.addEventListener("click", hideLoginModal);
+
+  const pwInput = document.getElementById("login-password-input");
+  if (pwInput) pwInput.addEventListener("keydown", e => { if (e.key === "Enter") submitLogin(); });
+
+  const modal = document.getElementById("login-modal");
+  if (modal) modal.addEventListener("click", e => { if (e.target === modal) hideLoginModal(); });
+}
+
 /* ─── Boot ─── */
-document.addEventListener("DOMContentLoaded", initDashboard);
+document.addEventListener("DOMContentLoaded", () => {
+  setupAuthUI();
+  initDashboard();
+});
