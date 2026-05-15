@@ -4089,6 +4089,7 @@ function setupAuthUI() {
 /* ─── Boot ─── */
 document.addEventListener("DOMContentLoaded", () => {
   setupAuthUI();
+  _initDRDelegation();
   initDashboard();
 });
 
@@ -4113,7 +4114,6 @@ async function renderDemandResponseTab() {
         _renderDRSubview(sub);
       });
     });
-    _setupDRModals();
   }
   _renderDRSubview(tabState["demand-response"].view);
 }
@@ -4413,20 +4413,19 @@ async function _loadDRSummary(programId) {
 let _drEditProgId = null;
 let _drEditEvId = null;
 
-function _setupDRModals() {
-  // Program modal
-  const progModal = document.getElementById("dr-program-modal");
-  document.getElementById("dr-add-program-btn").addEventListener("click", () => _openProgramModal(null));
-  document.getElementById("drp-cancel").addEventListener("click", () => { progModal.style.display = "none"; });
-  progModal.addEventListener("click", e => { if (e.target === progModal) progModal.style.display = "none"; });
-  document.getElementById("drp-save").addEventListener("click", _saveDRProgram);
-
-  // Event modal
-  const evModal = document.getElementById("dr-event-modal");
-  document.getElementById("dr-add-event-btn").addEventListener("click", () => _openEventModal(null));
-  document.getElementById("dre-cancel").addEventListener("click", () => { evModal.style.display = "none"; });
-  evModal.addEventListener("click", e => { if (e.target === evModal) evModal.style.display = "none"; });
-  document.getElementById("dre-save").addEventListener("click", _saveDREvent);
+function _initDRDelegation() {
+  // Delegate all DR button clicks from document so wiring is guaranteed at page load
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (t.closest("#dr-add-program-btn")) { _openProgramModal(null); return; }
+    if (t.closest("#dr-add-event-btn"))   { _openEventModal(null);   return; }
+    if (t.matches("#drp-cancel"))   { document.getElementById("dr-program-modal").style.display = "none"; return; }
+    if (t.matches("#drp-save"))     { _saveDRProgram(); return; }
+    if (t.matches("#dre-cancel"))   { document.getElementById("dr-event-modal").style.display = "none"; return; }
+    if (t.matches("#dre-save"))     { _saveDREvent(); return; }
+    if (t.matches("#dr-program-modal")) { t.style.display = "none"; return; }
+    if (t.matches("#dr-event-modal"))   { t.style.display = "none"; return; }
+  });
 }
 
 function _openProgramModal(prog) {
