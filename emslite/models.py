@@ -457,6 +457,96 @@ class WirelessSensor(Base):
         }
 
 
+class DRProgram(Base):
+    """A demand response program enrollment (e.g. Mass Save Connected Solutions)."""
+
+    __tablename__ = "dr_programs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    utility: Mapped[str] = mapped_column(String(64), default="Mass Save")
+    program_type: Mapped[str] = mapped_column(String(32), default="connected_solutions")
+    season_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    season_start: Mapped[date | None] = mapped_column(Date, default=None)
+    season_end: Mapped[date | None] = mapped_column(Date, default=None)
+    event_window_start: Mapped[int] = mapped_column(Integer, default=14)  # hour (2 pm)
+    event_window_end: Mapped[int] = mapped_column(Integer, default=19)    # hour (7 pm)
+    committed_kw: Mapped[float | None] = mapped_column(Float, default=None)
+    incentive_rate: Mapped[float | None] = mapped_column(Float, default=None)  # $/kW-season
+    enrolled_panels: Mapped[str | None] = mapped_column(Text, default=None)    # JSON list of panel IDs
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    events: Mapped[list["DREvent"]] = relationship(
+        back_populates="program", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        import json as _json
+
+        return {
+            "id": self.id,
+            "name": self.name,
+            "utility": self.utility,
+            "program_type": self.program_type,
+            "season_year": self.season_year,
+            "season_start": self.season_start.isoformat() if self.season_start else None,
+            "season_end": self.season_end.isoformat() if self.season_end else None,
+            "event_window_start": self.event_window_start,
+            "event_window_end": self.event_window_end,
+            "committed_kw": self.committed_kw,
+            "incentive_rate": self.incentive_rate,
+            "enrolled_panels": _json.loads(self.enrolled_panels) if self.enrolled_panels else [],
+            "notes": self.notes,
+            "active": self.active,
+            "event_count": len(self.events) if self.events else 0,
+        }
+
+
+class DREvent(Base):
+    """A single demand response curtailment event."""
+
+    __tablename__ = "dr_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    program_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("dr_programs.id", ondelete="CASCADE"), nullable=False
+    )
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    start_hour: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_hour: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="scheduled")  # scheduled, completed, cancelled
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+    # Computed results stored after analysis
+    baseline_kw: Mapped[float | None] = mapped_column(Float, default=None)
+    actual_kw: Mapped[float | None] = mapped_column(Float, default=None)
+    reduction_kw: Mapped[float | None] = mapped_column(Float, default=None)
+    baseline_dates: Mapped[str | None] = mapped_column(Text, default=None)  # JSON list of date strings
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    program: Mapped["DRProgram"] = relationship(back_populates="events")
+
+    def to_dict(self) -> dict:
+        import json as _json
+
+        return {
+            "id": self.id,
+            "program_id": self.program_id,
+            "program_name": self.program.name if self.program else None,
+            "event_date": self.event_date.isoformat() if self.event_date else None,
+            "start_hour": self.start_hour,
+            "end_hour": self.end_hour,
+            "status": self.status,
+            "notes": self.notes,
+            "baseline_kw": self.baseline_kw,
+            "actual_kw": self.actual_kw,
+            "reduction_kw": self.reduction_kw,
+            "baseline_dates": _json.loads(self.baseline_dates) if self.baseline_dates else [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class SensorReading(Base):
     """A single time-stamped reading from a wireless sensor."""
 

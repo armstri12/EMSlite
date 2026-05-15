@@ -450,6 +450,86 @@ const API = {
     return res.json();
   },
 
+  // ─── Demand Response ───
+  async getDRPrograms() {
+    const res = await fetch("/api/demand-response/programs");
+    return res.json();
+  },
+
+  async createDRProgram(data) {
+    const res = await fetch("/api/demand-response/programs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`createDRProgram failed: ${res.status}`);
+    return res.json();
+  },
+
+  async updateDRProgram(id, data) {
+    const res = await fetch("/api/demand-response/programs/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`updateDRProgram failed: ${res.status}`);
+    return res.json();
+  },
+
+  async deleteDRProgram(id) {
+    const res = await fetch("/api/demand-response/programs/" + id, { method: "DELETE" });
+    return res.json();
+  },
+
+  async getDREvents(params = {}) {
+    const q = new URLSearchParams();
+    if (params.program_id) q.set("program_id", String(params.program_id));
+    if (params.status) q.set("status", params.status);
+    const res = await fetch("/api/demand-response/events?" + q.toString());
+    return res.json();
+  },
+
+  async createDREvent(data) {
+    const res = await fetch("/api/demand-response/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`createDREvent failed: ${res.status}`);
+    return res.json();
+  },
+
+  async updateDREvent(id, data) {
+    const res = await fetch("/api/demand-response/events/" + id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`updateDREvent failed: ${res.status}`);
+    return res.json();
+  },
+
+  async deleteDREvent(id) {
+    const res = await fetch("/api/demand-response/events/" + id, { method: "DELETE" });
+    return res.json();
+  },
+
+  async computeDREvent(id) {
+    const res = await fetch("/api/demand-response/events/" + id + "/compute", { method: "POST" });
+    if (!res.ok) throw new Error(`computeDREvent failed: ${res.status}`);
+    return res.json();
+  },
+
+  async getDREventProfile(id) {
+    const res = await fetch("/api/demand-response/events/" + id + "/profile");
+    return res.json();
+  },
+
+  async getDRSeasonSummary(programId) {
+    const res = await fetch("/api/demand-response/season-summary/" + programId);
+    return res.json();
+  },
+
   getEmailSummaryUrl(panels, start, end, priorStart, priorEnd, download = false) {
     const q = new URLSearchParams();
     if (panels && panels.length) q.set("panels", panels.join(","));

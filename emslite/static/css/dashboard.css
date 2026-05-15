@@ -273,8 +273,11 @@ body {
   font-weight: 600;
   text-transform: uppercase;
 }
-.badge-neg { background: var(--badge-neg-bg); color: var(--badge-neg-text); }
+.badge-neg  { background: var(--badge-neg-bg); color: var(--badge-neg-text); }
 .badge-warn { background: rgba(245,158,11,0.15); color: #D97706; }
+.badge-ok      { background: rgba(22,163,74,0.15); color: #16a34a; }
+.badge-err     { background: rgba(220,38,38,0.12); color: #dc2626; }
+.badge-neutral { background: rgba(100,116,139,0.15); color: var(--muted); }
 .avatar {
   width: 40px; height: 40px;
   border-radius: 50%;
