@@ -32,6 +32,7 @@ from .routes_production import router as production_router
 from .routes_production import seed_default_metric_definitions
 from .routes_reports import router as reports_router
 from .routes_wireless import router as wireless_router
+from .routes_demand_response import router as demand_response_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_router, prefix="/api")
     app.include_router(production_router, prefix="/api")
     app.include_router(wireless_router, prefix="/api")
+    app.include_router(demand_response_router, prefix="/api")
 
     # Serve static frontend files
     static_dir = Path(__file__).resolve().parent.parent / "static"

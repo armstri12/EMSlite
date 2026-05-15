@@ -75,6 +75,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
       <span class="nav-label">Sensors</span>
     </a>
+    <a class="nav-item" data-tab="demand-response">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      <span class="nav-label">Demand Response</span>
+    </a>
     <a class="nav-item" data-tab="email-summary">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,12 2,6"/></svg>
       <span class="nav-label">Email Summary</span>
@@ -549,6 +553,65 @@
 
     </div>
 
+    <!-- DEMAND RESPONSE TAB -->
+    <div class="tab-content" id="tab-demand-response">
+      <div class="production-subtabs" id="dr-subtab-bar">
+        <button type="button" class="psub-btn active" data-drsub="programs">Programs</button>
+        <button type="button" class="psub-btn" data-drsub="events">Events</button>
+        <button type="button" class="psub-btn" data-drsub="summary">Season Summary</button>
+      </div>
+
+      <!-- Programs sub-tab -->
+      <section class="psub-section" id="drsub-programs">
+        <div class="panel">
+          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+            Enrolled Programs
+            <button class="btn btn-primary btn-sm" id="dr-add-program-btn">+ Add Program</button>
+          </div>
+          <div id="dr-programs-table"></div>
+        </div>
+      </section>
+
+      <!-- Events sub-tab -->
+      <section class="psub-section" id="drsub-events" style="display:none">
+        <div class="panel">
+          <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:0.75rem">
+              Events
+              <select id="dr-event-prog-filter" class="filter-input" style="min-width:180px">
+                <option value="">All Programs</option>
+              </select>
+            </div>
+            <button class="btn btn-primary btn-sm" id="dr-add-event-btn">+ Add Event</button>
+          </div>
+          <div id="dr-events-table"></div>
+        </div>
+        <div class="charts-grid" id="dr-event-chart-wrap" style="display:none;margin-top:1rem">
+          <div class="panel panel-12">
+            <div class="panel-title" id="dr-event-chart-title">Event Load Profile</div>
+            <div class="chart-area" id="chart-dr-event"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Season Summary sub-tab -->
+      <section class="psub-section" id="drsub-summary" style="display:none">
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+          <label style="color:var(--body-text);font-size:0.85rem">Program</label>
+          <select id="dr-summary-prog-select" class="filter-input" style="min-width:220px">
+            <option value="">Select a program…</option>
+          </select>
+        </div>
+        <div id="dr-summary-kpi-cards" class="comp-grid"></div>
+        <div class="charts-grid" id="dr-summary-charts" style="display:none;margin-top:1rem">
+          <div class="panel panel-12">
+            <div class="panel-title">Event Performance — kW Reduction vs. Committed</div>
+            <div class="chart-area" id="chart-dr-performance"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <!-- EMAIL SUMMARY TAB -->
     <div class="tab-content" id="tab-email-summary">
       <div id="email-summary-toolbar"></div>
@@ -579,6 +642,98 @@
     <div class="login-modal-actions">
       <button class="btn btn-ghost btn-sm" id="login-cancel-btn">Cancel</button>
       <button class="btn btn-primary btn-sm" id="login-submit-btn">Login</button>
+    </div>
+  </div>
+</div>
+
+<!-- DR Program Modal -->
+<div class="login-modal" id="dr-program-modal" style="display:none">
+  <div class="login-modal-card" style="max-width:540px;width:95%">
+    <div class="login-modal-title" id="dr-program-modal-title">Add Program</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:1rem">
+      <div class="login-modal-field" style="grid-column:1/-1">
+        <label>Program Name</label>
+        <input type="text" id="drp-name" placeholder="e.g. Mass Save Connected Solutions 2026"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Utility / Administrator</label>
+        <input type="text" id="drp-utility" value="Mass Save"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Season Year</label>
+        <input type="number" id="drp-season-year" min="2020" max="2040"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Season Start</label>
+        <input type="date" id="drp-season-start"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Season End</label>
+        <input type="date" id="drp-season-end"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Default Event Start (hour, 0–23)</label>
+        <input type="number" id="drp-win-start" min="0" max="23" value="14"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Default Event End (hour, 0–23)</label>
+        <input type="number" id="drp-win-end" min="1" max="24" value="19"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Committed kW (target reduction)</label>
+        <input type="number" id="drp-committed-kw" step="any" placeholder="e.g. 250"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Incentive Rate ($/kW-season)</label>
+        <input type="number" id="drp-incentive-rate" step="any" placeholder="e.g. 50"/>
+      </div>
+      <div class="login-modal-field" style="grid-column:1/-1">
+        <label>Enrolled Panels (comma-separated IDs, blank = all)</label>
+        <input type="text" id="drp-panels" placeholder="e.g. Panel_A, Panel_B"/>
+      </div>
+      <div class="login-modal-field" style="grid-column:1/-1">
+        <label>Notes</label>
+        <input type="text" id="drp-notes" placeholder="Optional"/>
+      </div>
+    </div>
+    <div class="login-modal-error" id="dr-program-modal-error"></div>
+    <div class="login-modal-actions">
+      <button class="btn btn-ghost btn-sm" id="drp-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="drp-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- DR Event Modal -->
+<div class="login-modal" id="dr-event-modal" style="display:none">
+  <div class="login-modal-card" style="max-width:440px;width:95%">
+    <div class="login-modal-title" id="dr-event-modal-title">Add Event</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:1rem">
+      <div class="login-modal-field" style="grid-column:1/-1">
+        <label>Program</label>
+        <select id="dre-program-id" class="filter-input" style="width:100%"></select>
+      </div>
+      <div class="login-modal-field" style="grid-column:1/-1">
+        <label>Event Date</label>
+        <input type="date" id="dre-date"/>
+      </div>
+      <div class="login-modal-field">
+        <label>Start Hour (0–23)</label>
+        <input type="number" id="dre-start-hour" min="0" max="23"/>
+      </div>
+      <div class="login-modal-field">
+        <label>End Hour (1–24)</label>
+        <input type="number" id="dre-end-hour" min="1" max="24"/>
+      </div>
+      <div class="login-modal-field" style="grid-column:1/-1">
+        <label>Notes</label>
+        <input type="text" id="dre-notes" placeholder="Optional"/>
+      </div>
+    </div>
+    <div class="login-modal-error" id="dr-event-modal-error"></div>
+    <div class="login-modal-actions">
+      <button class="btn btn-ghost btn-sm" id="dre-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="dre-save">Save</button>
     </div>
   </div>
 </div>

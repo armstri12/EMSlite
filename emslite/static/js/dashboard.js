@@ -124,6 +124,7 @@ const tabState = {
   trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" },
   iso50001:   { panels: new Set(), startDate: "", endDate: "", department: "", baselineStart: "", baselineEnd: "" },
   "email-summary": { panels: new Set(), startDate: "", endDate: "", priorStart: "", priorEnd: "" },
+  "demand-response": { view: "programs", programId: null, eventId: null },
 };
 
 function initTabState() {
@@ -1850,6 +1851,7 @@ function renderTab(tabKey) {
   else if (tabKey === "iso50001")      renderISO50001();
   else if (tabKey === "sensors")       renderSensorsTab();
   else if (tabKey === "email-summary") renderEmailSummaryTab();
+  else if (tabKey === "demand-response") renderDemandResponseTab();
 }
 
 
@@ -4089,3 +4091,456 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAuthUI();
   initDashboard();
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DEMAND RESPONSE TAB
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+let _drSubtabsInited = false;
+
+async function renderDemandResponseTab() {
+  if (!_drSubtabsInited) {
+    _drSubtabsInited = true;
+    document.querySelectorAll("#dr-subtab-bar .psub-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#dr-subtab-bar .psub-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const sub = btn.dataset.drsub;
+        tabState["demand-response"].view = sub;
+        document.querySelectorAll("#tab-demand-response .psub-section").forEach(s => s.style.display = "none");
+        const sec = document.getElementById("drsub-" + sub);
+        if (sec) sec.style.display = "";
+        _renderDRSubview(sub);
+      });
+    });
+    _setupDRModals();
+  }
+  _renderDRSubview(tabState["demand-response"].view);
+}
+
+function _renderDRSubview(view) {
+  if (view === "programs") _renderDRPrograms();
+  else if (view === "events") _renderDREvents();
+  else if (view === "summary") _renderDRSummary();
+}
+
+// ── Programs view ────────────────────────────────────────────────────────────
+
+async function _renderDRPrograms() {
+  const wrap = document.getElementById("dr-programs-table");
+  if (!wrap) return;
+  wrap.innerHTML = '<p style="color:var(--muted);padding:1rem">Loading…</p>';
+
+  let programs;
+  try { programs = await API.getDRPrograms(); }
+  catch (e) { wrap.innerHTML = `<p class="hint">Error: ${e.message}</p>`; return; }
+
+  if (!programs.length) {
+    wrap.innerHTML = '<p style="color:var(--muted);padding:1rem 0">No programs enrolled yet. Click "+ Add Program" to get started.</p>';
+    return;
+  }
+
+  const t = document.createElement("table");
+  t.className = "data-table";
+  t.innerHTML = `<thead><tr>
+    <th>Name</th><th>Utility</th><th>Season</th>
+    <th>Window (ET)</th><th>Committed kW</th><th>Rate $/kW</th>
+    <th>Events</th><th>Status</th><th></th>
+  </tr></thead>`;
+  const tbody = document.createElement("tbody");
+
+  programs.forEach(p => {
+    const winStart = String(p.event_window_start).padStart(2, "0") + ":00";
+    const winEnd   = String(p.event_window_end).padStart(2, "0") + ":00";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><strong>${p.name}</strong></td>
+      <td>${p.utility}</td>
+      <td>${p.season_year}${p.season_start ? ` (${p.season_start} – ${p.season_end || "?"})` : ""}</td>
+      <td>${winStart} – ${winEnd}</td>
+      <td>${p.committed_kw != null ? p.committed_kw.toFixed(1) + " kW" : "—"}</td>
+      <td>${p.incentive_rate != null ? "$" + p.incentive_rate.toFixed(2) : "—"}</td>
+      <td>${p.event_count}</td>
+      <td><span class="badge ${p.active ? "badge-ok" : "badge-warn"}">${p.active ? "Active" : "Inactive"}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" data-dr-edit-prog="${p.id}">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red,#e55)" data-dr-del-prog="${p.id}">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  t.appendChild(tbody);
+  wrap.innerHTML = "";
+  wrap.appendChild(t);
+
+  wrap.querySelectorAll("[data-dr-edit-prog]").forEach(btn => {
+    const id = +btn.dataset.drEditProg;
+    const prog = programs.find(p => p.id === id);
+    btn.addEventListener("click", () => _openProgramModal(prog));
+  });
+  wrap.querySelectorAll("[data-dr-del-prog]").forEach(btn => {
+    const id = +btn.dataset.drDelProg;
+    btn.addEventListener("click", async () => {
+      if (!confirm("Delete this program and all its events?")) return;
+      await API.deleteDRProgram(id);
+      _renderDRPrograms();
+    });
+  });
+}
+
+// ── Events view ──────────────────────────────────────────────────────────────
+
+async function _renderDREvents() {
+  const wrap = document.getElementById("dr-events-table");
+  if (!wrap) return;
+
+  let programs, events;
+  try {
+    programs = await API.getDRPrograms();
+    const progFilter = document.getElementById("dr-event-prog-filter");
+    if (progFilter) {
+      const cur = progFilter.value;
+      progFilter.innerHTML = '<option value="">All Programs</option>' +
+        programs.map(p => `<option value="${p.id}" ${String(p.id) === cur ? "selected" : ""}>${p.name}</option>`).join("");
+      if (!progFilter._drInited) {
+        progFilter._drInited = true;
+        progFilter.addEventListener("change", () => _renderDREvents());
+      }
+    }
+    const pid = progFilter ? (progFilter.value || undefined) : undefined;
+    events = await API.getDREvents(pid ? { program_id: pid } : {});
+  } catch (e) {
+    wrap.innerHTML = `<p class="hint">Error: ${e.message}</p>`;
+    return;
+  }
+
+  if (!events.length) {
+    wrap.innerHTML = '<p style="color:var(--muted);padding:1rem 0">No events recorded yet.</p>';
+    return;
+  }
+
+  const fmtHour = h => String(h).padStart(2, "0") + ":00";
+  const statusColor = s => s === "completed" ? "badge-ok" : s === "cancelled" ? "badge-err" : "badge-neutral";
+
+  const t = document.createElement("table");
+  t.className = "data-table";
+  t.innerHTML = `<thead><tr>
+    <th>Date</th><th>Program</th><th>Window (ET)</th><th>Status</th>
+    <th>Baseline kW</th><th>Actual kW</th><th>Reduction kW</th><th></th>
+  </tr></thead>`;
+  const tbody = document.createElement("tbody");
+
+  events.forEach(ev => {
+    const reductionCell = ev.reduction_kw != null
+      ? `<td style="color:${ev.reduction_kw >= 0 ? "var(--green,#4caf50)" : "var(--red,#e55)"}"><strong>${ev.reduction_kw.toFixed(1)}</strong></td>`
+      : "<td>—</td>";
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${ev.event_date}</td>
+      <td>${ev.program_name || ev.program_id}</td>
+      <td>${fmtHour(ev.start_hour)} – ${fmtHour(ev.end_hour)}</td>
+      <td><span class="badge ${statusColor(ev.status)}">${ev.status}</span></td>
+      <td>${ev.baseline_kw != null ? ev.baseline_kw.toFixed(1) : "—"}</td>
+      <td>${ev.actual_kw != null ? ev.actual_kw.toFixed(1) : "—"}</td>
+      ${reductionCell}
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" data-dr-compute="${ev.id}" title="Run 10-of-10 baseline & performance">Compute</button>
+        <button class="btn btn-ghost btn-sm" data-dr-profile="${ev.id}" title="Show load profile chart">Chart</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--red,#e55)" data-dr-del-ev="${ev.id}">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  t.appendChild(tbody);
+  wrap.innerHTML = "";
+  wrap.appendChild(t);
+
+  wrap.querySelectorAll("[data-dr-compute]").forEach(btn => {
+    const id = +btn.dataset.drCompute;
+    btn.addEventListener("click", async () => {
+      btn.textContent = "…";
+      btn.disabled = true;
+      try {
+        await API.computeDREvent(id);
+        _renderDREvents();
+      } catch (e) {
+        alert("Compute failed: " + e.message);
+        btn.textContent = "Compute";
+        btn.disabled = false;
+      }
+    });
+  });
+
+  wrap.querySelectorAll("[data-dr-profile]").forEach(btn => {
+    const id = +btn.dataset.drProfile;
+    btn.addEventListener("click", () => _showDREventChart(id, events));
+  });
+
+  wrap.querySelectorAll("[data-dr-del-ev]").forEach(btn => {
+    const id = +btn.dataset.drDelEv;
+    btn.addEventListener("click", async () => {
+      if (!confirm("Delete this event?")) return;
+      await API.deleteDREvent(id);
+      _renderDREvents();
+    });
+  });
+}
+
+async function _showDREventChart(eventId, events) {
+  const chartWrap = document.getElementById("dr-event-chart-wrap");
+  const chartTitle = document.getElementById("dr-event-chart-title");
+  if (!chartWrap) return;
+
+  const ev = events.find(e => e.id === eventId);
+  if (ev) chartTitle.textContent = `Event Profile — ${ev.event_date} ${String(ev.start_hour).padStart(2,"0")}:00–${String(ev.end_hour).padStart(2,"0")}:00 ET`;
+
+  chartWrap.style.display = "";
+  chartWrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  let profile;
+  try { profile = await API.getDREventProfile(eventId); }
+  catch (e) { return; }
+
+  const t = T();
+  const traces = [
+    {
+      x: profile.timestamps,
+      y: profile.actual_kw,
+      name: "Actual kW",
+      type: "scatter",
+      mode: "lines",
+      line: { color: t.accent, width: 2 },
+    },
+  ];
+
+  if (profile.baseline_kw != null) {
+    traces.push({
+      x: [profile.timestamps[0], profile.timestamps[profile.timestamps.length - 1]],
+      y: [profile.baseline_kw, profile.baseline_kw],
+      name: "10-of-10 Baseline",
+      type: "scatter",
+      mode: "lines",
+      line: { color: "#e5850a", width: 2, dash: "dash" },
+    });
+  }
+
+  Plotly.newPlot("chart-dr-event", traces,
+    pLayout({ title: "", yaxis: { title: "kW" }, xaxis: { title: "Time (UTC)" } }), pCfg);
+}
+
+// ── Season Summary view ───────────────────────────────────────────────────────
+
+async function _renderDRSummary() {
+  let programs;
+  try { programs = await API.getDRPrograms(); }
+  catch (e) { return; }
+
+  const sel = document.getElementById("dr-summary-prog-select");
+  if (sel) {
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Select a program…</option>' +
+      programs.map(p => `<option value="${p.id}" ${String(p.id) === cur ? "selected" : ""}>${p.name}</option>`).join("");
+    if (!sel._drInited) {
+      sel._drInited = true;
+      sel.addEventListener("change", () => _loadDRSummary(+sel.value || null));
+    }
+    if (cur) _loadDRSummary(+cur);
+  }
+}
+
+async function _loadDRSummary(programId) {
+  const cardsEl = document.getElementById("dr-summary-kpi-cards");
+  const chartsEl = document.getElementById("dr-summary-charts");
+  if (!cardsEl) return;
+
+  if (!programId) { cardsEl.innerHTML = ""; if (chartsEl) chartsEl.style.display = "none"; return; }
+
+  let data;
+  try { data = await API.getDRSeasonSummary(programId); }
+  catch (e) { cardsEl.innerHTML = `<p class="hint">Error: ${e.message}</p>`; return; }
+
+  const prog = data.program;
+  const fmt = v => v != null ? v.toFixed(1) : "—";
+
+  cardsEl.innerHTML = `
+    <div class="comp-card"><div class="comp-card-label">Total Events</div>
+      <div class="comp-val" style="font-size:2rem">${data.total_events}</div>
+      <div class="hint">${data.completed_events} completed</div></div>
+    <div class="comp-card"><div class="comp-card-label">Avg kW Reduction</div>
+      <div class="comp-val" style="font-size:2rem;color:var(--green,#4caf50)">${fmt(data.avg_reduction_kw)} kW</div>
+      <div class="hint">Committed: ${prog.committed_kw != null ? prog.committed_kw.toFixed(1) + " kW" : "—"}</div></div>
+    <div class="comp-card"><div class="comp-card-label">% of Commitment</div>
+      <div class="comp-val" style="font-size:2rem;color:${data.pct_of_commitment >= 100 ? "var(--green,#4caf50)" : "var(--yellow,#f5a623)"}">${data.pct_of_commitment != null ? data.pct_of_commitment.toFixed(0) + "%" : "—"}</div>
+      <div class="hint">Based on avg reduction</div></div>
+    <div class="comp-card"><div class="comp-card-label">Est. Season Payment</div>
+      <div class="comp-val" style="font-size:2rem">${data.estimated_payment != null ? "$" + data.estimated_payment.toLocaleString() : "—"}</div>
+      <div class="hint">${prog.incentive_rate != null ? "$" + prog.incentive_rate + "/kW × avg reduction" : "Set incentive rate on program"}</div></div>`;
+
+  const completed = data.events.filter(e => e.reduction_kw != null);
+  if (completed.length && chartsEl) {
+    chartsEl.style.display = "";
+    const t = T();
+    const committed = prog.committed_kw;
+
+    const traces = [{
+      x: completed.map(e => e.event_date),
+      y: completed.map(e => e.reduction_kw),
+      name: "Reduction (kW)",
+      type: "bar",
+      marker: { color: completed.map(e => e.reduction_kw >= 0 ? t.accent : "#e55") },
+    }];
+
+    if (committed) {
+      traces.push({
+        x: [completed[0].event_date, completed[completed.length - 1].event_date],
+        y: [committed, committed],
+        name: "Committed kW",
+        type: "scatter",
+        mode: "lines",
+        line: { color: "#e5850a", dash: "dash", width: 2 },
+      });
+    }
+
+    Plotly.newPlot("chart-dr-performance", traces,
+      pLayout({ yaxis: yA({ title: "kW Reduction" }), xaxis: xA({ title: "Event Date" }) }), pCfg);
+  } else if (chartsEl) {
+    chartsEl.style.display = "none";
+  }
+}
+
+// ── Modals ────────────────────────────────────────────────────────────────────
+
+let _drEditProgId = null;
+let _drEditEvId = null;
+
+function _setupDRModals() {
+  // Program modal
+  const progModal = document.getElementById("dr-program-modal");
+  document.getElementById("dr-add-program-btn").addEventListener("click", () => _openProgramModal(null));
+  document.getElementById("drp-cancel").addEventListener("click", () => { progModal.style.display = "none"; });
+  progModal.addEventListener("click", e => { if (e.target === progModal) progModal.style.display = "none"; });
+  document.getElementById("drp-save").addEventListener("click", _saveDRProgram);
+
+  // Event modal
+  const evModal = document.getElementById("dr-event-modal");
+  document.getElementById("dr-add-event-btn").addEventListener("click", () => _openEventModal(null));
+  document.getElementById("dre-cancel").addEventListener("click", () => { evModal.style.display = "none"; });
+  evModal.addEventListener("click", e => { if (e.target === evModal) evModal.style.display = "none"; });
+  document.getElementById("dre-save").addEventListener("click", _saveDREvent);
+}
+
+function _openProgramModal(prog) {
+  _drEditProgId = prog ? prog.id : null;
+  document.getElementById("dr-program-modal-title").textContent = prog ? "Edit Program" : "Add Program";
+  document.getElementById("drp-name").value = prog?.name || "";
+  document.getElementById("drp-utility").value = prog?.utility || "Mass Save";
+  document.getElementById("drp-season-year").value = prog?.season_year || new Date().getFullYear();
+  document.getElementById("drp-season-start").value = prog?.season_start || "";
+  document.getElementById("drp-season-end").value = prog?.season_end || "";
+  document.getElementById("drp-win-start").value = prog?.event_window_start ?? 14;
+  document.getElementById("drp-win-end").value = prog?.event_window_end ?? 19;
+  document.getElementById("drp-committed-kw").value = prog?.committed_kw ?? "";
+  document.getElementById("drp-incentive-rate").value = prog?.incentive_rate ?? "";
+  document.getElementById("drp-panels").value = prog?.enrolled_panels ? prog.enrolled_panels.join(", ") : "";
+  document.getElementById("drp-notes").value = prog?.notes || "";
+  document.getElementById("dr-program-modal-error").textContent = "";
+  document.getElementById("dr-program-modal").style.display = "flex";
+}
+
+async function _saveDRProgram() {
+  const errEl = document.getElementById("dr-program-modal-error");
+  errEl.textContent = "";
+  const name = document.getElementById("drp-name").value.trim();
+  const seasonYear = +document.getElementById("drp-season-year").value;
+  if (!name) { errEl.textContent = "Name is required."; return; }
+  if (!seasonYear) { errEl.textContent = "Season year is required."; return; }
+
+  const panelStr = document.getElementById("drp-panels").value.trim();
+  const panels = panelStr ? panelStr.split(",").map(s => s.trim()).filter(Boolean) : [];
+
+  const data = {
+    name,
+    utility: document.getElementById("drp-utility").value.trim() || "Mass Save",
+    season_year: seasonYear,
+    season_start: document.getElementById("drp-season-start").value || null,
+    season_end: document.getElementById("drp-season-end").value || null,
+    event_window_start: +document.getElementById("drp-win-start").value,
+    event_window_end: +document.getElementById("drp-win-end").value,
+    committed_kw: document.getElementById("drp-committed-kw").value ? +document.getElementById("drp-committed-kw").value : null,
+    incentive_rate: document.getElementById("drp-incentive-rate").value ? +document.getElementById("drp-incentive-rate").value : null,
+    enrolled_panels: panels,
+    notes: document.getElementById("drp-notes").value.trim() || null,
+    active: true,
+  };
+
+  try {
+    if (_drEditProgId) await API.updateDRProgram(_drEditProgId, data);
+    else await API.createDRProgram(data);
+    document.getElementById("dr-program-modal").style.display = "none";
+    _renderDRPrograms();
+    _renderDRSummary();
+  } catch (e) {
+    errEl.textContent = "Save failed: " + e.message;
+  }
+}
+
+async function _openEventModal(ev) {
+  _drEditEvId = ev ? ev.id : null;
+  document.getElementById("dr-event-modal-title").textContent = ev ? "Edit Event" : "Add Event";
+
+  const programs = await API.getDRPrograms();
+  const progSel = document.getElementById("dre-program-id");
+  progSel.innerHTML = programs.map(p => `<option value="${p.id}">${p.name}</option>`).join("");
+
+  if (ev) {
+    progSel.value = ev.program_id;
+    document.getElementById("dre-date").value = ev.event_date;
+    document.getElementById("dre-start-hour").value = ev.start_hour;
+    document.getElementById("dre-end-hour").value = ev.end_hour;
+    document.getElementById("dre-notes").value = ev.notes || "";
+  } else {
+    const prog = programs[0];
+    if (prog) {
+      document.getElementById("dre-start-hour").value = prog.event_window_start;
+      document.getElementById("dre-end-hour").value = prog.event_window_end;
+    }
+    document.getElementById("dre-date").value = "";
+    document.getElementById("dre-notes").value = "";
+  }
+
+  document.getElementById("dr-event-modal-error").textContent = "";
+  document.getElementById("dr-event-modal").style.display = "flex";
+
+  progSel.addEventListener("change", () => {
+    const sel = programs.find(p => String(p.id) === progSel.value);
+    if (sel && !_drEditEvId) {
+      document.getElementById("dre-start-hour").value = sel.event_window_start;
+      document.getElementById("dre-end-hour").value = sel.event_window_end;
+    }
+  }, { once: true });
+}
+
+async function _saveDREvent() {
+  const errEl = document.getElementById("dr-event-modal-error");
+  errEl.textContent = "";
+  const programId = +document.getElementById("dre-program-id").value;
+  const eventDate = document.getElementById("dre-date").value;
+  if (!eventDate) { errEl.textContent = "Event date is required."; return; }
+
+  const data = {
+    program_id: programId,
+    event_date: eventDate,
+    start_hour: +document.getElementById("dre-start-hour").value,
+    end_hour: +document.getElementById("dre-end-hour").value,
+    notes: document.getElementById("dre-notes").value.trim() || null,
+  };
+
+  try {
+    if (_drEditEvId) await API.updateDREvent(_drEditEvId, data);
+    else await API.createDREvent(data);
+    document.getElementById("dr-event-modal").style.display = "none";
+    _renderDREvents();
+  } catch (e) {
+    errEl.textContent = "Save failed: " + e.message;
+  }
+}
