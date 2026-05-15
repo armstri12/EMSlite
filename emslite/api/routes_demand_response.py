@@ -11,7 +11,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..core import amps_to_kw, get_device_voltage_map, load_csv
+from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns
 from ..database import get_session
 from ..models import DREvent, DRProgram
 
@@ -428,6 +428,9 @@ def compute_event(event_id: int) -> dict[str, Any]:
 
         df = load_csv(master)
 
+        if not panels:
+            panels = meter_columns(df.columns)
+
         # Other event dates for this program (exclude from baseline candidates)
         other_events = (
             session.query(DREvent.event_date)
@@ -489,6 +492,10 @@ def event_profile(event_id: int) -> dict[str, Any]:
         panels = json.loads(prog.enrolled_panels) if prog.enrolled_panels else []
 
         df = load_csv(master)
+
+        if not panels:
+            panels = meter_columns(df.columns)
+
         total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor)
 
         df_et = df[["Timestamp"]].copy()
