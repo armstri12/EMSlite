@@ -25,6 +25,7 @@ from .routes_floorplans import router as floorplans_router
 from .routes_health import router as health_router
 from .routes_alerts import router as alerts_router
 from .routes_weather import router as weather_router
+from .routes_hvac import router as hvac_router
 from .routes_behavior import router as behavior_router
 from .routes_trending import router as trending_router
 from .routes_bills import router as bills_router
@@ -138,6 +139,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api")
     app.include_router(alerts_router, prefix="/api")
     app.include_router(weather_router, prefix="/api")
+    app.include_router(hvac_router, prefix="/api")
     app.include_router(behavior_router, prefix="/api")
     app.include_router(trending_router, prefix="/api")
     app.include_router(bills_router, prefix="/api")
