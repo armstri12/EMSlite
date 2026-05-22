@@ -246,6 +246,50 @@ const API = {
     return res.json();
   },
 
+  // ─── HVAC / weather correlation ───
+  async getHvacTemperatures(params = {}) {
+    const q = new URLSearchParams();
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    if (params.unit) q.set("unit", params.unit);
+    const res = await fetch("/api/hvac/temperatures?" + q.toString());
+    if (!res.ok) throw new Error(`getHvacTemperatures failed: ${res.status}`);
+    return res.json();
+  },
+
+  async uploadHvacTemperatures(data) {
+    const res = await fetch("/api/hvac/temperatures/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      let detail = res.status;
+      try { detail = (await res.json()).detail || detail; } catch (_) {}
+      throw new Error(`Upload failed: ${detail}`);
+    }
+    return res.json();
+  },
+
+  async clearHvacTemperatures() {
+    const res = await fetch("/api/hvac/temperatures", { method: "DELETE" });
+    if (!res.ok) throw new Error(`clearHvacTemperatures failed: ${res.status}`);
+    return res.json();
+  },
+
+  async getHvacAnalysis(params = {}) {
+    const q = new URLSearchParams();
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    if (params.unit) q.set("unit", params.unit);
+    if (params.balance_point !== undefined && params.balance_point !== "")
+      q.set("balance_point", String(params.balance_point));
+    if (params.panels && params.panels.length) q.set("panels", params.panels.join(","));
+    const res = await fetch("/api/hvac/analysis?" + q.toString());
+    if (!res.ok) throw new Error(`getHvacAnalysis failed: ${res.status}`);
+    return res.json();
+  },
+
   async getBehaviorRankings(params = {}) {
     const q = new URLSearchParams();
     if (params.start) q.set("start", params.start);

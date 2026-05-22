@@ -71,6 +71,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
       <span class="nav-label">ISO 50001</span>
     </a>
+    <a class="nav-item" data-tab="hvac">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+      <span class="nav-label">HVAC / Weather</span>
+    </a>
     <a class="nav-item" data-tab="sensors">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/></svg>
       <span class="nav-label">Sensors</span>
@@ -433,6 +437,92 @@
           <div id="corr-summary" class="hint"></div>
         </div>
       </section>
+    </div>
+
+    <!-- HVAC / WEATHER TAB -->
+    <div class="tab-content" id="tab-hvac">
+      <div class="panel">
+        <div class="panel-title">Temperature vs. Energy Analysis</div>
+        <p class="hint" style="margin:0 0 10px">
+          Correlates daily energy use against outdoor temperature to size HVAC
+          load, separate it from baseload, and flag days that deviate from the
+          temperature-predicted baseline.
+        </p>
+        <div class="correlation-controls">
+          <label>Start <input type="date" id="hvac-start"/></label>
+          <label>End <input type="date" id="hvac-end"/></label>
+          <label>Display unit<br>
+            <select id="hvac-display-unit">
+              <option value="fahrenheit">Fahrenheit (&deg;F)</option>
+              <option value="celsius">Celsius (&deg;C)</option>
+            </select>
+          </label>
+          <label>Balance point (<span class="hvac-deg">&deg;F</span>)<br>
+            <input type="number" step="0.5" id="hvac-balance"/></label>
+          <label>HVAC panels<br>
+            <select id="hvac-panel-select" multiple size="4"></select></label>
+          <button type="button" id="hvac-run">Update analysis</button>
+        </div>
+        <div class="hint" id="hvac-coverage"></div>
+      </div>
+
+      <details class="metric-bulk-block hvac-upload">
+        <summary>Upload daily temperature CSV (date, avg, min, max)</summary>
+        <div class="hvac-upload-body">
+          <p class="hint" style="margin:8px 0">
+            One row per day. Header optional. Min/max columns are optional.
+            Example: <code>2026-04-01,58,47,69</code>
+          </p>
+          <label>Values are in
+            <select id="hvac-upload-unit">
+              <option value="fahrenheit">Fahrenheit (&deg;F)</option>
+              <option value="celsius">Celsius (&deg;C)</option>
+            </select>
+          </label>
+          <label style="margin-left:12px">
+            <input type="checkbox" id="hvac-upload-replace"/> Replace all existing rows
+          </label>
+          <textarea id="hvac-upload-csv" rows="6"
+            placeholder="date,avg_temp,min_temp,max_temp&#10;2026-04-01,58,47,69&#10;2026-04-02,61,50,72"></textarea>
+          <div class="hvac-upload-actions">
+            <button type="button" id="hvac-upload-btn">Upload</button>
+            <button type="button" id="hvac-clear-btn" class="btn-mini">Clear stored data</button>
+            <span class="hint" id="hvac-upload-status"></span>
+          </div>
+          <div class="hint" id="hvac-stored-info"></div>
+        </div>
+      </details>
+
+      <div class="comp-grid" id="hvac-kpi-cards"></div>
+
+      <div class="panel" id="hvac-insights-panel" style="display:none;margin-bottom:var(--card-gap)">
+        <div class="panel-title">HVAC Efficiency Insights</div>
+        <ul class="hvac-insights" id="hvac-insights"></ul>
+      </div>
+
+      <div class="charts-grid">
+        <div class="panel panel-12">
+          <div class="panel-title">Energy Signature &mdash; Daily kWh vs. Outdoor Temperature</div>
+          <div class="chart-area" id="hvac-chart-scatter"></div>
+        </div>
+        <div class="panel panel-12">
+          <div class="panel-title">Daily Energy vs. Temperature &mdash; Anomalies Highlighted</div>
+          <div class="chart-area" id="hvac-chart-timeseries"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Energy Breakdown &mdash; Baseload vs. Weather-Driven</div>
+          <div class="chart-area" id="hvac-chart-split"></div>
+        </div>
+        <div class="panel panel-6">
+          <div class="panel-title">Heating &amp; Cooling Degree Days</div>
+          <div class="chart-area" id="hvac-chart-dd"></div>
+        </div>
+      </div>
+
+      <div class="panel" id="hvac-anomaly-panel" style="display:none;margin-top:var(--card-gap)">
+        <div class="panel-title">Anomaly Days &mdash; Energy Above / Below Temperature Prediction</div>
+        <div id="hvac-anomaly-table"></div>
+      </div>
     </div>
 
     <!-- WIRELESS SENSORS TAB -->

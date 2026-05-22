@@ -24,6 +24,7 @@ let ALERTS_INCLUDE_ACK = false;
 let ALERTS_WINDOW_HOURS = 24;
 let WEATHER = { enabled: false, timestamps: [], temperature_c: [], humidity_pct: [], unit: "celsius" };
 let WEATHER_OVERLAY = { temperature: false, humidity: false };
+let TEMP_UNIT = "celsius";   // configured display unit for temperatures
 
 /* ─── Admin Auth State ─── */
 const ADMIN_TABS = new Set(["data","devices","alerts","health","sensors","email-summary"]);
@@ -81,6 +82,7 @@ async function initDashboard() {
     try {
       const cfg = await API.getConfig();
       const wCfg = (cfg && cfg.weather) || {};
+      TEMP_UNIT = wCfg.unit === "fahrenheit" ? "fahrenheit" : "celsius";
       if (wCfg.enabled && wCfg.station_id && DATE_MIN && DATE_MAX) {
         WEATHER = await API.getWeather({ start: DATE_MIN, end: DATE_MAX });
       }
@@ -123,6 +125,7 @@ const tabState = {
   behavior:   { panel: "", startDate: "", endDate: "", view: "rankings" },
   trending:   { panel: "", startDate: "", endDate: "", periodDays: 7, view: "snapshot" },
   iso50001:   { panels: new Set(), startDate: "", endDate: "", department: "", baselineStart: "", baselineEnd: "" },
+  hvac:       { panels: [], startDate: "", endDate: "" },
   "email-summary": { panels: new Set(), startDate: "", endDate: "", priorStart: "", priorEnd: "" },
   "demand-response": { view: "programs", programId: null, eventId: null },
 };
@@ -146,6 +149,9 @@ function initTabState() {
   tabState.iso50001.panels    = new Set(ALL_PANELS);
   tabState.iso50001.startDate = DATE_MIN;
   tabState.iso50001.endDate   = DATE_MAX;
+
+  tabState.hvac.startDate = DATE_MIN;
+  tabState.hvac.endDate   = DATE_MAX;
 
   tabState["email-summary"].panels    = new Set(ALL_PANELS);
   tabState["email-summary"].startDate = DATE_MIN;
@@ -1849,6 +1855,7 @@ function renderTab(tabKey) {
   else if (tabKey === "trending")   renderTrendingTab();
   else if (tabKey === "production") renderProductionTab();
   else if (tabKey === "iso50001")      renderISO50001();
+  else if (tabKey === "hvac")          renderHvacTab();
   else if (tabKey === "sensors")       renderSensorsTab();
   else if (tabKey === "email-summary") renderEmailSummaryTab();
   else if (tabKey === "demand-response") renderDemandResponseTab();
@@ -3197,6 +3204,416 @@ async function runCorrelation() {
     console.error("Correlation failed:", err);
     if (summary) summary.textContent = "Correlation failed: " + err.message;
   }
+}
+
+/* ═══════════════════════════════════════════════════════
+   HVAC / WEATHER TAB
+   ═══════════════════════════════════════════════════════ */
+
+function hvacDeg() { return tabState.hvac.unit === "fahrenheit" ? "°F" : "°C"; }
+
+function syncHvacUnitLabels() {
+  const deg = hvacDeg();
+  document.querySelectorAll("#tab-hvac .hvac-deg").forEach((el) => { el.textContent = deg; });
+}
+
+async function renderHvacTab() {
+  const container = document.getElementById("tab-hvac");
+  if (!container) return;
+  const st = tabState.hvac;
+  if (!st.unit) st.unit = TEMP_UNIT;
+
+  const psel = document.getElementById("hvac-panel-select");
+  if (psel && !psel.dataset.filled) {
+    psel.dataset.filled = "1";
+    psel.innerHTML = ALL_PANELS
+      .map((p) => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`)
+      .join("");
+  }
+
+  const startEl = document.getElementById("hvac-start");
+  const endEl = document.getElementById("hvac-end");
+  if (startEl && !startEl.value) startEl.value = st.startDate || DATE_MIN;
+  if (endEl && !endEl.value) endEl.value = st.endDate || DATE_MAX;
+
+  const duSel = document.getElementById("hvac-display-unit");
+  if (duSel && !duSel.dataset.init) { duSel.dataset.init = "1"; duSel.value = st.unit; }
+  const uuSel = document.getElementById("hvac-upload-unit");
+  if (uuSel && !uuSel.dataset.init) { uuSel.dataset.init = "1"; uuSel.value = st.unit; }
+
+  syncHvacUnitLabels();
+  const balEl = document.getElementById("hvac-balance");
+  if (balEl && !balEl.value) balEl.value = st.unit === "fahrenheit" ? 65 : 18;
+
+  if (!container.dataset.wired) {
+    container.dataset.wired = "1";
+    document.getElementById("hvac-run").addEventListener("click", runHvacAnalysis);
+    document.getElementById("hvac-upload-btn").addEventListener("click", uploadHvacCsv);
+    document.getElementById("hvac-clear-btn").addEventListener("click", clearHvacData);
+    duSel.addEventListener("change", () => {
+      st.unit = duSel.value === "fahrenheit" ? "fahrenheit" : "celsius";
+      document.getElementById("hvac-balance").value = st.unit === "fahrenheit" ? 65 : 18;
+      syncHvacUnitLabels();
+      runHvacAnalysis();
+    });
+  }
+
+  await refreshHvacStoredInfo();
+  runHvacAnalysis();
+}
+
+async function refreshHvacStoredInfo() {
+  const el = document.getElementById("hvac-stored-info");
+  if (!el) return;
+  try {
+    const res = await API.getHvacTemperatures({ unit: tabState.hvac.unit });
+    if (!res.count) {
+      el.textContent = "No temperature data stored yet — upload a CSV above. "
+        + "Until then the analysis falls back to cached NOAA weather, if available.";
+    } else {
+      const first = res.items[0].entry_date;
+      const last = res.items[res.items.length - 1].entry_date;
+      el.textContent = `${res.count} day(s) of uploaded temperature data (${first} → ${last}).`;
+    }
+  } catch (_e) {
+    el.textContent = "";
+  }
+}
+
+async function uploadHvacCsv() {
+  const status = document.getElementById("hvac-upload-status");
+  const csv = document.getElementById("hvac-upload-csv").value.trim();
+  if (!csv) { if (status) status.textContent = "Paste CSV rows first."; return; }
+  const unit = document.getElementById("hvac-upload-unit").value;
+  const replace = document.getElementById("hvac-upload-replace").checked;
+  if (status) status.textContent = "Uploading…";
+  try {
+    const res = await API.uploadHvacTemperatures({ csv, unit, replace });
+    let msg = `Inserted ${res.inserted}, updated ${res.updated}. ${res.total} day(s) stored.`;
+    if (res.errors && res.errors.length) {
+      msg += ` ${res.errors.length} row(s) skipped: ` + res.errors.slice(0, 3).join("; ");
+    }
+    if (status) status.textContent = msg;
+    document.getElementById("hvac-upload-csv").value = "";
+    await refreshHvacStoredInfo();
+    runHvacAnalysis();
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+}
+
+async function clearHvacData() {
+  if (!confirm("Delete all stored daily temperature data?")) return;
+  const status = document.getElementById("hvac-upload-status");
+  try {
+    const res = await API.clearHvacTemperatures();
+    if (status) status.textContent = `Deleted ${res.deleted} row(s).`;
+    await refreshHvacStoredInfo();
+    runHvacAnalysis();
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+}
+
+async function runHvacAnalysis() {
+  const st = tabState.hvac;
+  st.startDate = document.getElementById("hvac-start").value || "";
+  st.endDate = document.getElementById("hvac-end").value || "";
+  const balance_point = document.getElementById("hvac-balance").value;
+  st.panels = Array.from(
+    document.getElementById("hvac-panel-select").selectedOptions
+  ).map((o) => o.value);
+
+  const cov = document.getElementById("hvac-coverage");
+  if (cov) cov.textContent = "Running analysis…";
+  let data;
+  try {
+    data = await API.getHvacAnalysis({
+      start: st.startDate || undefined,
+      end: st.endDate || undefined,
+      unit: st.unit,
+      balance_point,
+      panels: st.panels,
+    });
+  } catch (err) {
+    console.error("HVAC analysis failed:", err);
+    if (cov) cov.textContent = "Analysis failed: " + err.message;
+    return;
+  }
+  renderHvacResults(data);
+}
+
+function renderHvacResults(data) {
+  const cov = document.getElementById("hvac-coverage");
+  const c = data.coverage || {};
+  const deg = data.unit === "fahrenheit" ? "°F" : "°C";
+
+  if (cov) {
+    cov.textContent =
+      `${c.matched_days || 0} day(s) with both energy & temperature `
+      + `· ${c.uploaded_days || 0} uploaded, ${c.noaa_days || 0} from NOAA cache `
+      + `· balance point ${data.balance_point}${deg} `
+      + `· ${(data.panels || []).length} panel(s)`;
+  }
+
+  const kpiEl = document.getElementById("hvac-kpi-cards");
+  const insPanel = document.getElementById("hvac-insights-panel");
+  const anomPanel = document.getElementById("hvac-anomaly-panel");
+
+  if (!data.ok) {
+    if (kpiEl) {
+      kpiEl.innerHTML =
+        `<div class="comp-card" style="grid-column:1/-1">
+          <div class="comp-card-label">Not enough data</div>
+          <div style="font-size:0.85rem;color:var(--muted);margin-top:6px">
+            ${escapeHtml(data.message || "Upload daily temperatures to run the analysis.")}</div>
+        </div>`;
+    }
+    if (insPanel) insPanel.style.display = "none";
+    if (anomPanel) anomPanel.style.display = "none";
+    ["hvac-chart-scatter", "hvac-chart-timeseries", "hvac-chart-split", "hvac-chart-dd"]
+      .forEach((id) => { const el = document.getElementById(id); if (el) Plotly.purge(el); });
+    return;
+  }
+
+  // Data sections first so a chart-library hiccup can't hide the numbers.
+  renderHvacKpis(data);
+  renderHvacInsights(data);
+  renderHvacAnomalyTable(data);
+  renderHvacScatter(data);
+  renderHvacTimeseries(data);
+  renderHvacSplit(data);
+  renderHvacDegreeDays(data);
+}
+
+function renderHvacKpis(data) {
+  const el = document.getElementById("hvac-kpi-cards");
+  if (!el) return;
+  const m = data.model || {}, s = data.split || {}, tot = data.totals || {};
+  const deg = data.unit === "fahrenheit" ? "°F" : "°C";
+  const r = m.pearson_r || 0;
+  const ar = Math.abs(r);
+  const strength = ar >= 0.8 ? "very strong" : ar >= 0.6 ? "strong"
+    : ar >= 0.4 ? "moderate" : ar >= 0.2 ? "weak" : "negligible";
+  const anomCount = (data.anomalies || []).length;
+
+  const card = (label, val, sub) =>
+    `<div class="comp-card">
+      <div class="comp-card-label">${label}</div>
+      <div class="an-metric-main">${val}</div>
+      <div style="font-size:0.72rem;color:var(--muted);margin-top:4px">${sub || ""}</div>
+    </div>`;
+
+  el.innerHTML =
+    card("Temp Correlation", (r >= 0 ? "+" : "") + r.toFixed(2), strength + " (Pearson r)")
+    + card("Model Fit R²", ((m.r2 || 0) * 100).toFixed(0) + "%", "variance explained by temperature")
+    + card("Baseload", (m.baseload_kwh_per_day || 0).toFixed(1) + " kWh/day",
+           (s.baseload_pct || 0).toFixed(0) + "% of modeled energy")
+    + card("Cooling Sensitivity", (m.cooling_slope || 0).toFixed(1) + " kWh/CDD",
+           "per °-day above " + data.balance_point + deg)
+    + card("Heating Sensitivity", (m.heating_slope || 0).toFixed(1) + " kWh/HDD",
+           "per °-day below " + data.balance_point + deg)
+    + card("Anomaly Days", String(anomCount),
+           "of " + (tot.n_days || 0) + " days off baseline");
+}
+
+function renderHvacInsights(data) {
+  const panel = document.getElementById("hvac-insights-panel");
+  const ul = document.getElementById("hvac-insights");
+  if (!panel || !ul) return;
+  const items = data.insights || [];
+  if (!items.length) { panel.style.display = "none"; return; }
+  panel.style.display = "";
+  ul.innerHTML = items.map((txt) => `<li>${escapeHtml(txt)}</li>`).join("");
+}
+
+function renderHvacScatter(data) {
+  const el = document.getElementById("hvac-chart-scatter");
+  if (!el) return;
+  const t = T();
+  const deg = data.unit === "fahrenheit" ? "°F" : "°C";
+  const days = data.days || [];
+
+  const groups = {
+    normal: { x: [], y: [], text: [] },
+    high: { x: [], y: [], text: [] },
+    low: { x: [], y: [], text: [] },
+  };
+  days.forEach((d) => {
+    const g = d.anomaly === "high" ? groups.high
+      : d.anomaly === "low" ? groups.low : groups.normal;
+    g.x.push(d.avg_temp); g.y.push(d.kwh); g.text.push(d.date);
+  });
+
+  const pt = (g, name, color) => ({
+    type: "scatter", mode: "markers", name,
+    x: g.x, y: g.y, text: g.text,
+    hovertemplate: "%{text}<br>%{x:.1f}" + deg + "<br>%{y:.0f} kWh<extra>" + name + "</extra>",
+    marker: { color, size: 8, opacity: 0.82, line: { width: 0 } },
+  });
+  const traces = [];
+  if (groups.normal.x.length) traces.push(pt(groups.normal, "Normal", t.muted));
+  if (groups.high.x.length) traces.push(pt(groups.high, "Above prediction", "#C41230"));
+  if (groups.low.x.length) traces.push(pt(groups.low, "Below prediction", "#398EB9"));
+
+  const sc = data.scatter || {};
+  if (sc.fit_temps && sc.fit_temps.length) {
+    traces.push({
+      type: "scatter", mode: "lines", name: "Model fit",
+      x: sc.fit_temps, y: sc.fit_kwh,
+      line: { color: "#F97316", width: 3 }, hoverinfo: "skip",
+    });
+  }
+
+  Plotly.react(el, traces, pLayout({
+    margin: { t: 16, l: 60, r: 20, b: 52 },
+    xaxis: xA({ title: { text: "Avg outdoor temperature (" + deg + ")" } }),
+    yaxis: yA({ title: { text: "Daily energy (kWh)" } }),
+    shapes: [{
+      type: "line", xref: "x", yref: "paper",
+      x0: data.balance_point, x1: data.balance_point, y0: 0, y1: 1,
+      line: { color: t.muted, width: 1, dash: "dot" },
+    }],
+    legend: { orientation: "h", y: -0.24 },
+    hovermode: "closest",
+  }), pCfg);
+}
+
+function renderHvacTimeseries(data) {
+  const el = document.getElementById("hvac-chart-timeseries");
+  if (!el) return;
+  const t = T();
+  const deg = data.unit === "fahrenheit" ? "°F" : "°C";
+  const days = data.days || [];
+  const dates = days.map((d) => d.date);
+
+  const traces = [
+    {
+      type: "bar", name: "Actual kWh",
+      x: dates, y: days.map((d) => d.kwh),
+      marker: { color: t.series[2] }, yaxis: "y",
+    },
+    {
+      type: "scatter", mode: "lines", name: "Predicted kWh",
+      x: dates, y: days.map((d) => d.predicted_kwh),
+      line: { color: "#F97316", width: 2 }, yaxis: "y",
+    },
+    {
+      type: "scatter", mode: "lines", name: "Avg temp",
+      x: dates, y: days.map((d) => d.avg_temp),
+      line: { color: t.muted, width: 1.5, dash: "dot" }, yaxis: "y2",
+    },
+  ];
+  const anom = days.filter((d) => d.anomaly);
+  if (anom.length) {
+    traces.push({
+      type: "scatter", mode: "markers", name: "Anomaly",
+      x: anom.map((d) => d.date), y: anom.map((d) => d.kwh),
+      marker: {
+        color: anom.map((d) => (d.anomaly === "high" ? "#C41230" : "#398EB9")),
+        size: 11, symbol: "diamond", line: { color: t.card, width: 1 },
+      },
+      yaxis: "y",
+      hovertemplate: "%{x}<br>%{y:.0f} kWh<extra>Anomaly</extra>",
+    });
+  }
+
+  Plotly.react(el, traces, pLayout({
+    margin: { t: 16, l: 58, r: 58, b: 52 },
+    xaxis: xA({ title: { text: "Date" } }),
+    yaxis: yA({ title: { text: "Daily energy (kWh)" } }),
+    yaxis2: {
+      title: { text: "Temp (" + deg + ")" }, overlaying: "y", side: "right",
+      showgrid: false, zeroline: false,
+    },
+    legend: { orientation: "h", y: -0.24 },
+    hovermode: "x unified",
+  }), pCfg);
+}
+
+function renderHvacSplit(data) {
+  const el = document.getElementById("hvac-chart-split");
+  if (!el) return;
+  const t = T();
+  const s = data.split || {};
+  const vals = [s.baseload_kwh || 0, s.heating_kwh || 0, s.cooling_kwh || 0];
+  const labels = ["Baseload", "Heating", "Cooling"];
+  const colors = [t.muted, "#C41230", "#398EB9"];
+  const keep = [0, 1, 2].filter((i) => vals[i] > 0.01);
+
+  Plotly.react(el, [{
+    type: "pie", hole: 0.55,
+    labels: keep.map((i) => labels[i]),
+    values: keep.map((i) => vals[i]),
+    marker: { colors: keep.map((i) => colors[i]) },
+    textinfo: "label+percent",
+    hovertemplate: "%{label}<br>%{value:.0f} kWh (%{percent})<extra></extra>",
+  }], pLayout({
+    margin: { t: 16, l: 16, r: 16, b: 16 },
+    showlegend: false,
+  }), pCfg);
+}
+
+function renderHvacDegreeDays(data) {
+  const el = document.getElementById("hvac-chart-dd");
+  if (!el) return;
+  const days = data.days || [];
+  const dates = days.map((d) => d.date);
+
+  Plotly.react(el, [
+    {
+      type: "bar", name: "Heating degree-days",
+      x: dates, y: days.map((d) => d.hdd),
+      marker: { color: "#C41230" },
+    },
+    {
+      type: "bar", name: "Cooling degree-days",
+      x: dates, y: days.map((d) => d.cdd),
+      marker: { color: "#398EB9" },
+    },
+  ], pLayout({
+    barmode: "stack",
+    margin: { t: 16, l: 50, r: 16, b: 52 },
+    xaxis: xA({ title: { text: "Date" } }),
+    yaxis: yA({ title: { text: "Degree-days" } }),
+    legend: { orientation: "h", y: -0.24 },
+  }), pCfg);
+}
+
+function renderHvacAnomalyTable(data) {
+  const panel = document.getElementById("hvac-anomaly-panel");
+  const wrap = document.getElementById("hvac-anomaly-table");
+  if (!panel || !wrap) return;
+  const anom = data.anomalies || [];
+  if (!anom.length) { panel.style.display = "none"; return; }
+  panel.style.display = "";
+  const deg = data.unit === "fahrenheit" ? "°F" : "°C";
+
+  const rows = anom.map((a) => {
+    const sev = a.severity === "high"
+      ? '<span class="hvac-badge hvac-badge-high">Above</span>'
+      : '<span class="hvac-badge hvac-badge-low">Below</span>';
+    const excess = a.excess_kwh ?? 0;
+    const pct = a.pct;
+    return `<tr>
+      <td>${escapeHtml(a.date)}</td>
+      <td>${(a.avg_temp ?? 0).toFixed(1)}${deg}</td>
+      <td>${(a.kwh ?? 0).toFixed(0)}</td>
+      <td>${(a.predicted_kwh ?? 0).toFixed(0)}</td>
+      <td>${(excess >= 0 ? "+" : "") + excess.toFixed(0)}</td>
+      <td>${pct == null ? "—" : (pct >= 0 ? "+" : "") + pct.toFixed(0) + "%"}</td>
+      <td>${sev}</td>
+    </tr>`;
+  }).join("");
+
+  wrap.innerHTML = `
+    <table class="metric-entries-table hvac-anomaly-table">
+      <thead><tr>
+        <th>Date</th><th>Avg Temp</th><th>Actual kWh</th><th>Predicted kWh</th>
+        <th>Deviation</th><th>%</th><th>Type</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 /* ═══════════════════════════════════════════════════════

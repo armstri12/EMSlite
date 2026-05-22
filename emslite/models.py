@@ -241,6 +241,36 @@ class WeatherCache(Base):
         }
 
 
+class DailyTemperature(Base):
+    """User-uploaded daily temperature observations for HVAC/weather analysis.
+
+    Values are stored in Celsius regardless of the unit they were uploaded
+    in, so analysis math has a single canonical unit. ``min``/``max`` are
+    optional. Uploaded rows override NOAA cache data for the same date.
+    """
+
+    __tablename__ = "daily_temperatures"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    entry_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    avg_temp_c: Mapped[float] = mapped_column(Float, nullable=False)
+    min_temp_c: Mapped[float | None] = mapped_column(Float, default=None)
+    max_temp_c: Mapped[float | None] = mapped_column(Float, default=None)
+    source: Mapped[str] = mapped_column(String(16), default="upload")
+    notes: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        return {
+            "entry_date": self.entry_date.isoformat() if self.entry_date else None,
+            "avg_temp_c": self.avg_temp_c,
+            "min_temp_c": self.min_temp_c,
+            "max_temp_c": self.max_temp_c,
+            "source": self.source,
+            "notes": self.notes,
+        }
+
+
 class UtilityBill(Base):
     """Utility bill records for tracking actual costs per meter."""
 
