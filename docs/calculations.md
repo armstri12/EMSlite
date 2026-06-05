@@ -92,6 +92,14 @@ bill, and derives `suggested_calibration_factor` against the target **gross**
 consumption (`billed_energy + solar_kwh`). The reconciliation script takes
 `--solar-kwh`.
 
+For an apples-to-apples energy check, record the **net kWh printed on the bill**
+via the `billed_kwh` field on a `UtilityBill`. When present, `bill_comparison`
+uses it as `billed_energy` directly (returning `billed_kwh` and
+`kwh_difference = net_kwh − billed_kwh`) instead of inferring it from
+`amount / price_per_kwh`, which makes both the difference and the
+`suggested_calibration_factor` independent of the price assumption. The
+reconciliation script takes the equivalent `--bill-kwh`.
+
 ### Avoiding double-counting (`aggregate_columns`)
 
 The facility total sums every meter column except those returned by

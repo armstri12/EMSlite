@@ -23,6 +23,7 @@ class BillCreate(BaseModel):
     period_end: str  # ISO date
     bill_date: str | None = None
     amount: float
+    billed_kwh: float | None = None
     solar_kwh: float | None = None
     notes: str | None = None
 
@@ -33,6 +34,7 @@ class BillUpdate(BaseModel):
     period_end: str | None = None
     bill_date: str | None = None
     amount: float | None = None
+    billed_kwh: float | None = None
     solar_kwh: float | None = None
     notes: str | None = None
 
@@ -62,6 +64,7 @@ def create_bill(body: BillCreate) -> dict[str, Any]:
             period_end=date.fromisoformat(body.period_end),
             bill_date=date.fromisoformat(body.bill_date) if body.bill_date else None,
             amount=body.amount,
+            billed_kwh=body.billed_kwh,
             solar_kwh=body.solar_kwh,
             notes=body.notes,
         )
@@ -95,6 +98,8 @@ def update_bill(bill_id: int, body: BillUpdate) -> dict[str, Any]:
             bill.bill_date = date.fromisoformat(body.bill_date) if body.bill_date else None
         if body.amount is not None:
             bill.amount = body.amount
+        if body.billed_kwh is not None:
+            bill.billed_kwh = body.billed_kwh
         if body.solar_kwh is not None:
             bill.solar_kwh = body.solar_kwh
         if body.notes is not None:
@@ -209,13 +214,26 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
         net_kwh = total_kwh - solar_kwh
         calculated_cost = round(net_kwh * price_per_kwh, 2)
 
+        # Prefer the kWh printed on the bill for an apples-to-apples energy
+        # comparison; fall back to inferring it from amount / price only when the
+        # user didn't record the billed kWh.
+        billed_kwh = float(bill.billed_kwh) if bill.billed_kwh is not None else None
+        bill_net_kwh = billed_kwh if billed_kwh is not None else (
+            bill.amount / price_per_kwh if price_per_kwh > 0 else None
+        )
+
+        # Net computed energy minus what the utility billed (kWh). Positive means
+        # we metered more than the bill; negative means less.
+        kwh_difference = (
+            round(net_kwh - bill_net_kwh, 2) if bill_net_kwh is not None else None
+        )
+
         # Suggested calibration_factor to make NET computed energy match this bill.
         # Target gross consumption = billed energy + solar. Multiplying by the
         # current factor keeps it idempotent (≈ current value once calibrated).
         suggested_calibration_factor = None
-        if total_kwh > 0 and price_per_kwh > 0:
-            bill_kwh_equiv = bill.amount / price_per_kwh  # net energy billed
-            target_gross = bill_kwh_equiv + solar_kwh
+        if total_kwh > 0 and bill_net_kwh is not None:
+            target_gross = bill_net_kwh + solar_kwh
             suggested_calibration_factor = round(
                 calibration_factor * (target_gross / total_kwh), 4
             )
@@ -224,11 +242,13 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
             "bill_id": bill.id,
             "meter_name": bill.meter_name,
             "bill_amount": bill.amount,
+            "billed_kwh": round(billed_kwh, 2) if billed_kwh is not None else None,
             "calculated_cost": calculated_cost,
             "difference": round(bill.amount - calculated_cost, 2),
             "total_kwh": round(total_kwh, 2),          # gross metered consumption
             "solar_kwh": round(solar_kwh, 2),
             "net_kwh": round(net_kwh, 2),              # consumption − solar (≈ billed)
+            "kwh_difference": kwh_difference,          # net metered − billed (kWh)
             "device_count": len(device_ids),
             "power_factor": power_factor,
             "calibration_factor": calibration_factor,

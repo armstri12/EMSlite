@@ -12,7 +12,7 @@ from emslite.core import (
     meter_columns,
     meter_factors,
 )
-from emslite.metrics import compute_kpi, integrate_kwh
+from emslite.metrics import compute_kpi, compute_panel_rankings, integrate_kwh
 
 SQRT3 = 3 ** 0.5
 
@@ -100,3 +100,38 @@ def test_per_panel_calibration_in_compute_kpi():
     mixed = compute_kpi(df, 480.0, 1.0, panel_cols=["P1", "P2"], calibration_map={"P1": 2.0})["total_kwh"]
     # P1 doubled, P2 unchanged, equal panels → 1.5× the base total
     assert mixed == pytest.approx(1.5 * base, abs=0.01)
+
+
+def test_voltage_override_scales_amps_to_kw():
+    # A 460 V air handler converts at 460/480 of the 480 V default for the same amps.
+    base = amps_to_kw(pd.Series([100.0]), 480.0, 1.0, 1.0).iloc[0]
+    assert amps_to_kw(pd.Series([100.0]), 460.0, 1.0, 1.0).iloc[0] == pytest.approx(
+        base * 460.0 / 480.0
+    )
+
+
+def test_voltage_map_override_in_compute_kpi():
+    """A per-device voltage override must flow through into the kWh total."""
+    ts = pd.date_range("2026-05-01", periods=9, freq="15min", tz="UTC")
+    df = pd.DataFrame({"Timestamp": ts, "AHU1": [100.0] * 9, "AHU2": [100.0] * 9})
+    # Both panels at the 480 V default.
+    base = compute_kpi(df, 480.0, 1.0, panel_cols=["AHU1", "AHU2"])["total_kwh"]
+    # AHU1 is a 460 V air handler; AHU2 keeps the 480 V default.
+    mixed = compute_kpi(
+        df, 480.0, 1.0, panel_cols=["AHU1", "AHU2"], voltage_map={"AHU1": 460.0}
+    )["total_kwh"]
+    # Equal panels → total scales by the mean of the two voltage ratios.
+    expected = base * (460.0 + 480.0) / (2 * 480.0)
+    assert mixed == pytest.approx(expected, abs=0.02)  # abs: total_kwh is rounded to 2dp
+    assert mixed < base  # 460 V draws less computed energy than 480 V
+
+
+def test_voltage_map_override_in_panel_rankings():
+    """The override must change a single panel's ranked energy by the V ratio."""
+    ts = pd.date_range("2026-05-01", periods=9, freq="15min", tz="UTC")
+    df = pd.DataFrame({"Timestamp": ts, "AHU1": [100.0] * 9})
+    base = compute_panel_rankings(df, 480.0, 1.0, panel_cols=["AHU1"])[0]["total_kwh"]
+    over = compute_panel_rankings(
+        df, 480.0, 1.0, panel_cols=["AHU1"], voltage_map={"AHU1": 460.0}
+    )[0]["total_kwh"]
+    assert over == pytest.approx(base * 460.0 / 480.0, abs=0.02)  # total_kwh rounded to 2dp

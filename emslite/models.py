@@ -282,6 +282,11 @@ class UtilityBill(Base):
     period_end: Mapped[date] = mapped_column(Date, nullable=False)
     bill_date: Mapped[date | None] = mapped_column(Date, default=None)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
+    # NET energy (kWh) billed by the utility for this period, as printed on the
+    # bill. Captured so reconciliation can compare metered net kWh directly
+    # against the utility's number (apples to apples) instead of inferring it
+    # from amount / price_per_kwh.
+    billed_kwh: Mapped[float | None] = mapped_column(Float, default=None)
     # On-site generation (kWh) during the period that offset this meter. The
     # utility bills NET energy (consumption − solar), so reconciliation compares
     # metered consumption against (billed energy + solar_kwh).
@@ -297,6 +302,7 @@ class UtilityBill(Base):
             "period_end": self.period_end.isoformat() if self.period_end else None,
             "bill_date": self.bill_date.isoformat() if self.bill_date else None,
             "amount": self.amount,
+            "billed_kwh": self.billed_kwh,
             "solar_kwh": self.solar_kwh,
             "notes": self.notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
