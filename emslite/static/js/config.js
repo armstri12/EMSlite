@@ -218,6 +218,9 @@ async function showDeviceEditPanel(deviceId) {
       enabled: document.getElementById("edit-enabled").checked,
     };
     await API.updateDevice(deviceId, data);
+    // A device's voltage / meter assignment feeds the bill comparison's metered
+    // kWh, so drop cached comparisons to force a recompute with the new factors.
+    billComparisons = {};
     closePanel();
     renderDevicesTab();
   });
@@ -865,6 +868,21 @@ async function renderBillsSection() {
           suggestCell = `<button class="btn btn-ghost btn-sm apply-cal-btn" data-meter="${encodeURIComponent(bill.meter_name)}" data-cal="${comp.suggested_calibration_factor}" title="Set this meter's calibration factor to ${comp.suggested_calibration_factor}">Calibrate → ${comp.suggested_calibration_factor}</button>`;
         }
         const solarVal = (bill.solar_kwh != null) ? bill.solar_kwh : (comp ? comp.solar_kwh : null);
+        // Show the correction factors that actually fed the metered kWh, so it's
+        // visible that PF / calibration / per-device voltage were incorporated.
+        let factorsNote = '';
+        if (comp && comp.calibration_factor != null) {
+          const v = (comp.voltages_used && comp.voltages_used.length)
+            ? (comp.voltages_used.length > 1
+                ? `${Math.min(...comp.voltages_used)}–${Math.max(...comp.voltages_used)}V`
+                : `${comp.voltages_used[0]}V`)
+            : `${comp.line_voltage}V`;
+          const vTitle = comp.voltage_override_count
+            ? ` · ${comp.voltage_override_count} device${comp.voltage_override_count !== 1 ? 's' : ''} with a voltage override`
+            : '';
+          factorsNote = `<div style="font-size:0.7rem;color:var(--muted)" title="Factors applied to this meter's metered kWh${vTitle}">`
+            + `PF ${Number(comp.power_factor).toFixed(2)} · cal ${Number(comp.calibration_factor).toFixed(4)} · ${v}</div>`;
+        }
         // Billed kWh straight off the bill, with a net-vs-billed gap when we
         // have a comparison — green when the meter tracks the bill (≤2%), red otherwise.
         const billedVal = (bill.billed_kwh != null) ? bill.billed_kwh : (comp ? comp.billed_kwh : null);
@@ -880,7 +898,7 @@ async function renderBillsSection() {
           <td>${bill.period_start} to ${bill.period_end}</td>
           <td style="font-weight:600">$${bill.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
           <td>${fmtKwh(solarVal)}</td>
-          <td>${comp ? fmtKwh(comp.total_kwh) : '-'}</td>
+          <td>${comp ? fmtKwh(comp.total_kwh) : '-'}${factorsNote}</td>
           <td>${comp ? fmtKwh(comp.net_kwh) : '-'}</td>
           <td>${billedCell}</td>
           <td>${calcCell}</td>
