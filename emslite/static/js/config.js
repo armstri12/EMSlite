@@ -842,6 +842,7 @@ async function renderBillsSection() {
         <th>Solar kWh</th>
         <th>Metered kWh</th>
         <th>Net kWh</th>
+        <th>Billed kWh</th>
         <th>Calculated Cost</th>
         <th>Difference</th>
         <th>Actions</th>
@@ -864,6 +865,16 @@ async function renderBillsSection() {
           suggestCell = `<button class="btn btn-ghost btn-sm apply-cal-btn" data-meter="${encodeURIComponent(bill.meter_name)}" data-cal="${comp.suggested_calibration_factor}" title="Set this meter's calibration factor to ${comp.suggested_calibration_factor}">Calibrate → ${comp.suggested_calibration_factor}</button>`;
         }
         const solarVal = (bill.solar_kwh != null) ? bill.solar_kwh : (comp ? comp.solar_kwh : null);
+        // Billed kWh straight off the bill, with a net-vs-billed gap when we
+        // have a comparison — green when the meter tracks the bill (≤2%), red otherwise.
+        const billedVal = (bill.billed_kwh != null) ? bill.billed_kwh : (comp ? comp.billed_kwh : null);
+        let billedCell = fmtKwh(billedVal);
+        if (comp && comp.kwh_difference != null && billedVal) {
+          const d = comp.kwh_difference;
+          const pct = Math.abs(d) / Math.abs(billedVal);
+          const color = pct <= 0.02 ? 'var(--positive-text,#16a34a)' : 'var(--negative-text,#dc2626)';
+          billedCell += ` <span style="color:${color};font-size:0.75rem;font-weight:600">(${d >= 0 ? '+' : ''}${fmtKwh(d)})</span>`;
+        }
 
         html += `<tr>
           <td>${bill.period_start} to ${bill.period_end}</td>
@@ -871,6 +882,7 @@ async function renderBillsSection() {
           <td>${fmtKwh(solarVal)}</td>
           <td>${comp ? fmtKwh(comp.total_kwh) : '-'}</td>
           <td>${comp ? fmtKwh(comp.net_kwh) : '-'}</td>
+          <td>${billedCell}</td>
           <td>${calcCell}</td>
           <td>${diffCell}${suggestCell ? '<br>' + suggestCell : ''}</td>
           <td>
@@ -985,9 +997,16 @@ function showBillModal(bill) {
           <input type="number" step="0.01" class="filter-input" id="bill-amount" value="${bill ? bill.amount : ''}" style="width:100%;margin-top:4px" placeholder="0.00"/>
         </div>
         <div style="flex:1">
-          <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Solar Generated (kWh)</label>
-          <input type="number" step="0.01" class="filter-input" id="bill-solar" value="${bill && bill.solar_kwh != null ? bill.solar_kwh : ''}" style="width:100%;margin-top:4px" placeholder="0"/>
+          <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Billed kWh (net)</label>
+          <input type="number" step="0.01" class="filter-input" id="bill-kwh" value="${bill && bill.billed_kwh != null ? bill.billed_kwh : ''}" style="width:100%;margin-top:4px" placeholder="0"/>
         </div>
+      </div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:-4px">
+        Net energy as printed on the bill. Lets us compare metered kWh directly against the utility's number.
+      </div>
+      <div>
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Solar Generated (kWh)</label>
+        <input type="number" step="0.01" class="filter-input" id="bill-solar" value="${bill && bill.solar_kwh != null ? bill.solar_kwh : ''}" style="width:100%;margin-top:4px" placeholder="0"/>
       </div>
       <div style="font-size:0.75rem;color:var(--muted);margin-top:-4px">
         On-site generation during the period. The bill is net (consumption − solar), so this is added back when reconciling.
@@ -1016,6 +1035,7 @@ function showBillModal(bill) {
       period_end: document.getElementById("bill-period-end").value,
       bill_date: document.getElementById("bill-date").value || null,
       amount: parseFloat(document.getElementById("bill-amount").value) || 0,
+      billed_kwh: document.getElementById("bill-kwh").value !== "" ? parseFloat(document.getElementById("bill-kwh").value) : null,
       solar_kwh: document.getElementById("bill-solar").value !== "" ? parseFloat(document.getElementById("bill-solar").value) : null,
       notes: document.getElementById("bill-notes").value || null,
     };
