@@ -9,7 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns
+from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns, meter_factors
 from ..database import get_session
 from ..metrics import integrate_kwh
 from ..models import Device, UtilityBill
@@ -23,6 +23,7 @@ class BillCreate(BaseModel):
     period_end: str  # ISO date
     bill_date: str | None = None
     amount: float
+    solar_kwh: float | None = None
     notes: str | None = None
 
 
@@ -32,6 +33,7 @@ class BillUpdate(BaseModel):
     period_end: str | None = None
     bill_date: str | None = None
     amount: float | None = None
+    solar_kwh: float | None = None
     notes: str | None = None
 
 
@@ -60,6 +62,7 @@ def create_bill(body: BillCreate) -> dict[str, Any]:
             period_end=date.fromisoformat(body.period_end),
             bill_date=date.fromisoformat(body.bill_date) if body.bill_date else None,
             amount=body.amount,
+            solar_kwh=body.solar_kwh,
             notes=body.notes,
         )
         session.add(bill)
@@ -92,6 +95,8 @@ def update_bill(bill_id: int, body: BillUpdate) -> dict[str, Any]:
             bill.bill_date = date.fromisoformat(body.bill_date) if body.bill_date else None
         if body.amount is not None:
             bill.amount = body.amount
+        if body.solar_kwh is not None:
+            bill.solar_kwh = body.solar_kwh
         if body.notes is not None:
             bill.notes = body.notes
 
@@ -163,8 +168,8 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
             }
 
         line_voltage = float(cfg.get("line_voltage", 480.0))
-        power_factor = float(cfg.get("power_factor", 1.0))
-        calibration_factor = float(cfg.get("calibration_factor", 1.0))
+        # Per-meter power factor / calibration overrides win over the globals.
+        power_factor, calibration_factor = meter_factors(cfg, bill.meter_name)
         price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
         voltage_map = get_device_voltage_map()
 
@@ -198,19 +203,22 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
             kw_series = amps_to_kw(df[dev_id].fillna(0), v, power_factor, calibration_factor).fillna(0)
             total_kwh += integrate_kwh(kw_series, hours)
 
-        calculated_cost = round(total_kwh * price_per_kwh, 2)
+        # total_kwh is metered CONSUMPTION (gross). The utility bills NET energy,
+        # so subtract on-site solar generation before comparing to the bill.
+        solar_kwh = float(bill.solar_kwh or 0.0)
+        net_kwh = total_kwh - solar_kwh
+        calculated_cost = round(net_kwh * price_per_kwh, 2)
 
-        # Suggested calibration_factor to make computed energy match this bill.
-        # Multiplying by the current factor keeps it idempotent (≈ current value
-        # once already calibrated). bill kWh-equivalent = amount / price_per_kwh.
+        # Suggested calibration_factor to make NET computed energy match this bill.
+        # Target gross consumption = billed energy + solar. Multiplying by the
+        # current factor keeps it idempotent (≈ current value once calibrated).
         suggested_calibration_factor = None
         if total_kwh > 0 and price_per_kwh > 0:
-            bill_kwh_equiv = bill.amount / price_per_kwh
+            bill_kwh_equiv = bill.amount / price_per_kwh  # net energy billed
+            target_gross = bill_kwh_equiv + solar_kwh
             suggested_calibration_factor = round(
-                calibration_factor * (bill_kwh_equiv / total_kwh), 4
+                calibration_factor * (target_gross / total_kwh), 4
             )
-
-        total_kwh = round(total_kwh, 2)
 
         return {
             "bill_id": bill.id,
@@ -218,8 +226,11 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
             "bill_amount": bill.amount,
             "calculated_cost": calculated_cost,
             "difference": round(bill.amount - calculated_cost, 2),
-            "total_kwh": total_kwh,
+            "total_kwh": round(total_kwh, 2),          # gross metered consumption
+            "solar_kwh": round(solar_kwh, 2),
+            "net_kwh": round(net_kwh, 2),              # consumption − solar (≈ billed)
             "device_count": len(device_ids),
+            "power_factor": power_factor,
             "calibration_factor": calibration_factor,
             "suggested_calibration_factor": suggested_calibration_factor,
         }

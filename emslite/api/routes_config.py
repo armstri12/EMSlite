@@ -22,6 +22,8 @@ class ConfigUpdate(BaseModel):
     carbon_kg_per_kwh: float | None = None
     rolling_window: str | None = None
     glob_pattern: str | None = None
+    # {meter_name: {"calibration_factor": float, "power_factor": float}}
+    meter_overrides: dict[str, Any] | None = None
 
 
 def _config_path() -> Path:
@@ -39,6 +41,7 @@ def get_config() -> dict[str, Any]:
         "line_voltage": cfg.get("line_voltage", 480.0),
         "power_factor": cfg.get("power_factor", 1.0),
         "calibration_factor": cfg.get("calibration_factor", 1.0),
+        "meter_overrides": cfg.get("meter_overrides", {}),
         "price_per_kwh": cfg.get("price_per_kwh", 0.25),
         "carbon_kg_per_kwh": cfg.get("carbon_kg_per_kwh", 0.4),
         "rolling_window": cfg.get("rolling_window", "1h"),
@@ -53,7 +56,7 @@ def get_config() -> dict[str, Any]:
 @router.put("/config")
 def update_config(body: ConfigUpdate) -> dict[str, Any]:
     """Update system configuration."""
-    from .app import _app_config
+    from . import app_state
 
     path = _config_path()
     cfg = load_config(path if path.exists() else None)
@@ -61,7 +64,8 @@ def update_config(body: ConfigUpdate) -> dict[str, Any]:
     update_data = body.model_dump(exclude_none=True)
     for key, value in update_data.items():
         cfg[key] = value
-        _app_config[key] = value
+        # Update the live in-memory config so changes apply without a restart.
+        app_state._app_config[key] = value
 
     save_config(cfg, path)
     return get_config()

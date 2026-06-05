@@ -13,6 +13,7 @@ DEFAULT_CONFIG: dict = {
     "line_voltage": 480.0,
     "power_factor": 1.0,
     "calibration_factor": 1.0,
+    "meter_overrides": {},
     "price_per_kwh": 0.25,
     "carbon_kg_per_kwh": 0.4,
     "total_amps_sources": None,

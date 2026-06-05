@@ -56,6 +56,42 @@ once `power_factor`, `line_voltage`, and `aggregate_columns` (below) are correct
 `GET /api/bills/{id}/comparison` returns a `suggested_calibration_factor` derived
 from a real bill, and `scripts/reconcile_bill.py` prints one for any date range.
 
+### Per-meter overrides (`meter_overrides`)
+
+A facility with multiple utility meters gets one bill per meter, and the meters
+can reconcile to different factors (different load mix or true PF). Set
+`meter_overrides` in the config, keyed by meter name (matching the device
+`meter_name` field):
+
+```jsonc
+"meter_overrides": {
+  "Meter A": { "calibration_factor": 1.18, "power_factor": 0.84 },
+  "Meter B": { "calibration_factor": 1.05 }   // power_factor falls back to global
+}
+```
+
+Each panel is resolved to its meter via `core.get_device_meter_map()`, and the
+override wins over the global `power_factor` / `calibration_factor` for that
+panel everywhere the facility total and KPIs are computed
+(`core.build_meter_factor_maps`, threaded through `metrics.py` as `pf_map` /
+`calibration_map`). `routes_bills.bill_comparison` resolves a single meter's
+factors via `core.meter_factors(cfg, meter_name)`.
+
+### On-site solar (net vs. gross energy)
+
+When the site has solar generation, current sensors measure **gross
+consumption** while the utility bills **net energy** (`net = consumption −
+solar`). Comparing gross CT energy to a net bill therefore *should* show the
+dashboard higher than the bill, by roughly the solar generated — this is
+expected, not an error.
+
+Record solar per bill via the `solar_kwh` field on a `UtilityBill`
+(`POST`/`PUT /api/bills`). `bill_comparison` then reports `total_kwh` (gross),
+`solar_kwh`, and `net_kwh = total_kwh − solar_kwh`, compares `net_kwh` to the
+bill, and derives `suggested_calibration_factor` against the target **gross**
+consumption (`billed_energy + solar_kwh`). The reconciliation script takes
+`--solar-kwh`.
+
 ### Avoiding double-counting (`aggregate_columns`)
 
 The facility total sums every meter column except those returned by

@@ -5,6 +5,7 @@
 let devicesData = [];
 let departmentsData = [];
 let utilityMeters = [];
+let systemConfig = {};
 let selectedDevices = new Set();
 
 async function renderDevicesTab() {
@@ -15,9 +16,11 @@ async function renderDevicesTab() {
       API.getDepartments(),
       API.getConfig(),
     ]);
+    systemConfig = configData || {};
     utilityMeters = configData.utility_meters || [];
     renderDeviceTable();
     renderDepartmentSection();
+    renderCalibrationSection();
     renderBillsSection();
     renderFloorPlanList();
   } catch (err) {
@@ -697,6 +700,106 @@ async function openFloorPlanEditor(planId) {
 /* ═══════════════════════════════════════════════════════
    UTILITY BILLS SECTION
    ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════
+   CALIBRATION & BILLING SETTINGS
+   ═══════════════════════════════════════════════════════ */
+
+function renderCalibrationSection() {
+  const container = document.getElementById("calibration-section");
+  if (!container) return;
+
+  const c = systemConfig || {};
+  const overrides = c.meter_overrides || {};
+  const gv = (v, d) => (v === undefined || v === null ? d : v);
+  const gPf = gv(c.power_factor, 1.0);
+  const gCal = gv(c.calibration_factor, 1.0);
+
+  let html = `
+    <p style="color:var(--muted);font-size:0.85rem;margin:0 0 12px">
+      Power factor turns metered amps into real power; calibration trims computed energy to match bills.
+      A facility power factor of ~0.83 corresponds to ~20% over-reporting at PF&nbsp;1.0.
+    </p>
+    <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem">
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Line Voltage (V)</label>
+        <input type="number" step="1" class="filter-input" id="cfg-voltage" value="${gv(c.line_voltage, 480)}" style="width:100%;margin-top:4px"/>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Power Factor</label>
+        <input type="number" step="0.01" min="0" max="1" class="filter-input" id="cfg-pf" value="${gPf}" style="width:100%;margin-top:4px"/>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Calibration Factor</label>
+        <input type="number" step="0.0001" class="filter-input" id="cfg-cal" value="${gCal}" style="width:100%;margin-top:4px"/>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Price per kWh ($)</label>
+        <input type="number" step="0.0001" class="filter-input" id="cfg-price" value="${gv(c.price_per_kwh, 0.25)}" style="width:100%;margin-top:4px"/>
+      </div>
+    </div>`;
+
+  if (utilityMeters.length) {
+    html += `<div style="font-weight:700;color:var(--heading);font-size:0.9rem;margin:4px 0 6px">Per-Meter Overrides</div>
+      <p style="color:var(--muted);font-size:0.8rem;margin:0 0 8px">Leave blank to use the global value above. Use these when meters reconcile to different factors.</p>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr>
+        <th>Meter</th><th>Calibration Factor</th><th>Power Factor</th>
+      </tr></thead><tbody>`;
+    utilityMeters.forEach((m, i) => {
+      const ov = overrides[m.name] || {};
+      const calVal = (ov.calibration_factor === undefined || ov.calibration_factor === null) ? "" : ov.calibration_factor;
+      const pfVal = (ov.power_factor === undefined || ov.power_factor === null) ? "" : ov.power_factor;
+      html += `<tr>
+        <td style="font-weight:600">${m.name}</td>
+        <td><input type="number" step="0.0001" class="filter-input mo-cal" data-meter="${encodeURIComponent(m.name)}" value="${calVal}" placeholder="${gCal}" style="width:120px"/></td>
+        <td><input type="number" step="0.01" min="0" max="1" class="filter-input mo-pf" data-meter="${encodeURIComponent(m.name)}" value="${pfVal}" placeholder="${gPf}" style="width:120px"/></td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+  }
+
+  html += `<div style="display:flex;align-items:center;gap:12px;justify-content:flex-end;margin-top:12px">
+      <span id="cfg-status" style="font-size:0.85rem;color:var(--muted)"></span>
+      <button class="btn btn-primary btn-sm" id="cfg-save">Save Settings</button>
+    </div>`;
+
+  container.innerHTML = html;
+
+  document.getElementById("cfg-save").addEventListener("click", async () => {
+    const payload = {
+      line_voltage: parseFloat(document.getElementById("cfg-voltage").value) || 0,
+      power_factor: parseFloat(document.getElementById("cfg-pf").value) || 0,
+      calibration_factor: parseFloat(document.getElementById("cfg-cal").value) || 0,
+      price_per_kwh: parseFloat(document.getElementById("cfg-price").value) || 0,
+    };
+    const meterOverrides = {};
+    container.querySelectorAll(".mo-cal").forEach(inp => {
+      const name = decodeURIComponent(inp.dataset.meter);
+      const v = inp.value.trim();
+      if (v !== "") (meterOverrides[name] = meterOverrides[name] || {}).calibration_factor = parseFloat(v);
+    });
+    container.querySelectorAll(".mo-pf").forEach(inp => {
+      const name = decodeURIComponent(inp.dataset.meter);
+      const v = inp.value.trim();
+      if (v !== "") (meterOverrides[name] = meterOverrides[name] || {}).power_factor = parseFloat(v);
+    });
+    payload.meter_overrides = meterOverrides;
+
+    const status = document.getElementById("cfg-status");
+    status.textContent = "Saving…";
+    try {
+      const updated = await API.updateConfig(payload);
+      systemConfig = { ...systemConfig, ...updated };
+      billComparisons = {};            // factors changed → recompute comparisons
+      status.textContent = "Saved.";
+      renderBillsSection();
+      setTimeout(() => { status.textContent = ""; }, 2000);
+    } catch (err) {
+      status.textContent = "Save failed.";
+      console.error("Config save failed:", err);
+    }
+  });
+}
+
 let billsData = [];
 let billComparisons = {};
 
@@ -735,13 +838,16 @@ async function renderBillsSection() {
     } else {
       html += `<div class="data-table-wrap"><table class="data-table"><thead><tr>
         <th>Period</th>
-        <th>Bill Date</th>
         <th>Bill Amount</th>
+        <th>Solar kWh</th>
+        <th>Metered kWh</th>
+        <th>Net kWh</th>
         <th>Calculated Cost</th>
         <th>Difference</th>
         <th>Actions</th>
       </tr></thead><tbody>`;
 
+      const fmtKwh = (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, {maximumFractionDigits: 0}));
       for (const bill of meterBills) {
         const comp = billComparisons[bill.id];
         const calcCell = comp
@@ -751,13 +857,22 @@ async function renderBillsSection() {
           ? `<span style="color:${comp.difference >= 0 ? 'var(--positive-text,#16a34a)' : 'var(--negative-text,#dc2626)'};font-weight:600">` +
             `${comp.difference >= 0 ? '+' : ''}$${comp.difference.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>`
           : '-';
+        // Offer a one-click calibration when the suggestion meaningfully differs.
+        let suggestCell = '';
+        if (comp && comp.suggested_calibration_factor != null &&
+            Math.abs(comp.suggested_calibration_factor - (comp.calibration_factor || 1)) > 0.01) {
+          suggestCell = `<button class="btn btn-ghost btn-sm apply-cal-btn" data-meter="${encodeURIComponent(bill.meter_name)}" data-cal="${comp.suggested_calibration_factor}" title="Set this meter's calibration factor to ${comp.suggested_calibration_factor}">Calibrate → ${comp.suggested_calibration_factor}</button>`;
+        }
+        const solarVal = (bill.solar_kwh != null) ? bill.solar_kwh : (comp ? comp.solar_kwh : null);
 
         html += `<tr>
           <td>${bill.period_start} to ${bill.period_end}</td>
-          <td>${bill.bill_date || '-'}</td>
           <td style="font-weight:600">$${bill.amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+          <td>${fmtKwh(solarVal)}</td>
+          <td>${comp ? fmtKwh(comp.total_kwh) : '-'}</td>
+          <td>${comp ? fmtKwh(comp.net_kwh) : '-'}</td>
           <td>${calcCell}</td>
-          <td>${diffCell}</td>
+          <td>${diffCell}${suggestCell ? '<br>' + suggestCell : ''}</td>
           <td>
             <button class="btn btn-ghost btn-sm edit-bill-btn" data-id="${bill.id}">Edit</button>
             <button class="btn btn-ghost btn-sm del-bill-btn" data-id="${bill.id}" style="color:var(--negative-text)">Del</button>
@@ -798,6 +913,26 @@ async function renderBillsSection() {
       const comp = await API.getBillComparison(id);
       billComparisons[id] = comp;
       renderBillsSection();
+    });
+  });
+
+  container.querySelectorAll(".apply-cal-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const meter = decodeURIComponent(btn.dataset.meter);
+      const cal = parseFloat(btn.dataset.cal);
+      const overrides = { ...(systemConfig.meter_overrides || {}) };
+      overrides[meter] = { ...(overrides[meter] || {}), calibration_factor: cal };
+      btn.textContent = "Applying…";
+      try {
+        const updated = await API.updateConfig({ meter_overrides: overrides });
+        systemConfig = { ...systemConfig, ...updated };
+        billComparisons = {};            // factors changed → recompute
+        renderCalibrationSection();
+        renderBillsSection();
+      } catch (err) {
+        console.error("Apply calibration failed:", err);
+        btn.textContent = "Failed";
+      }
     });
   });
 
@@ -844,9 +979,18 @@ function showBillModal(bill) {
         <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Bill Date</label>
         <input type="date" class="filter-input" id="bill-date" value="${bill ? (bill.bill_date || '') : ''}" style="width:100%;margin-top:4px"/>
       </div>
-      <div>
-        <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Amount ($)</label>
-        <input type="number" step="0.01" class="filter-input" id="bill-amount" value="${bill ? bill.amount : ''}" style="width:100%;margin-top:4px" placeholder="0.00"/>
+      <div style="display:flex;gap:1rem">
+        <div style="flex:1">
+          <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Amount ($)</label>
+          <input type="number" step="0.01" class="filter-input" id="bill-amount" value="${bill ? bill.amount : ''}" style="width:100%;margin-top:4px" placeholder="0.00"/>
+        </div>
+        <div style="flex:1">
+          <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Solar Generated (kWh)</label>
+          <input type="number" step="0.01" class="filter-input" id="bill-solar" value="${bill && bill.solar_kwh != null ? bill.solar_kwh : ''}" style="width:100%;margin-top:4px" placeholder="0"/>
+        </div>
+      </div>
+      <div style="font-size:0.75rem;color:var(--muted);margin-top:-4px">
+        On-site generation during the period. The bill is net (consumption − solar), so this is added back when reconciling.
       </div>
       <div>
         <label style="font-size:0.75rem;font-weight:600;color:var(--muted);text-transform:uppercase">Notes</label>
@@ -872,6 +1016,7 @@ function showBillModal(bill) {
       period_end: document.getElementById("bill-period-end").value,
       bill_date: document.getElementById("bill-date").value || null,
       amount: parseFloat(document.getElementById("bill-amount").value) || 0,
+      solar_kwh: document.getElementById("bill-solar").value !== "" ? parseFloat(document.getElementById("bill-solar").value) : null,
       notes: document.getElementById("bill-notes").value || null,
     };
     if (!data.period_start || !data.period_end || !data.amount) {

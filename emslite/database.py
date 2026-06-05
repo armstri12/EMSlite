@@ -32,6 +32,12 @@ def _migrate(engine) -> None:
         if "meter_name" not in cols:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE devices ADD COLUMN meter_name VARCHAR(128)"))
+    # Add solar_kwh to utility_bills table if missing
+    if "utility_bills" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("utility_bills")}
+        if "solar_kwh" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE utility_bills ADD COLUMN solar_kwh FLOAT"))
 
 
 def get_session() -> Session:
