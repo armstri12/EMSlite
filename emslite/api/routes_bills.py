@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns
 from ..database import get_session
+from ..metrics import integrate_kwh
 from ..models import Device, UtilityBill
 
 router = APIRouter(tags=["bills"])
@@ -163,6 +164,7 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
 
         line_voltage = float(cfg.get("line_voltage", 480.0))
         power_factor = float(cfg.get("power_factor", 1.0))
+        calibration_factor = float(cfg.get("calibration_factor", 1.0))
         price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
         voltage_map = get_device_voltage_map()
 
@@ -184,20 +186,30 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
                 "device_count": len(device_ids),
             }
 
+        # Hours between readings, used for trapezoidal kWh integration.
+        hours = df["Timestamp"].diff().dt.total_seconds().fillna(0) / 3600.0
+
         # Calculate kWh for each device on this meter
         total_kwh = 0.0
         for dev_id in device_ids:
             if dev_id not in df.columns:
                 continue
             v = voltage_map.get(dev_id, line_voltage)
-            kw_series = amps_to_kw(df[dev_id].fillna(0), v, power_factor).fillna(0)
-            # Estimate hours between readings for kWh calculation
-            ts = df["Timestamp"]
-            hours = ts.diff().dt.total_seconds().fillna(0) / 3600.0
-            kwh = (kw_series * hours).sum()
-            total_kwh += kwh
+            kw_series = amps_to_kw(df[dev_id].fillna(0), v, power_factor, calibration_factor).fillna(0)
+            total_kwh += integrate_kwh(kw_series, hours)
 
         calculated_cost = round(total_kwh * price_per_kwh, 2)
+
+        # Suggested calibration_factor to make computed energy match this bill.
+        # Multiplying by the current factor keeps it idempotent (≈ current value
+        # once already calibrated). bill kWh-equivalent = amount / price_per_kwh.
+        suggested_calibration_factor = None
+        if total_kwh > 0 and price_per_kwh > 0:
+            bill_kwh_equiv = bill.amount / price_per_kwh
+            suggested_calibration_factor = round(
+                calibration_factor * (bill_kwh_equiv / total_kwh), 4
+            )
+
         total_kwh = round(total_kwh, 2)
 
         return {
@@ -208,6 +220,8 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
             "difference": round(bill.amount - calculated_cost, 2),
             "total_kwh": total_kwh,
             "device_count": len(device_ids),
+            "calibration_factor": calibration_factor,
+            "suggested_calibration_factor": suggested_calibration_factor,
         }
     finally:
         session.close()

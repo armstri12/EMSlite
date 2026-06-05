@@ -21,7 +21,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns
+from ..core import amps_to_kw, excluded_columns, get_device_voltage_map, load_csv, meter_columns
 from ..database import get_session
 from ..models import DailyMetricEntry, MetricDefinition, Workflow
 
@@ -501,6 +501,7 @@ def production_correlation(
     cfg = _get_config()
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     voltage_map = get_device_voltage_map()
 
     # ── Pick panels ──
@@ -519,7 +520,7 @@ def production_correlation(
         if end:
             df = df[df["Timestamp"] <= pd.to_datetime(end, utc=True) + pd.Timedelta(days=1)]
 
-        all_panels = meter_columns(df.columns, exclude=set(cfg.get("combo_columns", {}).keys()))
+        all_panels = meter_columns(df.columns, exclude=excluded_columns(cfg))
         if not requested_panels:
             requested_panels = all_panels[:]
         else:
@@ -534,7 +535,7 @@ def production_correlation(
                 if col not in df.columns:
                     continue
                 v = voltage_map.get(col, line_voltage)
-                kw = amps_to_kw(df[col].fillna(0), v, power_factor).fillna(0)
+                kw = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor).fillna(0)
                 daily_kwh_frame[col] = kw
             daily = daily_kwh_frame.resample("1D").mean() * 24.0
             daily = daily.fillna(0.0)

@@ -8,7 +8,7 @@ from typing import Any
 import pandas as pd
 
 from .behavior import compute_phantom_rankings
-from .core import get_device_voltage_map, load_csv, meter_columns
+from .core import excluded_columns, get_device_voltage_map, load_csv, meter_columns
 from .metrics import compute_department_breakdown, compute_kpi, compute_panel_rankings
 from .trending import compute_trending_snapshot
 
@@ -41,12 +41,13 @@ def generate_report_data(period_days: int = 7) -> dict[str, Any]:
 
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     voltage_map = get_device_voltage_map()
 
     panel_cols = meter_columns(
-        df.columns, exclude=set(cfg.get("combo_columns", {}).keys())
+        df.columns, exclude=excluded_columns(cfg)
     )
     department_panels = _get_all_department_panels()
     display_names = _get_device_display_names()
@@ -64,6 +65,7 @@ def generate_report_data(period_days: int = 7) -> dict[str, Any]:
     common = dict(
         line_voltage=line_voltage,
         power_factor=power_factor,
+        calibration_factor=calibration_factor,
         price_per_kwh=price_per_kwh,
         carbon_kg_per_kwh=carbon_kg_per_kwh,
         panel_cols=panel_cols,
@@ -107,6 +109,7 @@ def generate_report_data(period_days: int = 7) -> dict[str, Any]:
     dept_common = dict(
         line_voltage=line_voltage,
         power_factor=power_factor,
+        calibration_factor=calibration_factor,
         price_per_kwh=price_per_kwh,
         carbon_kg_per_kwh=carbon_kg_per_kwh,
         voltage_map=voltage_map,
@@ -124,6 +127,7 @@ def generate_report_data(period_days: int = 7) -> dict[str, Any]:
     rankings_common = dict(
         line_voltage=line_voltage,
         power_factor=power_factor,
+        calibration_factor=calibration_factor,
         panel_cols=panel_cols,
         top_n=10,
         voltage_map=voltage_map,
@@ -144,6 +148,7 @@ def generate_report_data(period_days: int = 7) -> dict[str, Any]:
         line_voltage=line_voltage, power_factor=power_factor,
         price_per_kwh=price_per_kwh, carbon_kg_per_kwh=carbon_kg_per_kwh,
         display_names=display_names, voltage_map=voltage_map,
+        calibration_factor=calibration_factor,
     ) if len(df) > 1 else {"panels": [], "summary": {}}
 
     significant = [p for p in trending.get("panels", []) if abs(p.get("pct_change", 0)) > 10]
@@ -156,6 +161,7 @@ def generate_report_data(period_days: int = 7) -> dict[str, Any]:
         line_voltage=line_voltage, power_factor=power_factor,
         price_per_kwh=price_per_kwh, carbon_kg_per_kwh=carbon_kg_per_kwh,
         display_names=display_names, voltage_map=voltage_map,
+        calibration_factor=calibration_factor,
     ) if len(df_this) > 1 else {"rankings": [], "facility_totals": {}}
 
     top_phantom = phantom.get("rankings", [])[:5]
@@ -233,12 +239,13 @@ def generate_email_summary_data(
 
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     voltage_map = get_device_voltage_map()
 
     all_panel_cols = meter_columns(
-        df.columns, exclude=set(cfg.get("combo_columns", {}).keys())
+        df.columns, exclude=excluded_columns(cfg)
     )
 
     if panels:
@@ -280,6 +287,7 @@ def generate_email_summary_data(
     common = dict(
         line_voltage=line_voltage,
         power_factor=power_factor,
+        calibration_factor=calibration_factor,
         price_per_kwh=price_per_kwh,
         carbon_kg_per_kwh=carbon_kg_per_kwh,
         panel_cols=panel_cols,
@@ -293,6 +301,7 @@ def generate_email_summary_data(
         df_current,
         line_voltage=line_voltage,
         power_factor=power_factor,
+        calibration_factor=calibration_factor,
         panel_cols=panel_cols,
         top_n=len(panel_cols),
         voltage_map=voltage_map,
@@ -643,12 +652,13 @@ def generate_ytd_report_data(year: int | None = None) -> dict[str, Any]:
 
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     voltage_map = get_device_voltage_map()
 
     panel_cols = meter_columns(
-        df.columns, exclude=set(cfg.get("combo_columns", {}).keys())
+        df.columns, exclude=excluded_columns(cfg)
     )
     department_panels = _get_all_department_panels()
 
@@ -678,6 +688,7 @@ def generate_ytd_report_data(year: int | None = None) -> dict[str, Any]:
     common = dict(
         line_voltage=line_voltage,
         power_factor=power_factor,
+        calibration_factor=calibration_factor,
         price_per_kwh=price_per_kwh,
         carbon_kg_per_kwh=carbon_kg_per_kwh,
         voltage_map=voltage_map,
@@ -784,6 +795,7 @@ def generate_ytd_report_data(year: int | None = None) -> dict[str, Any]:
             "price_per_kwh": price_per_kwh,
             "line_voltage": line_voltage,
             "power_factor": power_factor,
+            "calibration_factor": calibration_factor,
             "carbon_kg_per_kwh": carbon_kg_per_kwh,
         },
     }

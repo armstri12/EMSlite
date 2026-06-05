@@ -47,6 +47,7 @@ def compute_trending_snapshot(
     carbon_kg_per_kwh: float = 0.4,
     display_names: dict[str, str] | None = None,
     voltage_map: dict[str, float] | None = None,
+    calibration_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Compute trend snapshot for all panels.
 
@@ -73,17 +74,17 @@ def compute_trending_snapshot(
         v = vm.get(col, line_voltage)
 
         # Full period kW series
-        kw_full = amps_to_kw(df[col].fillna(0), v, power_factor)
+        kw_full = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor)
 
         # Recent period
-        kw_recent = amps_to_kw(recent_df[col].fillna(0), v, power_factor)
+        kw_recent = amps_to_kw(recent_df[col].fillna(0), v, power_factor, calibration_factor)
         recent_kwh_series = _daily_kwh(recent_df["Timestamp"], kw_recent)
         recent_kwh = float(recent_kwh_series.sum())
         recent_avg_kw = float(kw_recent.mean()) if len(kw_recent) > 0 else 0.0
         recent_peak_kw = float(kw_recent.max()) if len(kw_recent) > 0 else 0.0
 
         # Prior period
-        kw_prior = amps_to_kw(prior_df[col].fillna(0), v, power_factor)
+        kw_prior = amps_to_kw(prior_df[col].fillna(0), v, power_factor, calibration_factor)
         prior_kwh_series = _daily_kwh(prior_df["Timestamp"], kw_prior)
         prior_kwh = float(prior_kwh_series.sum())
         prior_avg_kw = float(kw_prior.mean()) if len(kw_prior) > 0 else 0.0
@@ -182,6 +183,7 @@ def compute_trending_detail(
     carbon_kg_per_kwh: float = 0.4,
     panel_display_name: str | None = None,
     voltage_map: dict[str, float] | None = None,
+    calibration_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Full trending detail for a single panel.
 
@@ -192,11 +194,11 @@ def compute_trending_detail(
     vm = voltage_map or {}
     v = vm.get(panel_col, line_voltage)
     timestamps = df["Timestamp"]
-    kw = amps_to_kw(df[panel_col].fillna(0), v, power_factor)
+    kw = amps_to_kw(df[panel_col].fillna(0), v, power_factor, calibration_factor)
 
     recent_df, prior_df = _split_periods(df, period_days)
-    kw_recent = amps_to_kw(recent_df[panel_col].fillna(0), v, power_factor)
-    kw_prior = amps_to_kw(prior_df[panel_col].fillna(0), v, power_factor)
+    kw_recent = amps_to_kw(recent_df[panel_col].fillna(0), v, power_factor, calibration_factor)
+    kw_prior = amps_to_kw(prior_df[panel_col].fillna(0), v, power_factor, calibration_factor)
 
     # --- Daily energy series (full dataset) ---
     daily = _daily_kwh(timestamps, kw)

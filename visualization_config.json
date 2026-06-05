@@ -2,9 +2,19 @@
   "input_file": "RawPanelUsageHistory_UPDATED.csv",
   "output_dir": "visualizations",
   "line_voltage": 480.0,
+  // Real power factor of the facility. With current-only sensing the conversion
+  // yields apparent power (kVA); PF turns it into real power (kW). Leaving this
+  // at 1.0 over-reports energy by 1/PF. Measure your true PF (typically 0.8-0.95).
   "power_factor": 1.0,
+  // Empirical scalar applied to all computed kW/kWh to reconcile against utility
+  // bills. Leave at 1.0 unless a residual gap remains after PF/voltage are correct.
+  // GET /api/bills/{id}/comparison returns a suggested_calibration_factor.
+  "calibration_factor": 1.0,
   "price_per_kwh": 0.25,
   "total_amps_sources": null,
+  // Columns that are main-feed / sub-total readings already covering other panels.
+  // Listed here they are EXCLUDED from the facility total to avoid double-counting.
+  "aggregate_columns": [],
   "utility_meters": [
     {
       "name": "Meter A",

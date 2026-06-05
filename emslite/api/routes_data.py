@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns, parse_window_to_hours
+from ..core import amps_to_kw, excluded_columns, get_device_voltage_map, load_csv, meter_columns, parse_window_to_hours
 from ..metrics import compute_department_breakdown, compute_kpi, compute_panel_rankings
 
 router = APIRouter(tags=["data"])
@@ -43,6 +43,7 @@ def get_data(
     df = load_csv(master)
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     rolling_hours = parse_window_to_hours(cfg.get("rolling_window", "1h"))
@@ -58,7 +59,7 @@ def get_data(
         end_dt = pd.to_datetime(end, utc=True)
         df = df[df["Timestamp"] <= end_dt]
 
-    all_panels = meter_columns(df.columns, exclude=set(cfg.get("combo_columns", {}).keys()))
+    all_panels = meter_columns(df.columns, exclude=excluded_columns(cfg))
 
     # Filter by specific panels
     if panels:
@@ -79,7 +80,7 @@ def get_data(
         if col in df.columns:
             v = voltage_map.get(col, line_voltage)
             panel_series[col] = amps_to_kw(
-                df[col].fillna(0), v, power_factor
+                df[col].fillna(0), v, power_factor, calibration_factor
             ).fillna(0).round(3).tolist()
 
     # Total kW across selected panels
@@ -88,7 +89,7 @@ def get_data(
     for col in all_panels:
         if col in df.columns:
             v = voltage_map.get(col, line_voltage)
-            total_kw_series += amps_to_kw(df[col].fillna(0), v, power_factor).fillna(0)
+            total_kw_series += amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor).fillna(0)
 
     # Build group (combo_columns) series — these are pre-computed kW columns
     combo_cols = cfg.get("combo_columns", {})
@@ -128,6 +129,7 @@ def get_metrics(
     df = load_csv(master)
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     price_per_kwh = float(cfg.get("price_per_kwh", 0.25))
     carbon_kg_per_kwh = float(cfg.get("carbon_kg_per_kwh", 0.4))
     voltage_map = get_device_voltage_map()
@@ -140,7 +142,7 @@ def get_metrics(
         import pandas as pd
         df = df[df["Timestamp"] <= pd.to_datetime(end, utc=True)]
 
-    all_panels = meter_columns(df.columns, exclude=set(cfg.get("combo_columns", {}).keys()))
+    all_panels = meter_columns(df.columns, exclude=excluded_columns(cfg))
 
     # Department filter
     if department:
@@ -148,8 +150,8 @@ def get_metrics(
         if dept_panels is not None:
             all_panels = [p for p in all_panels if p in dept_panels]
 
-    kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, carbon_kg_per_kwh, all_panels, voltage_map=voltage_map)
-    rankings = compute_panel_rankings(df, line_voltage, power_factor, all_panels, top_n=10, voltage_map=voltage_map)
+    kpi = compute_kpi(df, line_voltage, power_factor, price_per_kwh, carbon_kg_per_kwh, all_panels, voltage_map=voltage_map, calibration_factor=calibration_factor)
+    rankings = compute_panel_rankings(df, line_voltage, power_factor, all_panels, top_n=10, voltage_map=voltage_map, calibration_factor=calibration_factor)
 
     # Department breakdown.
     # When a department filter is active, return breakdown only for that department
@@ -171,6 +173,7 @@ def get_metrics(
         price_per_kwh,
         carbon_kg_per_kwh,
         voltage_map=voltage_map,
+        calibration_factor=calibration_factor,
     )
 
     # Enrich rankings with display names
