@@ -5,7 +5,13 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from emslite.core import amps_to_kw, excluded_columns, meter_columns
+from emslite.core import (
+    amps_to_kw,
+    build_meter_factor_maps,
+    excluded_columns,
+    meter_columns,
+    meter_factors,
+)
 from emslite.metrics import compute_kpi, integrate_kwh
 
 SQRT3 = 3 ** 0.5
@@ -55,3 +61,42 @@ def test_excluded_columns_drops_aggregate_and_combo():
     assert excluded_columns(cfg) == {"Prod_kW", "Main"}
     cols = ["Timestamp", "Total_Amps", "Main", "P1", "P2", "Prod_kW"]
     assert meter_columns(cols, exclude=excluded_columns(cfg)) == ["P1", "P2"]
+
+
+def test_meter_factors_overrides_with_fallback():
+    cfg = {
+        "power_factor": 1.0,
+        "calibration_factor": 1.0,
+        "meter_overrides": {
+            "Meter A": {"calibration_factor": 1.2, "power_factor": 0.85},
+            "Meter B": {"calibration_factor": 1.1},  # pf omitted → global
+        },
+    }
+    assert meter_factors(cfg, "Meter A") == (0.85, 1.2)
+    assert meter_factors(cfg, "Meter B") == (1.0, 1.1)
+    assert meter_factors(cfg, "Unknown") == (1.0, 1.0)
+    assert meter_factors(cfg, None) == (1.0, 1.0)
+
+
+def test_build_meter_factor_maps_per_panel():
+    cfg = {
+        "power_factor": 1.0,
+        "calibration_factor": 1.0,
+        "meter_overrides": {
+            "Meter A": {"calibration_factor": 1.2, "power_factor": 0.85},
+            "Meter B": {"calibration_factor": 1.1},
+        },
+    }
+    device_meter_map = {"P1": "Meter A", "P2": "Meter B", "P3": "Meter A"}
+    pf_map, cal_map = build_meter_factor_maps(cfg, device_meter_map)
+    assert cal_map == {"P1": 1.2, "P2": 1.1, "P3": 1.2}
+    assert pf_map == {"P1": 0.85, "P3": 0.85}  # P2's meter has no PF override
+
+
+def test_per_panel_calibration_in_compute_kpi():
+    ts = pd.date_range("2026-05-01", periods=9, freq="15min", tz="UTC")
+    df = pd.DataFrame({"Timestamp": ts, "P1": [100.0] * 9, "P2": [100.0] * 9})
+    base = compute_kpi(df, 480.0, 1.0, panel_cols=["P1", "P2"])["total_kwh"]
+    mixed = compute_kpi(df, 480.0, 1.0, panel_cols=["P1", "P2"], calibration_map={"P1": 2.0})["total_kwh"]
+    # P1 doubled, P2 unchanged, equal panels → 1.5× the base total
+    assert mixed == pytest.approx(1.5 * base, abs=0.01)

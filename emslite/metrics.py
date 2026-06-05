@@ -28,22 +28,32 @@ def compute_kpi(
     panel_cols: list[str] | None = None,
     voltage_map: dict[str, float] | None = None,
     calibration_factor: float = 1.0,
+    pf_map: dict[str, float] | None = None,
+    calibration_map: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Compute high-level KPI metrics from a wide-format dataframe.
 
     Returns dict with: total_kwh, total_cost, peak_kw, avg_kw, load_factor,
     device_count, latest_timestamp, date_range_days.
+
+    ``pf_map`` / ``calibration_map`` provide per-panel power-factor and
+    calibration overrides (e.g. per utility meter); panels absent from a map
+    fall back to the scalar ``power_factor`` / ``calibration_factor``.
     """
     if panel_cols is None:
         panel_cols = meter_columns(df.columns)
     vm = voltage_map or {}
+    pfm = pf_map or {}
+    calm = calibration_map or {}
 
     # Convert all panels from amps to kW and sum
     kw_df = pd.DataFrame()
     for col in panel_cols:
         if col in df.columns:
             v = vm.get(col, line_voltage)
-            kw_df[col] = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor)
+            kw_df[col] = amps_to_kw(
+                df[col].fillna(0), v, pfm.get(col, power_factor), calm.get(col, calibration_factor)
+            )
 
     if kw_df.empty:
         return _empty_kpi()
@@ -83,11 +93,15 @@ def compute_panel_rankings(
     top_n: int = 10,
     voltage_map: dict[str, float] | None = None,
     calibration_factor: float = 1.0,
+    pf_map: dict[str, float] | None = None,
+    calibration_map: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Rank panels by total kWh consumption."""
     if panel_cols is None:
         panel_cols = meter_columns(df.columns)
     vm = voltage_map or {}
+    pfm = pf_map or {}
+    calm = calibration_map or {}
 
     ts = df["Timestamp"]
     dt_hours = ts.diff().dt.total_seconds().fillna(0) / 3600.0
@@ -97,7 +111,7 @@ def compute_panel_rankings(
         if col not in df.columns:
             continue
         v = vm.get(col, line_voltage)
-        kw = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor)
+        kw = amps_to_kw(df[col].fillna(0), v, pfm.get(col, power_factor), calm.get(col, calibration_factor))
         kwh = integrate_kwh(kw, dt_hours)
         peak = float(kw.max())
         rankings.append({
@@ -119,9 +133,13 @@ def compute_department_breakdown(
     carbon_kg_per_kwh: float = 0.4,
     voltage_map: dict[str, float] | None = None,
     calibration_factor: float = 1.0,
+    pf_map: dict[str, float] | None = None,
+    calibration_map: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Compute energy/cost metrics grouped by department."""
     vm = voltage_map or {}
+    pfm = pf_map or {}
+    calm = calibration_map or {}
     ts = df["Timestamp"]
     dt_hours = ts.diff().dt.total_seconds().fillna(0) / 3600.0
 
@@ -143,7 +161,9 @@ def compute_department_breakdown(
         kw_df = pd.DataFrame()
         for col in valid_panels:
             v = vm.get(col, line_voltage)
-            kw_df[col] = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor)
+            kw_df[col] = amps_to_kw(
+                df[col].fillna(0), v, pfm.get(col, power_factor), calm.get(col, calibration_factor)
+            )
 
         total_kw = kw_df.sum(axis=1)
         total_kwh = integrate_kwh(total_kw, dt_hours)

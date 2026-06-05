@@ -10,6 +10,11 @@
   // bills. Leave at 1.0 unless a residual gap remains after PF/voltage are correct.
   // GET /api/bills/{id}/comparison returns a suggested_calibration_factor.
   "calibration_factor": 1.0,
+  // Per-meter overrides keyed by meter name (matches Device.meter_name). Each may
+  // set "calibration_factor" and/or "power_factor"; anything omitted falls back to
+  // the global value above. Use this when two meters reconcile to different factors.
+  //   "meter_overrides": { "Meter A": { "calibration_factor": 1.18, "power_factor": 0.84 } }
+  "meter_overrides": {},
   "price_per_kwh": 0.25,
   "total_amps_sources": null,
   // Columns that are main-feed / sub-total readings already covering other panels.

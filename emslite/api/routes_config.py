@@ -22,6 +22,8 @@ class ConfigUpdate(BaseModel):
     carbon_kg_per_kwh: float | None = None
     rolling_window: str | None = None
     glob_pattern: str | None = None
+    # {meter_name: {"calibration_factor": float, "power_factor": float}}
+    meter_overrides: dict[str, Any] | None = None
 
 
 def _config_path() -> Path:
@@ -39,6 +41,7 @@ def get_config() -> dict[str, Any]:
         "line_voltage": cfg.get("line_voltage", 480.0),
         "power_factor": cfg.get("power_factor", 1.0),
         "calibration_factor": cfg.get("calibration_factor", 1.0),
+        "meter_overrides": cfg.get("meter_overrides", {}),
         "price_per_kwh": cfg.get("price_per_kwh", 0.25),
         "carbon_kg_per_kwh": cfg.get("carbon_kg_per_kwh", 0.4),
         "rolling_window": cfg.get("rolling_window", "1h"),

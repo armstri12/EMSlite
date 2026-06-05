@@ -41,7 +41,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from emslite.config import load_config  # noqa: E402
-from emslite.core import amps_to_kw, excluded_columns, load_csv, meter_columns  # noqa: E402
+from emslite.core import amps_to_kw, excluded_columns, load_csv, meter_columns, meter_factors  # noqa: E402
 from emslite.metrics import integrate_kwh  # noqa: E402
 
 # Substrings that suggest a column is an aggregate / main feed (and therefore
@@ -135,8 +135,11 @@ def main() -> int:
     ap.add_argument("--voltage", type=float, default=None, help="Line voltage (default: from config)")
     ap.add_argument("--calibration", type=float, default=None, help="Calibration factor (default: from config)")
     ap.add_argument("--price", type=float, default=None, help="Price per kWh (default: from config)")
-    ap.add_argument("--bill-kwh", type=float, default=None, help="Utility bill energy (kWh) for this meter")
+    ap.add_argument("--bill-kwh", type=float, default=None, help="Utility bill NET energy (kWh) for this meter")
     ap.add_argument("--bill-amount", type=float, default=None, help="Utility bill cost for this meter")
+    ap.add_argument("--solar-kwh", type=float, default=0.0,
+                    help="On-site solar generation (kWh) over the period. Bills are NET, so "
+                         "net = consumption − solar is what should match the bill.")
     ap.add_argument("--config", default="visualization_config.json", help="Path to config file")
     args = ap.parse_args()
 
@@ -150,9 +153,13 @@ def main() -> int:
         _print_meters(meters, source)
         return 0
 
+    # Per-meter overrides (if any) supply the defaults when --meter is given.
+    m_pf, m_cal = meter_factors(cfg, args.meter) if args.meter else (
+        float(cfg.get("power_factor", 1.0)), float(cfg.get("calibration_factor", 1.0))
+    )
     voltage = args.voltage if args.voltage is not None else float(cfg.get("line_voltage", 480.0))
-    pf = args.pf if args.pf is not None else float(cfg.get("power_factor", 1.0))
-    calibration = args.calibration if args.calibration is not None else float(cfg.get("calibration_factor", 1.0))
+    pf = args.pf if args.pf is not None else m_pf
+    calibration = args.calibration if args.calibration is not None else m_cal
     price = args.price if args.price is not None else float(cfg.get("price_per_kwh", 0.25))
 
     master = _master_path(cfg, root)
@@ -225,19 +232,27 @@ def main() -> int:
         print("           'aggregate_columns' in the config to stop double-counting.")
     print("-" * 64)
 
-    computed_kwh = grand
-    computed_cost = computed_kwh * price
-    print(f"COMPUTED   : {computed_kwh:,.1f} kWh   (${computed_cost:,.2f})")
+    computed_kwh = grand                      # gross metered consumption
+    solar = args.solar_kwh or 0.0
+    net_kwh = computed_kwh - solar            # consumption − solar ≈ net billed
+    print(f"COMPUTED   : {computed_kwh:,.1f} kWh gross consumption")
+    if solar:
+        print(f"SOLAR      : -{solar:,.1f} kWh on-site generation")
+        print(f"NET        : {net_kwh:,.1f} kWh  (what the utility bills)")
 
     if args.bill_kwh:
-        ratio = computed_kwh / args.bill_kwh if args.bill_kwh else float("nan")
-        print(f"BILL (kWh) : {args.bill_kwh:,.1f} kWh")
-        print(f"RATIO      : {ratio:.4f}  ({(ratio - 1) * 100:+.1f}% vs bill)")
-        if ratio:
-            print(f"Suggested calibration_factor to match this meter: {calibration / ratio:.4f}")
+        ratio = net_kwh / args.bill_kwh if args.bill_kwh else float("nan")
+        print(f"BILL (kWh) : {args.bill_kwh:,.1f} kWh (net)")
+        print(f"RATIO      : {ratio:.4f}  ({(ratio - 1) * 100:+.1f}% net vs bill)")
+        # Calibration scales gross consumption; target gross = bill + solar.
+        if computed_kwh:
+            target_gross = args.bill_kwh + solar
+            print(f"Suggested calibration_factor for this meter: "
+                  f"{calibration * target_gross / computed_kwh:.4f}")
     if args.bill_amount:
-        ratio = computed_cost / args.bill_amount if args.bill_amount else float("nan")
-        print(f"BILL ($)   : ${args.bill_amount:,.2f}")
+        net_cost = net_kwh * price
+        ratio = net_cost / args.bill_amount if args.bill_amount else float("nan")
+        print(f"NET COST   : ${net_cost:,.2f}  vs BILL ${args.bill_amount:,.2f}")
         print(f"RATIO      : {ratio:.4f}  ({(ratio - 1) * 100:+.1f}% vs bill)")
     print("=" * 64)
     return 0

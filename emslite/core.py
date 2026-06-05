@@ -89,6 +89,61 @@ def get_device_voltage_map() -> dict[str, float]:
         session.close()
 
 
+def get_device_meter_map() -> dict[str, str]:
+    """Return {device_id: meter_name} for enabled devices assigned to a meter."""
+    from .database import get_session
+    from .models import Device
+
+    session = get_session()
+    try:
+        devices = (
+            session.query(Device)
+            .filter(Device.enabled.is_(True), Device.meter_name.isnot(None))
+            .all()
+        )
+        return {d.id: d.meter_name for d in devices}
+    finally:
+        session.close()
+
+
+def meter_factors(cfg: dict, meter_name: str | None) -> tuple[float, float]:
+    """Resolve (power_factor, calibration_factor) for one meter.
+
+    Per-meter values in ``cfg['meter_overrides'][meter_name]`` win over the
+    global ``power_factor`` / ``calibration_factor``.
+    """
+    pf = float(cfg.get("power_factor", 1.0))
+    cal = float(cfg.get("calibration_factor", 1.0))
+    ov = (cfg.get("meter_overrides", {}) or {}).get(meter_name or "", {})
+    if "power_factor" in ov and ov["power_factor"] is not None:
+        pf = float(ov["power_factor"])
+    if "calibration_factor" in ov and ov["calibration_factor"] is not None:
+        cal = float(ov["calibration_factor"])
+    return pf, cal
+
+
+def build_meter_factor_maps(
+    cfg: dict, device_meter_map: dict[str, str]
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Build {device_id: power_factor} and {device_id: calibration_factor} maps.
+
+    Only devices whose meter has an override entry get an entry; callers fall
+    back to the global scalar for everything else.
+    """
+    overrides = cfg.get("meter_overrides", {}) or {}
+    pf_map: dict[str, float] = {}
+    cal_map: dict[str, float] = {}
+    for dev_id, meter in device_meter_map.items():
+        ov = overrides.get(meter)
+        if not ov:
+            continue
+        if ov.get("power_factor") is not None:
+            pf_map[dev_id] = float(ov["power_factor"])
+        if ov.get("calibration_factor") is not None:
+            cal_map[dev_id] = float(ov["calibration_factor"])
+    return pf_map, cal_map
+
+
 def normalize_rolling_window(window: str) -> str:
     return window.replace("H", "h")
 
