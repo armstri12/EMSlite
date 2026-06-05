@@ -8,7 +8,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
 from ..trending import compute_trending_snapshot, compute_trending_detail
-from ..core import get_device_voltage_map, load_csv, meter_columns
+from ..core import excluded_columns, get_device_voltage_map, load_csv, meter_columns
 from .routes_data import _get_config, _get_master_path
 
 router = APIRouter(tags=["trending"])
@@ -63,7 +63,7 @@ def get_trending_snapshot(
         raise HTTPException(status_code=404, detail="No data for selected date range.")
 
     all_panels = meter_columns(
-        df.columns, exclude=set(cfg.get("combo_columns", {}).keys())
+        df.columns, exclude=excluded_columns(cfg)
     )
     display_names = _get_all_device_display_names()
 
@@ -77,6 +77,7 @@ def get_trending_snapshot(
         carbon_kg_per_kwh=float(cfg.get("carbon_kg_per_kwh", 0.4)),
         display_names=display_names,
         voltage_map=get_device_voltage_map(),
+        calibration_factor=float(cfg.get("calibration_factor", 1.0)),
     )
 
 
@@ -96,7 +97,7 @@ def get_trending_detail(
     df = load_csv(master)
 
     available = meter_columns(
-        df.columns, exclude=set(cfg.get("combo_columns", {}).keys())
+        df.columns, exclude=excluded_columns(cfg)
     )
     if panel not in available:
         raise HTTPException(
@@ -124,4 +125,5 @@ def get_trending_detail(
         carbon_kg_per_kwh=float(cfg.get("carbon_kg_per_kwh", 0.4)),
         panel_display_name=display_name,
         voltage_map=get_device_voltage_map(),
+        calibration_factor=float(cfg.get("calibration_factor", 1.0)),
     )

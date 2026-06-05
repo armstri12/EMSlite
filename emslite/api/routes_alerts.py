@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .routes_auth import require_admin
 from pydantic import BaseModel
 
-from ..core import amps_to_kw, load_csv, meter_columns
+from ..core import amps_to_kw, excluded_columns, load_csv, meter_columns
 from ..database import get_session
 from ..models import AlertEvent, Device
 from .routes_data import _get_config, _get_master_path
@@ -50,6 +50,7 @@ def get_alerts(
     cfg = _get_config()
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
 
     df = load_csv(master)
     if df.empty:
@@ -70,7 +71,7 @@ def get_alerts(
     if latest_only:
         df_window = df_window[df_window["Timestamp"] == latest_ts]
 
-    panels = meter_columns(df_window.columns, exclude=set(cfg.get("combo_columns", {}).keys()))
+    panels = meter_columns(df_window.columns, exclude=excluded_columns(cfg))
 
     session = get_session()
     try:
@@ -95,7 +96,7 @@ def get_alerts(
             configured_devices += 1
 
             panel_voltage = device.voltage if device.voltage is not None else line_voltage
-            kw_series = amps_to_kw(df_window[panel].fillna(0), panel_voltage, power_factor).fillna(0)
+            kw_series = amps_to_kw(df_window[panel].fillna(0), panel_voltage, power_factor, calibration_factor).fillna(0)
             for idx, kw_val in kw_series.items():
                 ts = df_window.loc[idx, "Timestamp"]
                 amps_val = float(df_window.loc[idx, panel] or 0)

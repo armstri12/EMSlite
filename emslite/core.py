@@ -12,9 +12,16 @@ def amps_to_kw(
     amps: pd.Series,
     line_voltage: float = 480.0,
     power_factor: float = 1.0,
+    calibration_factor: float = 1.0,
 ) -> pd.Series:
-    """Convert amperage readings to kilowatts (three-phase)."""
-    return amps * (line_voltage * 3**0.5 * power_factor) / 1000.0
+    """Convert amperage readings to kilowatts (three-phase).
+
+    ``power_factor`` turns apparent power (kVA) into real power (kW); leaving it
+    at 1.0 returns apparent power and over-reports real energy by ``1 / PF``.
+    ``calibration_factor`` is an empirical scalar (default 1.0) used to reconcile
+    computed energy against metered/utility-bill kWh — see docs/calculations.md.
+    """
+    return amps * (line_voltage * 3**0.5 * power_factor * calibration_factor) / 1000.0
 
 
 def resolve_columns(
@@ -40,6 +47,16 @@ def meter_columns(
     always_skip = {"Timestamp", "Total_Amps", "Total_kW"}
     skip = always_skip | (exclude or set())
     return [c for c in columns if c not in skip]
+
+
+def excluded_columns(cfg: dict) -> set[str]:
+    """Columns that must NOT be summed into the facility total.
+
+    Covers pre-computed group columns (``combo_columns``) and any aggregate /
+    main-feed columns (``aggregate_columns``) that already include other panels —
+    summing those on top of their branch panels double-counts and over-reports.
+    """
+    return set(cfg.get("combo_columns", {}).keys()) | set(cfg.get("aggregate_columns", []))
 
 
 def load_csv(path: str | object) -> pd.DataFrame:

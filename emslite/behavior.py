@@ -289,6 +289,7 @@ def compute_phantom_rankings(
     carbon_kg_per_kwh: float = 0.4,
     display_names: dict[str, str] | None = None,
     voltage_map: dict[str, float] | None = None,
+    calibration_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Rank all panels by phantom draw waste.
 
@@ -309,7 +310,7 @@ def compute_phantom_rankings(
         if col not in df.columns:
             continue
         v = vm.get(col, line_voltage)
-        kw = amps_to_kw(df[col].fillna(0), v, power_factor)
+        kw = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor)
 
         phantom = compute_phantom_draw(timestamps, kw)
         phantom_kw = phantom["phantom_kw"]
@@ -368,6 +369,7 @@ def analyze_behavior(
     carbon_kg_per_kwh: float = 0.4,
     panel_display_name: str | None = None,
     voltage_map: dict[str, float] | None = None,
+    calibration_factor: float = 1.0,
 ) -> dict[str, Any]:
     """Full behavior analysis for a single panel.
 
@@ -389,7 +391,7 @@ def analyze_behavior(
     v = vm.get(panel_col, line_voltage)
 
     timestamps = df["Timestamp"]
-    kw = amps_to_kw(df[panel_col].fillna(0), v, power_factor)
+    kw = amps_to_kw(df[panel_col].fillna(0), v, power_factor, calibration_factor)
 
     shift_class = classify_shift_hours(timestamps)
     hourly = compute_hourly_profile(timestamps, kw, shift_class)

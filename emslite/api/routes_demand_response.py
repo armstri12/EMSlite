@@ -87,13 +87,14 @@ def _app_cfg():
 
 
 def _build_kw_series(df: pd.DataFrame, panels: list[str], voltage_map: dict,
-                     line_voltage: float, power_factor: float) -> pd.Series:
+                     line_voltage: float, power_factor: float,
+                     calibration_factor: float = 1.0) -> pd.Series:
     """Sum panel amps → total kW for the enrolled panels."""
     total = pd.Series(0.0, index=df.index)
     for col in panels:
         if col in df.columns:
             v = voltage_map.get(col, line_voltage)
-            total += amps_to_kw(df[col].fillna(0), v, power_factor).fillna(0)
+            total += amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor).fillna(0)
     return total
 
 
@@ -107,13 +108,14 @@ def _compute_baseline(
     power_factor: float,
     voltage_map: dict,
     other_event_dates: set[date],
+    calibration_factor: float = 1.0,
 ) -> tuple[float | None, list[str], float]:
     """
     10-of-10 baseline with same-day adjustment (Mass Save Connected Solutions method).
 
     Returns (adjusted_baseline_kw, baseline_date_strings, adjustment_factor).
     """
-    total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor)
+    total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor, calibration_factor)
 
     df_et = df[["Timestamp"]].copy()
     df_et["kw"] = total_kw.values
@@ -187,8 +189,9 @@ def _actual_event_kw(
     line_voltage: float,
     power_factor: float,
     voltage_map: dict,
+    calibration_factor: float = 1.0,
 ) -> float | None:
-    total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor)
+    total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor, calibration_factor)
     df_et = df[["Timestamp"]].copy()
     df_et["kw"] = total_kw.values
     local_ts = df_et["Timestamp"].dt.tz_convert(_ET)
@@ -422,6 +425,7 @@ def compute_event(event_id: int) -> dict[str, Any]:
         cfg = _app_cfg()
         line_voltage = float(cfg.get("line_voltage", 480.0))
         power_factor = float(cfg.get("power_factor", 1.0))
+        calibration_factor = float(cfg.get("calibration_factor", 1.0))
         voltage_map = get_device_voltage_map()
 
         panels = json.loads(prog.enrolled_panels) if prog.enrolled_panels else []
@@ -442,11 +446,12 @@ def compute_event(event_id: int) -> dict[str, Any]:
         baseline_kw, baseline_dates, adj_factor = _compute_baseline(
             df, panels, ev.event_date, ev.start_hour, ev.end_hour,
             line_voltage, power_factor, voltage_map, other_event_dates,
+            calibration_factor,
         )
 
         actual_kw = _actual_event_kw(
             df, panels, ev.event_date, ev.start_hour, ev.end_hour,
-            line_voltage, power_factor, voltage_map,
+            line_voltage, power_factor, voltage_map, calibration_factor,
         )
 
         ev.baseline_kw = baseline_kw
@@ -488,6 +493,7 @@ def event_profile(event_id: int) -> dict[str, Any]:
         cfg = _app_cfg()
         line_voltage = float(cfg.get("line_voltage", 480.0))
         power_factor = float(cfg.get("power_factor", 1.0))
+        calibration_factor = float(cfg.get("calibration_factor", 1.0))
         voltage_map = get_device_voltage_map()
         panels = json.loads(prog.enrolled_panels) if prog.enrolled_panels else []
 
@@ -496,7 +502,7 @@ def event_profile(event_id: int) -> dict[str, Any]:
         if not panels:
             panels = meter_columns(df.columns)
 
-        total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor)
+        total_kw = _build_kw_series(df, panels, voltage_map, line_voltage, power_factor, calibration_factor)
 
         df_et = df[["Timestamp"]].copy()
         df_et["kw"] = total_kw.values

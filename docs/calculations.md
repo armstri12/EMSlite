@@ -12,29 +12,63 @@ This document defines every formula used in EMSlite, with units, assumptions, an
 
 **Formula:**
 ```
-kW = amps × (voltage × √3 × power_factor) / 1000
+kW = amps × (voltage × √3 × power_factor × calibration_factor) / 1000
 ```
 
 **Where:**
 - `amps` — measured phase current (A), one reading per sample per panel
 - `voltage` — system line voltage (V), default `480` V (three-phase)
 - `power_factor` — dimensionless, default `1.0`
+- `calibration_factor` — dimensionless empirical trim, default `1.0`
 - `√3 ≈ 1.7321`
 
 **Code:** `core.py:amps_to_kw()`
 
 **Worked example:**
 ```
-amps = 100 A, voltage = 480 V, power_factor = 1.0
-kW = 100 × (480 × 1.7321 × 1.0) / 1000
+amps = 100 A, voltage = 480 V, power_factor = 1.0, calibration_factor = 1.0
+kW = 100 × (480 × 1.7321 × 1.0 × 1.0) / 1000
 kW = 100 × 831.6 / 1000
 kW = 83.16 kW
 ```
 
+### Apparent vs. real power (the #1 cause of over-reporting)
+
+Current sensors measure amperage only, so this formula computes **apparent power
+(kVA)**. The utility bills **real energy (kWh)**, and `real = apparent × PF`.
+Leaving `power_factor = 1.0` therefore over-reports energy by `1 / PF`:
+
+| True facility PF | Over-report with PF=1.0 |
+|------------------|-------------------------|
+| 0.95             | +5 %                    |
+| 0.90             | +11 %                   |
+| 0.83             | +20 %                   |
+| 0.80             | +25 %                   |
+
+Set `power_factor` to the facility's measured PF (typically 0.80–0.95). Never
+leave it at 1.0 in production.
+
+### `calibration_factor`
+
+A single empirical scalar (default `1.0`) applied inside `amps_to_kw`, so it
+scales every kW/kWh/cost output uniformly. Use it to absorb any residual gap
+once `power_factor`, `line_voltage`, and `aggregate_columns` (below) are correct.
+`GET /api/bills/{id}/comparison` returns a `suggested_calibration_factor` derived
+from a real bill, and `scripts/reconcile_bill.py` prints one for any date range.
+
+### Avoiding double-counting (`aggregate_columns`)
+
+The facility total sums every meter column except those returned by
+`core.excluded_columns(cfg)` — namely `combo_columns` keys and any
+`aggregate_columns`. If the master CSV contains a **main-feed / sub-total CT
+column** (e.g. `Main_Service`) that already includes its branch panels, summing
+it on top of the branches double-counts. List such columns in `aggregate_columns`
+to exclude them. `scripts/reconcile_bill.py` flags suspected aggregate columns.
+
 **Assumptions and caveats:**
 - Assumes balanced three-phase load. Single-phase or unbalanced loads will be misrepresented.
-- `power_factor = 1.0` (unity) is the default. If the facility has significant reactive loads, update `power_factor` in `visualization_config.json`.
-- Applied identically in `metrics.py`, `behavior.py`, `trending.py`, and `routes_data.py`.
+- Applied identically in `metrics.py`, `behavior.py`, `trending.py`, `report.py`, and the `routes_*` API modules.
+- Config edits take effect via `PUT /api/config` (the dashboard's Settings panel); the in-memory config is also refreshed there. Hand-editing `visualization_config.json` while the server runs requires a restart.
 
 ---
 
@@ -42,25 +76,27 @@ kW = 83.16 kW
 
 **Formula:**
 ```
-kWh = Σ (kW_i × dt_i)
+kWh = Σ ((kW_i + kW_{i-1}) / 2) × dt_i
 ```
 
 where `dt_i` is the time elapsed from the previous sample to sample `i` (in hours).
 
-**Integration method:** Left-point rectangular integration. Each reading is held constant from the previous sample forward to the current sample time.
+**Integration method:** Trapezoidal rule — each interval contributes the average
+of its two endpoint kW values times the interval length:
+`kWh = Σ ((kW_i + kW_{i-1}) / 2) × dt_i`. This removes the systematic bias of
+right-endpoint summation (which weighted the later reading across the whole
+interval). The difference versus the old method is typically <1–2 %.
 
-**Code:** `metrics.py:compute_kpi()` lines 40-41, `behavior.py:compute_shift_energy_split()`, `trending.py:_daily_kwh()`
+**Code:** `metrics.py:integrate_kwh()` (used by `compute_kpi`, `compute_panel_rankings`, `compute_department_breakdown`), and `routes_bills.py:bill_comparison()`.
 
 **Worked example (uniform cadence):**
 ```
 Samples at 15-minute intervals (dt = 0.25 h):
-  t=0:00  kW=50
-  t=0:15  kW=60
-  t=0:30  kW=40
+  t=0:00  kW=50   dt=0.00 h  → 0.00 kWh
+  t=0:15  kW=60   dt=0.25 h  → ((50+60)/2) × 0.25 = 13.75 kWh
+  t=0:30  kW=40   dt=0.25 h  → ((60+40)/2) × 0.25 = 12.50 kWh
 
-kWh = (50 × 0.25) + (60 × 0.25) + (40 × 0.25)
-    = 12.5 + 15.0 + 10.0
-    = 37.5 kWh
+kWh = 0.00 + 13.75 + 12.50 = 26.25 kWh
 ```
 
 Note: the first sample has `dt = 0` (no previous sample), so it contributes 0 kWh.
@@ -68,11 +104,11 @@ Note: the first sample has `dt = 0` (no previous sample), so it contributes 0 kW
 **Worked example (irregular cadence):**
 ```
   t=0:00  kW=50   dt=0.00 h  → 0.00 kWh
-  t=0:15  kW=60   dt=0.25 h  → 15.00 kWh
-  t=1:00  kW=40   dt=0.75 h  → 30.00 kWh
-  t=1:15  kW=55   dt=0.25 h  → 13.75 kWh
+  t=0:15  kW=60   dt=0.25 h  → ((50+60)/2) × 0.25 = 13.75 kWh
+  t=1:00  kW=40   dt=0.75 h  → ((60+40)/2) × 0.75 = 37.50 kWh
+  t=1:15  kW=55   dt=0.25 h  → ((40+55)/2) × 0.25 = 11.875 kWh
 
-Total = 58.75 kWh
+Total = 63.125 kWh
 ```
 
 **Relationship to average kW:** With irregular cadence, the simple arithmetic mean of kW values is NOT the same as `total_kwh / total_hours`. See §3.

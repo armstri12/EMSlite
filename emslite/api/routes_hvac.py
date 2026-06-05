@@ -29,7 +29,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ..core import amps_to_kw, get_device_voltage_map, load_csv, meter_columns
+from ..core import amps_to_kw, excluded_columns, get_device_voltage_map, load_csv, meter_columns
 from ..database import get_session
 from ..models import DailyTemperature
 
@@ -115,6 +115,7 @@ def _daily_kwh(
     cfg = _get_config()
     line_voltage = float(cfg.get("line_voltage", 480.0))
     power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
     voltage_map = get_device_voltage_map()
 
     df = load_csv(master)
@@ -123,7 +124,7 @@ def _daily_kwh(
     if end:
         df = df[df["Timestamp"] <= pd.to_datetime(end, utc=True) + pd.Timedelta(days=1)]
 
-    all_panels = meter_columns(df.columns, exclude=set(cfg.get("combo_columns", {}).keys()))
+    all_panels = meter_columns(df.columns, exclude=excluded_columns(cfg))
     resolved = [p for p in panels if p in all_panels] if panels else all_panels[:]
     if df.empty or not resolved:
         return {}, resolved
@@ -134,7 +135,7 @@ def _daily_kwh(
         if col not in df.columns:
             continue
         v = voltage_map.get(col, line_voltage)
-        frame[col] = amps_to_kw(df[col].fillna(0), v, power_factor).fillna(0)
+        frame[col] = amps_to_kw(df[col].fillna(0), v, power_factor, calibration_factor).fillna(0)
     if frame.empty or not len(frame.columns):
         return {}, resolved
 
