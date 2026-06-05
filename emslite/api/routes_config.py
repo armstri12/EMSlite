@@ -56,7 +56,7 @@ def get_config() -> dict[str, Any]:
 @router.put("/config")
 def update_config(body: ConfigUpdate) -> dict[str, Any]:
     """Update system configuration."""
-    from .app import _app_config
+    from . import app_state
 
     path = _config_path()
     cfg = load_config(path if path.exists() else None)
@@ -64,7 +64,8 @@ def update_config(body: ConfigUpdate) -> dict[str, Any]:
     update_data = body.model_dump(exclude_none=True)
     for key, value in update_data.items():
         cfg[key] = value
-        _app_config[key] = value
+        # Update the live in-memory config so changes apply without a restart.
+        app_state._app_config[key] = value
 
     save_config(cfg, path)
     return get_config()
