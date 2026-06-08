@@ -114,6 +114,29 @@ async function initDashboard() {
   }
 }
 
+/* Re-fetch the core time-series and re-render the active tab. The Overview /
+   Analytics / Comparison / Executive tabs all render from the cached `D`, which
+   is otherwise only fetched once at page load — so without this they keep
+   showing pre-change numbers after a power-factor / calibration / voltage edit.
+   Called from the config + device editors so every view stays in sync with the
+   same correction factors the bill comparison uses. */
+async function refreshDashboardData() {
+  try {
+    const data = await API.getData();
+    D = data;
+    PRICE = data.price_per_kwh || 0.25;
+    ALL_PANELS = data.panel_names || [];
+    if (data.timestamps && data.timestamps.length) {
+      DATE_MIN = new Date(data.timestamps[0]).toISOString().slice(0, 10);
+      DATE_MAX = new Date(data.timestamps[data.timestamps.length - 1]).toISOString().slice(0, 10);
+    }
+    renderTab(activeTab);
+  } catch (e) {
+    console.error("Dashboard data refresh failed:", e);
+  }
+}
+window.refreshDashboardData = refreshDashboardData;
+
 /* ═══════════════════════════════════════════════════════
    PER-TAB STATE
    ═══════════════════════════════════════════════════════ */

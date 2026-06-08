@@ -201,10 +201,17 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
 
         # Calculate kWh for each device on this meter
         total_kwh = 0.0
+        # Track the distinct voltages actually applied so the UI can show that
+        # per-device overrides (e.g. 460 V air handlers) fed into this number.
+        voltages_used: set[float] = set()
+        override_count = 0
         for dev_id in device_ids:
             if dev_id not in df.columns:
                 continue
             v = voltage_map.get(dev_id, line_voltage)
+            voltages_used.add(v)
+            if dev_id in voltage_map:
+                override_count += 1
             kw_series = amps_to_kw(df[dev_id].fillna(0), v, power_factor, calibration_factor).fillna(0)
             total_kwh += integrate_kwh(kw_series, hours)
 
@@ -252,6 +259,11 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
             "device_count": len(device_ids),
             "power_factor": power_factor,
             "calibration_factor": calibration_factor,
+            "line_voltage": line_voltage,
+            # Distinct voltages fed into the kWh math (per-device overrides win
+            # over line_voltage) plus how many devices carried an override.
+            "voltages_used": sorted(voltages_used),
+            "voltage_override_count": override_count,
             "suggested_calibration_factor": suggested_calibration_factor,
         }
     finally:
