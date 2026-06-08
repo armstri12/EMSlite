@@ -223,6 +223,8 @@ async function showDeviceEditPanel(deviceId) {
     billComparisons = {};
     closePanel();
     renderDevicesTab();
+    // Voltage / meter changes also move the dashboard totals — refresh them.
+    if (typeof refreshDashboardData === "function") refreshDashboardData();
   });
 }
 
@@ -795,6 +797,9 @@ function renderCalibrationSection() {
       billComparisons = {};            // factors changed → recompute comparisons
       status.textContent = "Saved.";
       renderBillsSection();
+      // Re-pull the dashboard series so Overview/Analytics/Comparison reflect
+      // the new PF / calibration / voltage too (they render from cached data).
+      if (typeof refreshDashboardData === "function") refreshDashboardData();
       setTimeout(() => { status.textContent = ""; }, 2000);
     } catch (err) {
       status.textContent = "Save failed.";
@@ -959,6 +964,7 @@ async function renderBillsSection() {
         billComparisons = {};            // factors changed → recompute
         renderCalibrationSection();
         renderBillsSection();
+        if (typeof refreshDashboardData === "function") refreshDashboardData();
       } catch (err) {
         console.error("Apply calibration failed:", err);
         btn.textContent = "Failed";
