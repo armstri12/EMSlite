@@ -864,22 +864,70 @@ async function renderCoverageReport() {
     html += `<div style="font-weight:600;color:var(--heading);font-size:0.85rem;margin:10px 0 4px">
       Panels not assigned to any meter</div>
       <div class="data-table-wrap"><table class="data-table"><thead><tr>
-        <th>Panel</th><th>kWh</th><th>Voltage</th><th>Calibration</th></tr></thead><tbody>`;
+        <th>Panel</th><th>kWh</th><th>Voltage</th><th>Calibration</th><th></th></tr></thead><tbody>`;
     for (const p of cov.unassigned) {
       html += `<tr><td>${p.panel_id}</td><td>${fk(p.total_kwh)}</td>
-        <td>${p.voltage}V</td><td>${Number(p.calibration_factor).toFixed(4)}</td></tr>`;
+        <td>${p.voltage}V</td><td>${Number(p.calibration_factor).toFixed(4)}</td>
+        <td><button class="btn btn-ghost btn-sm cov-exclude-btn" data-panel="${encodeURIComponent(p.panel_id)}"
+          title="Exclude from every calculation (facility total, comparison, analytics, reports)">Exclude</button></td></tr>`;
     }
     html += `</tbody></table></div>`;
   } else {
     html += `<div style="color:var(--positive-text,#16a34a);font-size:0.85rem;margin-top:8px">
       Every metered panel is assigned to a meter — the comparison total should match the bills.</div>`;
   }
-  if (cov.excluded_columns && cov.excluded_columns.length) {
+
+  // Currently-excluded panels (out of every calculation) with a way back.
+  if (cov.excluded_panels && cov.excluded_panels.length) {
+    html += `<div style="font-weight:600;color:var(--heading);font-size:0.85rem;margin:10px 0 4px">
+      Excluded from all calculations</div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr>
+        <th>Panel</th><th>kWh (not counted)</th><th></th></tr></thead><tbody>`;
+    for (const p of cov.excluded_panels) {
+      html += `<tr><td>${p.panel_id}</td><td>${fk(p.total_kwh)}</td>
+        <td><button class="btn btn-ghost btn-sm cov-include-btn" data-panel="${encodeURIComponent(p.panel_id)}"
+          title="Put this panel back into the calculations">Include</button></td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  const structural = (cov.excluded_columns || []).filter(
+    c => !(cov.excluded_panels || []).some(p => p.panel_id === c));
+  if (structural.length) {
     html += `<div style="font-size:0.75rem;color:var(--muted);margin-top:8px">
-      Excluded from the facility total (combo/aggregate): ${cov.excluded_columns.join(", ")}</div>`;
+      Also excluded (combo/aggregate columns): ${structural.join(", ")}</div>`;
   }
   html += `</div>`;
   box.innerHTML = html;
+
+  async function setExcluded(list) {
+    const updated = await API.updateConfig({ excluded_panels: list });
+    systemConfig = { ...systemConfig, ...updated };
+    billComparisons = {};            // panel set changed → recompute
+    renderCoverageReport();
+    renderBillsSection();
+    if (typeof refreshDashboardData === "function") refreshDashboardData();
+  }
+
+  box.querySelectorAll(".cov-exclude-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const panel = decodeURIComponent(btn.dataset.panel);
+      btn.textContent = "…";
+      const cur = (systemConfig.excluded_panels || []).slice();
+      if (!cur.includes(panel)) cur.push(panel);
+      try { await setExcluded(cur); }
+      catch (e) { console.error("Exclude failed:", e); btn.textContent = "Failed"; }
+    });
+  });
+  box.querySelectorAll(".cov-include-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const panel = decodeURIComponent(btn.dataset.panel);
+      btn.textContent = "…";
+      const cur = (systemConfig.excluded_panels || []).filter(p => p !== panel);
+      try { await setExcluded(cur); }
+      catch (e) { console.error("Include failed:", e); btn.textContent = "Failed"; }
+    });
+  });
 }
 
 async function renderBillsSection() {

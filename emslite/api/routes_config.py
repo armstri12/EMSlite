@@ -24,6 +24,8 @@ class ConfigUpdate(BaseModel):
     glob_pattern: str | None = None
     # {meter_name: {"calibration_factor": float, "power_factor": float}}
     meter_overrides: dict[str, Any] | None = None
+    # Panel/column IDs excluded from every calculation.
+    excluded_panels: list[str] | None = None
 
 
 def _config_path() -> Path:
@@ -42,6 +44,7 @@ def get_config() -> dict[str, Any]:
         "power_factor": cfg.get("power_factor", 1.0),
         "calibration_factor": cfg.get("calibration_factor", 1.0),
         "meter_overrides": cfg.get("meter_overrides", {}),
+        "excluded_panels": cfg.get("excluded_panels", []),
         "price_per_kwh": cfg.get("price_per_kwh", 0.25),
         "carbon_kg_per_kwh": cfg.get("carbon_kg_per_kwh", 0.4),
         "rolling_window": cfg.get("rolling_window", "1h"),

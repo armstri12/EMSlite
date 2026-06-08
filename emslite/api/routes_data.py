@@ -285,13 +285,33 @@ def get_meter_coverage(
     unassigned.sort(key=lambda r: r["total_kwh"], reverse=True)
     facility_total = round(sum(p["total_kwh"] for p in panels), 2)
 
+    # Panels the user explicitly excluded — compute their kWh too so they're
+    # visible (and re-includable) even though they're out of the facility total.
+    excluded_panel_ids = cfg.get("excluded_panels", []) or []
+    excluded_panels = []
+    for col in excluded_panel_ids:
+        if col not in df.columns:
+            continue
+        v = voltage_map.get(col, line_voltage)
+        kw = amps_to_kw(
+            df[col].fillna(0), v, pf_map.get(col, power_factor), cal_map.get(col, calibration_factor)
+        ).fillna(0)
+        excluded_panels.append({
+            "panel_id": col,
+            "meter_name": device_meter_map.get(col),
+            "total_kwh": round(integrate_kwh(kw, hours), 2),
+        })
+    excluded_panels.sort(key=lambda r: r["total_kwh"], reverse=True)
+
     return {
         "facility_total_kwh": facility_total,
         "assigned_total_kwh": round(sum(m["total_kwh"] for m in meters), 2),
         "unassigned_total_kwh": round(sum(p["total_kwh"] for p in unassigned), 2),
         "meters": meters,
         "unassigned": unassigned,
-        # Columns deliberately excluded from the facility total (combo/aggregate),
+        # User-excluded panels (with kWh) so they can be reviewed / re-included.
+        "excluded_panels": excluded_panels,
+        # All columns kept out of the facility total (combo/aggregate/excluded),
         # surfaced so a hidden double-counting feed is easy to spot.
         "excluded_columns": sorted(excluded_columns(cfg)),
         "range": {
