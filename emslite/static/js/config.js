@@ -811,6 +811,77 @@ function renderCalibrationSection() {
 let billsData = [];
 let billComparisons = {};
 
+/* Reconcile the facility total (what Comparison/Analytics show) against the
+   sum of the metered panels, exposing energy on panels assigned to NO meter —
+   the usual reason the dashboard total exceeds the combined utility bills. */
+async function renderCoverageReport() {
+  const box = document.getElementById("coverage-report");
+  if (!box) return;
+  box.innerHTML = '<div style="color:var(--muted);padding:8px 0">Computing coverage…</div>';
+  let cov;
+  try {
+    cov = await API.getMeterCoverage();
+  } catch (err) {
+    box.innerHTML = '<div style="color:var(--negative-text);padding:8px 0">Coverage check failed.</div>';
+    return;
+  }
+  const fk = (v) => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const unassignedPct = cov.facility_total_kwh
+    ? (cov.unassigned_total_kwh / cov.facility_total_kwh * 100) : 0;
+  const gapColor = unassignedPct > 1 ? 'var(--negative-text,#dc2626)' : 'var(--positive-text,#16a34a)';
+
+  let html = `<div style="border:1px solid var(--border,#3334);border-radius:8px;padding:12px;margin-bottom:1rem">
+    <div style="display:flex;flex-wrap:wrap;gap:18px;align-items:baseline">
+      <div><span style="font-size:0.7rem;color:var(--muted);text-transform:uppercase">Facility total</span><br>
+        <span style="font-weight:700;font-size:1.05rem">${fk(cov.facility_total_kwh)} kWh</span></div>
+      <div><span style="font-size:0.7rem;color:var(--muted);text-transform:uppercase">On metered panels</span><br>
+        <span style="font-weight:700;font-size:1.05rem">${fk(cov.assigned_total_kwh)} kWh</span></div>
+      <div><span style="font-size:0.7rem;color:var(--muted);text-transform:uppercase">Unassigned (no bill)</span><br>
+        <span style="font-weight:700;font-size:1.05rem;color:${gapColor}">${fk(cov.unassigned_total_kwh)} kWh (${unassignedPct.toFixed(1)}%)</span></div>
+    </div>
+    <div style="font-size:0.75rem;color:var(--muted);margin-top:6px">
+      Full data range. Per-panel kWh uses the same voltage / PF / calibration as the dashboard.
+      Energy on unassigned panels inflates the comparison total vs the per-meter bills.
+    </div>`;
+
+  // Per-meter: show the calibration/PF actually applied by the dashboard path,
+  // so it's verifiable that per-meter overrides reached the facility total.
+  if (cov.meters && cov.meters.length) {
+    html += `<div style="font-weight:600;color:var(--heading);font-size:0.85rem;margin:10px 0 4px">
+      Per-meter (factors the dashboard applied)</div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr>
+        <th>Meter</th><th>Panels</th><th>kWh</th><th>Calibration</th><th>Power Factor</th></tr></thead><tbody>`;
+    for (const m of cov.meters) {
+      const cals = [...new Set(m.panels.map(p => Number(p.calibration_factor).toFixed(4)))].join(", ");
+      const pfs = [...new Set(m.panels.map(p => Number(p.power_factor).toFixed(2)))].join(", ");
+      html += `<tr><td style="font-weight:600">${m.meter_name}</td><td>${m.panel_count}</td>
+        <td>${fk(m.total_kwh)}</td><td>${cals}</td><td>${pfs}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  if (cov.unassigned && cov.unassigned.length) {
+    html += `<div style="font-weight:600;color:var(--heading);font-size:0.85rem;margin:10px 0 4px">
+      Panels not assigned to any meter</div>
+      <div class="data-table-wrap"><table class="data-table"><thead><tr>
+        <th>Panel</th><th>kWh</th><th>Voltage</th><th>Calibration</th></tr></thead><tbody>`;
+    for (const p of cov.unassigned) {
+      html += `<tr><td>${p.panel_id}</td><td>${fk(p.total_kwh)}</td>
+        <td>${p.voltage}V</td><td>${Number(p.calibration_factor).toFixed(4)}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+  } else {
+    html += `<div style="color:var(--positive-text,#16a34a);font-size:0.85rem;margin-top:8px">
+      Every metered panel is assigned to a meter — the comparison total should match the bills.</div>`;
+  }
+  if (cov.excluded_columns && cov.excluded_columns.length) {
+    html += `<div style="font-size:0.75rem;color:var(--muted);margin-top:8px">
+      Excluded from the facility total (combo/aggregate): ${cov.excluded_columns.join(", ")}</div>`;
+  }
+  html += `</div>`;
+  box.innerHTML = html;
+}
+
 async function renderBillsSection() {
   const container = document.getElementById("bills-section");
   if (!container) return;
@@ -827,8 +898,10 @@ async function renderBillsSection() {
     return;
   }
 
-  let html = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
-    '<button class="btn btn-primary btn-sm" id="add-bill-btn">+ Add Bill</button></div>';
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+    '<button class="btn btn-ghost btn-sm" id="coverage-btn">Check meter coverage</button>' +
+    '<button class="btn btn-primary btn-sm" id="add-bill-btn">+ Add Bill</button></div>' +
+    '<div id="coverage-report"></div>';
 
   // Group bills by meter
   for (const meter of utilityMeters) {
@@ -923,6 +996,7 @@ async function renderBillsSection() {
 
   // Wire events
   document.getElementById("add-bill-btn").addEventListener("click", () => showBillModal(null));
+  document.getElementById("coverage-btn").addEventListener("click", renderCoverageReport);
 
   container.querySelectorAll(".edit-bill-btn").forEach(btn => {
     btn.addEventListener("click", () => {

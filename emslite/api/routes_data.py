@@ -17,7 +17,7 @@ from ..core import (
     meter_columns,
     parse_window_to_hours,
 )
-from ..metrics import compute_department_breakdown, compute_kpi, compute_panel_rankings
+from ..metrics import compute_department_breakdown, compute_kpi, compute_panel_rankings, integrate_kwh
 
 router = APIRouter(tags=["data"])
 
@@ -203,6 +203,101 @@ def get_metrics(
         "rankings": rankings,
         "departments": dept_breakdown,
         "carbon_kg_per_kwh": carbon_kg_per_kwh,
+    }
+
+
+@router.get("/meter-coverage")
+def get_meter_coverage(
+    start: str | None = Query(None),
+    end: str | None = Query(None),
+) -> dict[str, Any]:
+    """Reconcile the facility total against per-meter (billed) coverage.
+
+    Computes each panel's kWh with the SAME factors the dashboard uses
+    (per-device voltage + per-meter power-factor / calibration) and groups them
+    by their device's meter assignment. The facility total a meter-less bill can
+    never explain is the sum of the ``unassigned`` panels — the usual reason a
+    comparison-view total exceeds the combined meter bills.
+    """
+    master = _get_master_path()
+    if not master.exists():
+        return {"meters": [], "unassigned": [], "facility_total_kwh": 0.0}
+
+    cfg = _get_config()
+    df = load_csv(master)
+    line_voltage = float(cfg.get("line_voltage", 480.0))
+    power_factor = float(cfg.get("power_factor", 1.0))
+    calibration_factor = float(cfg.get("calibration_factor", 1.0))
+    voltage_map = get_device_voltage_map()
+    device_meter_map = get_device_meter_map()
+    pf_map, cal_map = build_meter_factor_maps(cfg, device_meter_map)
+
+    if start:
+        import pandas as pd
+        df = df[df["Timestamp"] >= pd.to_datetime(start, utc=True)]
+    if end:
+        import pandas as pd
+        end_ts = end + "T23:59:59" if len(end) == 10 else end
+        df = df[df["Timestamp"] <= pd.to_datetime(end_ts, utc=True)]
+
+    if df.empty:
+        return {"meters": [], "unassigned": [], "facility_total_kwh": 0.0}
+
+    hours = df["Timestamp"].diff().dt.total_seconds().fillna(0) / 3600.0
+    all_panels = meter_columns(df.columns, exclude=excluded_columns(cfg))
+
+    # Per-panel kWh using the dashboard's factor resolution.
+    panels: list[dict[str, Any]] = []
+    for col in all_panels:
+        if col not in df.columns:
+            continue
+        v = voltage_map.get(col, line_voltage)
+        kw = amps_to_kw(
+            df[col].fillna(0), v, pf_map.get(col, power_factor), cal_map.get(col, calibration_factor)
+        ).fillna(0)
+        panels.append({
+            "panel_id": col,
+            "meter_name": device_meter_map.get(col),
+            "total_kwh": round(integrate_kwh(kw, hours), 2),
+            "voltage": v,
+            "calibration_factor": cal_map.get(col, calibration_factor),
+            "power_factor": pf_map.get(col, power_factor),
+        })
+
+    # Group by meter assignment; meter-less panels are the reconciliation gap.
+    by_meter: dict[str, list[dict[str, Any]]] = {}
+    unassigned: list[dict[str, Any]] = []
+    for p in panels:
+        if p["meter_name"]:
+            by_meter.setdefault(p["meter_name"], []).append(p)
+        else:
+            unassigned.append(p)
+
+    meters = [
+        {
+            "meter_name": name,
+            "panel_count": len(rows),
+            "total_kwh": round(sum(r["total_kwh"] for r in rows), 2),
+            "panels": sorted(rows, key=lambda r: r["total_kwh"], reverse=True),
+        }
+        for name, rows in sorted(by_meter.items())
+    ]
+    unassigned.sort(key=lambda r: r["total_kwh"], reverse=True)
+    facility_total = round(sum(p["total_kwh"] for p in panels), 2)
+
+    return {
+        "facility_total_kwh": facility_total,
+        "assigned_total_kwh": round(sum(m["total_kwh"] for m in meters), 2),
+        "unassigned_total_kwh": round(sum(p["total_kwh"] for p in unassigned), 2),
+        "meters": meters,
+        "unassigned": unassigned,
+        # Columns deliberately excluded from the facility total (combo/aggregate),
+        # surfaced so a hidden double-counting feed is easy to spot.
+        "excluded_columns": sorted(excluded_columns(cfg)),
+        "range": {
+            "start": df["Timestamp"].min().isoformat(),
+            "end": df["Timestamp"].max().isoformat(),
+        },
     }
 
 
