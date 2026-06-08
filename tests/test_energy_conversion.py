@@ -63,6 +63,14 @@ def test_excluded_columns_drops_aggregate_and_combo():
     assert meter_columns(cols, exclude=excluded_columns(cfg)) == ["P1", "P2"]
 
 
+def test_excluded_columns_drops_user_excluded_panels():
+    cfg = {"aggregate_columns": ["Main"], "excluded_panels": ["P2"]}
+    assert excluded_columns(cfg) == {"Main", "P2"}
+    cols = ["Timestamp", "Total_Amps", "Main", "P1", "P2", "P3"]
+    # P2 is pulled out of every calculation along with the aggregate feed.
+    assert meter_columns(cols, exclude=excluded_columns(cfg)) == ["P1", "P3"]
+
+
 def test_meter_factors_overrides_with_fallback():
     cfg = {
         "power_factor": 1.0,

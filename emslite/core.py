@@ -52,11 +52,16 @@ def meter_columns(
 def excluded_columns(cfg: dict) -> set[str]:
     """Columns that must NOT be summed into the facility total.
 
-    Covers pre-computed group columns (``combo_columns``) and any aggregate /
-    main-feed columns (``aggregate_columns``) that already include other panels —
-    summing those on top of their branch panels double-counts and over-reports.
+    Covers pre-computed group columns (``combo_columns``), aggregate / main-feed
+    columns (``aggregate_columns``) that already include other panels — summing
+    those on top of their branch panels double-counts and over-reports — and any
+    panels the user explicitly excluded (``excluded_panels``).
     """
-    return set(cfg.get("combo_columns", {}).keys()) | set(cfg.get("aggregate_columns", []))
+    return (
+        set(cfg.get("combo_columns", {}).keys())
+        | set(cfg.get("aggregate_columns", []))
+        | set(cfg.get("excluded_panels", []))
+    )
 
 
 def load_csv(path: str | object) -> pd.DataFrame:

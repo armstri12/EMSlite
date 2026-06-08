@@ -205,7 +205,11 @@ def bill_comparison(bill_id: int) -> dict[str, Any]:
         # per-device overrides (e.g. 460 V air handlers) fed into this number.
         voltages_used: set[float] = set()
         override_count = 0
+        # Honor panels the user pulled out of all calculations.
+        excluded = set(cfg.get("excluded_panels", []) or [])
         for dev_id in device_ids:
+            if dev_id in excluded:
+                continue
             if dev_id not in df.columns:
                 continue
             v = voltage_map.get(dev_id, line_voltage)

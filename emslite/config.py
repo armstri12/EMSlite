@@ -18,6 +18,10 @@ DEFAULT_CONFIG: dict = {
     "carbon_kg_per_kwh": 0.4,
     "total_amps_sources": None,
     "aggregate_columns": [],
+    # Panel/column IDs the user has explicitly excluded from every calculation
+    # (facility total, comparison, analytics, reports). Use for channels that
+    # shouldn't be counted at all (spare CTs, unmetered feeds, etc.).
+    "excluded_panels": [],
     "utility_meters": [],
     "combo_columns": {},
     "rolling_window": "1h",
