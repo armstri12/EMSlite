@@ -194,6 +194,14 @@ const API = {
     return res.json();
   },
 
+  async getMeterCoverage({ start, end } = {}) {
+    const q = new URLSearchParams();
+    if (start) q.set("start", start);
+    if (end) q.set("end", end);
+    const res = await fetch("/api/meter-coverage?" + q.toString());
+    return res.json();
+  },
+
   async getConfig() {
     const res = await fetch("/api/config");
     return res.json();
